@@ -1,0 +1,4 @@
+checkpoint/
+wandb/
+**/__pycache__/**
+model/backbone/__pycache__
