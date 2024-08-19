@@ -18,9 +18,22 @@ import pytorch_lightning as pl
 from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor
 
-
+from model.equiassem_v1 import EquiAssem_v1
 from model.equiassem_occ_v1 import EquiAssem_occ_v1
 from model.equiassem_occ_v2 import EquiAssem_occ_v2
+from model.equiassem_occ_v3 import EquiAssem_occ_v3
+from model.equiassem_occ_v4 import EquiAssem_occ_v4 
+from model.equiassem_occ_v5 import EquiAssem_occ_v5
+from model.equiassem_occ_v6 import EquiAssem_occ_v6
+from model.equiassem_occ_v7 import EquiAssem_occ_v7
+
+from model.equiassem_fix_v1 import EquiAssem_fix_v1
+# from model.equiassem_fix_v2 import EquiAssem_fix_v2
+# from model.equiassem_fix_v3 import EquiAssem_fix_v3
+# from model.equiassem_fix_v4 import EquiAssem_fix_v4 
+# from model.equiassem_fix_v5 import EquiAssem_fix_v5
+# from model.equiassem_fix_v6 import EquiAssem_fix_v6
+# from model.equiassem_fix_v7 import EquiAssem_fix_v7
 
 from common.logger import Logger
 from data.dataset import GADataset
@@ -36,6 +49,7 @@ warnings.filterwarnings("ignore", message="divide by zero encountered in double_
 
 def main(args):
     # Model initialization
+    utils.fix_randseed(0)
     if args.model == 'v1': model = EquiAssem_v1(lr=args.lr, backbone=args.backbone)
     elif args.model == 'v1g': model = EquiAssem_v1g(lr=args.lr, backbone=args.backbone)
     elif args.model == 'v2': model = EquiAssem_v2(lr=args.lr, backbone=args.backbone)
@@ -48,6 +62,19 @@ def main(args):
 
     elif args.model == 'occ_v1': model = EquiAssem_occ_v1(lr=args.lr, backbone=args.backbone)
     elif args.model == 'occ_v2': model = EquiAssem_occ_v2(lr=args.lr, backbone=args.backbone)
+    elif args.model == 'occ_v3': model = EquiAssem_occ_v3(lr=args.lr, backbone=args.backbone)
+    elif args.model == 'occ_v4': model = EquiAssem_occ_v4(lr=args.lr, backbone=args.backbone)
+    elif args.model == 'occ_v5': model = EquiAssem_occ_v5(lr=args.lr, backbone=args.backbone)
+    elif args.model == 'occ_v6': model = EquiAssem_occ_v6(lr=args.lr, backbone=args.backbone)
+    elif args.model == 'occ_v7': model = EquiAssem_occ_v7(lr=args.lr, backbone=args.backbone)
+
+    elif args.model == 'fix_v1': model = EquiAssem_fix_v1(lr=args.lr, backbone=args.backbone)
+    elif args.model == 'fix_v2': model = EquiAssem_fix_v2(lr=args.lr, backbone=args.backbone)
+    elif args.model == 'fix_v3': model = EquiAssem_fix_v3(lr=args.lr, backbone=args.backbone)
+    elif args.model == 'fix_v4': model = EquiAssem_fix_v4(lr=args.lr, backbone=args.backbone)
+    elif args.model == 'fix_v5': model = EquiAssem_fix_v5(lr=args.lr, backbone=args.backbone)
+    elif args.model == 'fix_v6': model = EquiAssem_fix_v6(lr=args.lr, backbone=args.backbone)
+    elif args.model == 'fix_v7': model = EquiAssem_fix_v7(lr=args.lr, backbone=args.backbone)
 
     # Dataset initialization
     GADataset.initialize(args.datapath, args.data_category, args.sub_category, args.n_pts, args.overfitting)
