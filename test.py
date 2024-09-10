@@ -20,14 +20,17 @@ from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor
 
 
 from model.equiassem_v1 import EquiAssem_v1
-from model.equiassem_occ_v1 import EquiAssem_occ_v1
-from model.equiassem_occ_v2 import EquiAssem_occ_v2
-from model.equiassem_occ_v3 import EquiAssem_occ_v3
-from model.equiassem_occ_v4 import EquiAssem_occ_v4 
-from model.equiassem_occ_v5 import EquiAssem_occ_v5
-from model.equiassem_occ_v6 import EquiAssem_occ_v6
-from model.equiassem_occ_v7 import EquiAssem_occ_v7
+from model.equiassem_v2 import EquiAssem_v2
+# from model.equiassem_occ_v1 import EquiAssem_occ_v1
+# from model.equiassem_occ_v2 import EquiAssem_occ_v2
+# from model.equiassem_occ_v3 import EquiAssem_occ_v3
+# from model.equiassem_occ_v4 import EquiAssem_occ_v4 
+# from model.equiassem_occ_v5 import EquiAssem_occ_v5
+# from model.equiassem_occ_v6 import EquiAssem_occ_v6
+# from model.equiassem_occ_v7 import EquiAssem_occ_v7
 
+# from model.equiassem_fix_v1 import EquiAssem_fix_v1
+# from model.equiassem_fix_v2 import EquiAssem_fix_v2
 from common.logger import Logger
 from data.dataset import GADataset
 from common import utils
@@ -42,28 +45,31 @@ warnings.filterwarnings("ignore", message="divide by zero encountered in double_
 @torch.no_grad()
 def test(args):
     # Model initialization
-    if args.model == 'v1': model = EquiAssem_v1(lr=args.lr, backbone=args.backbone)
-    elif args.model == 'v1g': model = EquiAssem_v1g(lr=args.lr, backbone=args.backbone)
-    elif args.model == 'v2': model = EquiAssem_v2(lr=args.lr, backbone=args.backbone)
-    elif args.model == 'v2g': model = EquiAssem_v2g(lr=args.lr, backbone=args.backbone)
-    elif args.model == 'v3': model = EquiAssem_v3(lr=args.lr, backbone=args.backbone)
-    elif args.model == 'v3g': model = EquiAssem_v3g(lr=args.lr, backbone=args.backbone)
-    elif args.model == 'v4': model = EquiAssem_v4(lr=args.lr, backbone=args.backbone)
-    elif args.model == 'v4g': model = EquiAssem_v4g(lr=args.lr, backbone=args.backbone)
-    elif args.model == 'dgcnn': model = EquiAssem_dgcnn(lr=args.lr)
+    if args.model == 'v1': model = EquiAssem_v1(lr=args.lr, backbone=args.backbone, visualize=args.visualize)
+    if args.model == 'v2': model = EquiAssem_v2(lr=args.lr, backbone=args.backbone, visualize=args.visualize)
+    # elif args.model == 'v1g': model = EquiAssem_v1g(lr=args.lr, backbone=args.backbone)
+    # elif args.model == 'v2': model = EquiAssem_v2(lr=args.lr, backbone=args.backbone)
+    # elif args.model == 'v2g': model = EquiAssem_v2g(lr=args.lr, backbone=args.backbone)
+    # elif args.model == 'v3': model = EquiAssem_v3(lr=args.lr, backbone=args.backbone)
+    # elif args.model == 'v3g': model = EquiAssem_v3g(lr=args.lr, backbone=args.backbone)
+    # elif args.model == 'v4': model = EquiAssem_v4(lr=args.lr, backbone=args.backbone)
+    # elif args.model == 'v4g': model = EquiAssem_v4g(lr=args.lr, backbone=args.backbone)
+    # elif args.model == 'dgcnn': model = EquiAssem_dgcnn(lr=args.lr)
 
-    elif args.model == 'occ_v1': model = EquiAssem_occ_v1(lr=args.lr, backbone=args.backbone)
-    elif args.model == 'occ_v2': model = EquiAssem_occ_v2(lr=args.lr, backbone=args.backbone)
-    elif args.model == 'occ_v3': model = EquiAssem_occ_v3(lr=args.lr, backbone=args.backbone)
-    elif args.model == 'occ_v4': model = EquiAssem_occ_v4(lr=args.lr, backbone=args.backbone)
-    elif args.model == 'occ_v5': model = EquiAssem_occ_v5(lr=args.lr, backbone=args.backbone)
-    elif args.model == 'occ_v6': model = EquiAssem_occ_v6(lr=args.lr, backbone=args.backbone)
-    elif args.model == 'occ_v7': model = EquiAssem_occ_v7(lr=args.lr, backbone=args.backbone)
+    # elif args.model == 'occ_v1': model = EquiAssem_occ_v1(lr=args.lr, backbone=args.backbone)
+    # elif args.model == 'occ_v2': model = EquiAssem_occ_v2(lr=args.lr, backbone=args.backbone)
+    # elif args.model == 'occ_v3': model = EquiAssem_occ_v3(lr=args.lr, backbone=args.backbone)
+    # elif args.model == 'occ_v4': model = EquiAssem_occ_v4(lr=args.lr, backbone=args.backbone)
+    # elif args.model == 'occ_v5': model = EquiAssem_occ_v5(lr=args.lr, backbone=args.backbone)
+    # elif args.model == 'occ_v6': model = EquiAssem_occ_v6(lr=args.lr, backbone=args.backbone)
+    # elif args.model == 'occ_v7': model = EquiAssem_occ_v7(lr=args.lr, backbone=args.backbone)
+    # elif args.model == 'fix_v1': model = EquiAssem_fix_v1(lr=args.lr, backbone=args.backbone)
+    # elif args.model == 'fix_v2': model = EquiAssem_fix_v2(lr=args.lr, backbone=args.backbone)
     model.to(torch.device('cuda:0'))
     model.eval()
     
     # Dataset initialization
-    GADataset.initialize(args.datapath, args.data_category, args.sub_category, args.n_pts, args.overfitting)
+    GADataset.initialize(args.datapath, args.data_category, args.sub_category, args.n_pts, args.scale)
     dataloader_val = GADataset.build_dataloader(args.batch_size, args.n_worker, 'val')
 
     trainer = pl.Trainer(gpus=[0])
@@ -88,7 +94,8 @@ if __name__ == '__main__':
 
     parser.add_argument('--backbone', type=str, default='eqcnn', choices=['eqcnn', 'dgcnn'])
     parser.add_argument('--model', type=str)
-    parser.add_argument('--overfitting', action='store_true')
+    parser.add_argument('--scale', type=str, default='small')
+    parser.add_argument('--visualize', action='store_true')
 
     args = parser.parse_args()
     test(args)
