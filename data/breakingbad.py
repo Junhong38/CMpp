@@ -29,7 +29,7 @@ def save_pc(filename:str, pcd_tensors:list):
     o3d.io.write_point_cloud(filename, combined_cloud)
 
 class DatasetBreakingBad(Dataset):
-    def __init__(self, datapath, data_category, sub_category, n_pts, split, overfitting, visualize=False):
+    def __init__(self, datapath, data_category, sub_category, n_pts, split, scale, visualize=False):
         self.datapath = datapath
         self.data_category = data_category # ['everyday', 'artifact']
         self.split = split
@@ -44,13 +44,14 @@ class DatasetBreakingBad(Dataset):
         self.anchor_idx = 0
 
         # Read fracture path list
-        filepaths = join('./data/data_list', f"{data_category}_{split}_small.txt")
-        print(filepaths)
-
-        if overfitting:
+        if scale == 'overfitting':
             filepaths = join('./data/data_list', f"{data_category}_{split}_one.txt")
-            print(filepaths)
-
+        elif scale == 'full':
+            filepaths = join('./data/data_list', f"{data_category}_{split}.txt")
+        else:
+            filepaths = join('./data/data_list', f"{data_category}_{split}_small.txt")
+        print(filepaths)
+        
         with open(filepaths, 'r') as f:
             self.filepaths = [x.strip() for x in f.readlines() if x.strip()]
 
