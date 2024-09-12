@@ -17,7 +17,7 @@ from chamfer_distance import ChamferDistance as chamfer_dist
 
 from model.backbone.vn_dgcnn import EQCNN_equi
 from model.backbone.vn_layers import VNLinear, VNLeakyReLU, VNLinearLeakyReLU, VNLinearNoActivation
-from model.loss import CircleLoss, PointMatchingLoss, OrientationLoss
+from model.loss import CircleLoss, PointMatchingLoss, OrientationLoss, OrientationLossGeodesic
 from model.learnable_sinkhorn import LearnableLogOptimalTransport
 from model.local_global_registration import LocalGlobalRegistration, WeightedProcrustes
 
@@ -77,6 +77,7 @@ class EquiAssem_v2(pl.LightningModule):
         self.circle_loss = CircleLoss()
         self.matching_loss = PointMatchingLoss()
         self.orientation_loss = OrientationLoss()
+        # self.orientation_loss = OrientationLossGeodesic()
 
         # Weights for losses
         self.c_loss_weight = 1. 

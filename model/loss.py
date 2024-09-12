@@ -248,7 +248,6 @@ class OrientationLoss(nn.Module):
 
         return ori_loss
 
-# for v1g
 class OrientationLossGeodesic(nn.Module):
     def __init__(self):
         super(OrientationLossGeodesic, self).__init__()
@@ -261,7 +260,7 @@ class OrientationLossGeodesic(nn.Module):
         src_ori = torch.matmul(src_ori, src_gt_rot)
         trg_ori = torch.matmul(trg_ori, trg_gt_rot)
         
-        R_diff = torch.matmul(src_ori, trg_ori.transpose(2,3))
+        R_diff = torch.matmul(src_ori.transpose(2,3), trg_ori)
         trace_R_diff = torch.einsum('bnii->bn', R_diff)
         theta = torch.acos(torch.clamp((trace_R_diff-1)/2, -1.0+self.eps, 1.0-self.eps))
         inter_loss = torch.mean(theta ** 2)
@@ -273,12 +272,11 @@ class OrientationLossGeodesic(nn.Module):
 
         src_gt_rot = gt_rot[0]
         trg_gt_rot = gt_rot[1]
-        inter_loss = self.inter_loss(src_ori, trg_ori, correspondence, src_gt_rot, trg_gt_rot)
-        ori_loss = inter_loss
+        ori_loss = self.inter_loss(src_ori, trg_ori, correspondence, src_gt_rot, trg_gt_rot)
 
-        return ori_loss, inter_loss
+        return ori_loss
 
-# for v2
+
 class OrientationLossBoth(nn.Module):
     def __init__(self):
         super(OrientationLossBoth, self).__init__()
@@ -314,7 +312,6 @@ class OrientationLossBoth(nn.Module):
 
         return ori_loss, intra_loss, inter_loss
 
-# for v2g
 class OrientationLossBothGeodesic(nn.Module):
     def __init__(self):
         super(OrientationLossBothGeodesic, self).__init__()
@@ -352,61 +349,3 @@ class OrientationLossBothGeodesic(nn.Module):
 
         return ori_loss, intra_loss, inter_loss
 
-# for v3
-class OrientationLossGeodesicv3(nn.Module):
-    def __init__(self):
-        super(OrientationLossGeodesicv3, self).__init__()
-        self.eps = 1e-7
-
-    def inter_loss(self, src_ori, trg_ori, correspondence, src_gt_rot, trg_gt_rot):
-        src_ori = src_ori[:, correspondence[:,0]] 
-        trg_ori = trg_ori[:, correspondence[:,1]]
-
-        src_ori = torch.matmul(src_ori, src_gt_rot)
-        trg_ori = torch.matmul(trg_ori, trg_gt_rot)
-        
-        R_diff = torch.matmul(src_ori, trg_ori.transpose(2,3))
-        trace_R_diff = torch.einsum('bnii->bn', R_diff)
-        theta = torch.acos(torch.clamp((trace_R_diff-1)/2, -1.0+self.eps, 1.0-self.eps))
-        inter_loss = torch.mean(theta ** 2)
-        return inter_loss
-
-    def forward(self, src_in_ori, trg_in_ori, src_ex_ori, trg_ex_ori, correspondence, gt_rot):
-        if len(correspondence) == 0:
-            return torch.tensor(0.).to(src_ori.device)
-
-        src_gt_rot = gt_rot[0]
-        trg_gt_rot = gt_rot[1]
-        inter_loss = (self.inter_loss(src_in_ori, trg_ex_ori, correspondence, src_gt_rot, trg_gt_rot) + self.inter_loss(src_ex_ori, trg_in_ori, correspondence, src_gt_rot, trg_gt_rot))/2
-        ori_loss = inter_loss
-
-        return ori_loss, inter_loss
-
-# for v2
-class OrientationLossv3(nn.Module):
-    def __init__(self):
-        super(OrientationLossv3, self).__init__()
-        self.eps = 1e-7
-
-    def inter_loss(self, src_ori, trg_ori, correspondence, src_gt_rot, trg_gt_rot):
-        src_ori = src_ori[:, correspondence[:,0]] 
-        trg_ori = trg_ori[:, correspondence[:,1]]
-
-        src_ori = torch.matmul(src_ori, src_gt_rot)
-        trg_ori = torch.matmul(trg_ori, trg_gt_rot)
-
-        diff = src_ori - trg_ori
-        f_norm = torch.norm(diff, p='fro', dim=(2, 3))
-        inter_loss = torch.mean(f_norm ** 2)
-        return inter_loss
-
-    def forward(self, src_in_ori, trg_in_ori, src_ex_ori, trg_ex_ori, correspondence, gt_rot):
-        if len(correspondence) == 0:
-            return torch.tensor(0.).to(src_ori.device)
-
-        src_gt_rot = gt_rot[0]
-        trg_gt_rot = gt_rot[1]
-        inter_loss = (self.inter_loss(src_in_ori, trg_ex_ori, correspondence, src_gt_rot, trg_gt_rot) + self.inter_loss(src_ex_ori, trg_in_ori, correspondence, src_gt_rot, trg_gt_rot))/2
-        ori_loss =  inter_loss
-
-        return ori_loss,  inter_loss

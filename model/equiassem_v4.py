@@ -43,9 +43,9 @@ def save_pc(filename:str, pcd_tensors:list):
         combined_cloud += pcd
     o3d.io.write_point_cloud(filename, combined_cloud)
 
-class EquiAssem_v3(pl.LightningModule):
+class EquiAssem_v4(pl.LightningModule):
     def __init__(self, lr, backbone='eqcnn', visualize=False):
-        super(EquiAssem_v3, self).__init__()
+        super(EquiAssem_v4, self).__init__()
 
         self.lr = lr
 
@@ -62,10 +62,12 @@ class EquiAssem_v3(pl.LightningModule):
                                     nn.LeakyReLU(),
                                     nn.Conv1d(self.feat_dim//3*3, self.feat_dim//3*3, kernel_size=1))
 
-        self.global_mlp = nn.Sequential(nn.Conv1d(self.feat_dim//2, self.feat_dim//2, kernel_size=1),
+        self.global_mlp = nn.Sequential(nn.Conv1d(self.feat_dim//2*2, self.feat_dim//2, kernel_size=1),
                                 nn.InstanceNorm1d(self.feat_dim//2),
                                 nn.Tanh())
-                                
+
+        self.pooling = 'max'
+
         # Optimal Transport
         self.optimal_transport = LearnableLogOptimalTransport(num_iterations=100)
 
@@ -181,7 +183,17 @@ class EquiAssem_v3(pl.LightningModule):
         src_shape_feats, src_occ_feats = src_inv_feats[:, :C], src_inv_feats[:, C:]
         trg_shape_feats, trg_occ_feats = trg_inv_feats[:, :C], trg_inv_feats[:, C:]
 
+        # 6. Occupancy descriptor: Global Pooling
+        if self.pooling == 'max':
+            src_global_feats = torch.max(src_occ_feats, dim=-1, keepdim=True)[0].expand_as(src_occ_feats)
+            trg_global_feats = torch.max(trg_occ_feats, dim=-1, keepdim=True)[0].expand_as(trg_occ_feats)
+        elif self.pooling == 'mean':
+            src_global_feats = torch.mean(src_occ_feats, dim=-1, keepdim=True).expand_as(src_occ_feats)
+            trg_global_feats = torch.mean(trg_occ_feats, dim=-1, keepdim=True).expand_as(trg_occ_feats)
+        
+        src_occ_feats = torch.cat([src_occ_feats, src_global_feats], dim=1)
         src_occ_feats = self.global_mlp(src_occ_feats)
+        trg_occ_feats = torch.cat([trg_occ_feats, trg_global_feats], dim=1)
         trg_occ_feats = self.global_mlp(trg_occ_feats)
 
         # 7. Combine Shape and Occupancy Descriptors
@@ -202,6 +214,24 @@ class EquiAssem_v3(pl.LightningModule):
         out_dict['estimated_rotat'] = estimated_transform[:3, :3].T
         out_dict['estimated_trans'] = -(estimated_transform[:3, :3].inverse() @ -estimated_transform[:3, 3])
 
+        if self.debug:
+            out_dict['src_shape_feats'] = src_shape_feats.squeeze(0)
+            out_dict['src_occ_feats'] = src_occ_feats.squeeze(0)
+            out_dict['src_matching_feats'] = src_matching_feature.squeeze(0)
+            out_dict['trg_shape_feats'] = trg_shape_feats.squeeze(0)
+            out_dict['trg_occ_feats'] = trg_occ_feats.squeeze(0)
+            out_dict['trg_matching_feats'] = trg_matching_feature.squeeze(0)
+            out_dict['src_ori'] = src_ori.squeeze(0)
+            out_dict['trg_ori'] = trg_ori.squeeze(0)
+            out_dict['src_pcd'] = src_pcd.squeeze(0)
+            out_dict['trg_pcd'] = trg_pcd.squeeze(0)
+            out_dict['src_pcd_raw'] = src_pcd_raw.squeeze(0)
+            out_dict['trg_pcd_raw'] = trg_pcd_raw.squeeze(0)
+            out_dict['src_gt_rot'] = in_dict['gt_rotat'][0].squeeze(0)
+            out_dict['trg_gt_rot'] = in_dict['gt_rotat'][1].squeeze(0)
+            out_dict['gt_correspondence'] = in_dict['gt_correspondence'].squeeze(0)
+            with open('debug.pickle', 'wb') as f: pickle.dump(out_dict, f, pickle.HIGHEST_PROTOCOL)
+        
         # 10. Calculate Loss
         gt_corr = in_dict['gt_correspondence'].squeeze(0)
         

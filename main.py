@@ -195,9 +195,9 @@ if __name__ == '__main__':
 
     if len(args.gpus) > 1: 
         from pytorch_lightning.strategies import DDPStrategy
-        args.parallel_strategy = DDPStrategy(find_unused_parameters=True)
+        args.parallel_strategy = DDPStrategy(find_unused_parameters=False)
         args.lr = len(args.gpus) * args.lr
-        args.n_worker = len(args.gpus) * 8
+        args.n_worker = len(args.gpus) * 4
     else: args.parallel_strategy = 'auto'
 
     main(args)
