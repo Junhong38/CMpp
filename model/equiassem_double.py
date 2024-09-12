@@ -46,9 +46,9 @@ def save_pc(filename:str, pcd_tensors:list):
         combined_cloud += pcd
     o3d.io.write_point_cloud(filename, combined_cloud)
 
-class EquiAssem_v2(pl.LightningModule):
+class EquiAssem_double(pl.LightningModule):
     def __init__(self, lr, backbone='eqcnn', visualize=False):
-        super(EquiAssem_v2, self).__init__()
+        super(EquiAssem_double, self).__init__()
 
         self.lr = lr
 
@@ -74,7 +74,7 @@ class EquiAssem_v2(pl.LightningModule):
                                 nn.Conv1d(self.feat_dim//2, self.feat_dim//2, kernel_size=1),
                                 nn.InstanceNorm1d(self.feat_dim//2),
                                 nn.Tanh())
-        self.pooling = 'max'
+        self.pooling = 'mean'
 
         self.matching_mlp = nn.Sequential(nn.Conv1d(self.feat_dim//3*3, self.feat_dim//3*3, kernel_size=1),
                                 nn.InstanceNorm1d(self.feat_dim//3*3),
@@ -84,7 +84,8 @@ class EquiAssem_v2(pl.LightningModule):
                                 nn.LeakyReLU())
 
         # Optimal Transport
-        self.optimal_transport = LearnableLogOptimalTransport(num_iterations=100)
+        self.optimal_transport_shape = LearnableLogOptimalTransport(num_iterations=100)
+        self.optimal_transport_occ = LearnableLogOptimalTransport(num_iterations=100)
 
         # LGR
         self.fine_matching = LocalGlobalRegistration(
@@ -102,14 +103,14 @@ class EquiAssem_v2(pl.LightningModule):
         self.circle_loss = CircleLoss()
         self.matching_loss = PointMatchingLoss()
         self.orientation_loss = OrientationLoss()
-        # self.occupancy_loss = OccupancyLossCosineDistance()
-        self.occupancy_loss = CircleLoss()
+        self.occupancy_loss = OccupancyLossCosineDistance()
+        # self.occupancy_loss = CircleLoss()
 
         # Weights for losses
         self.c_loss_weight = 1. 
         self.p_loss_weight = 1. 
         self.o_loss_weight = 1.
-        self.occ_loss_weight = 1.
+        self.occ_loss_weight = 0.1
 
         # Random rotation for equivariance checking
         rotation_matrix = torch.tensor([[0.26726124, -0.57735027,  0.77151675],
@@ -252,21 +253,19 @@ class EquiAssem_v2(pl.LightningModule):
                 src_occ_feats_R = self.global_mlp(src_occ_feats_R)
                 print('[7. Global Max- Pool] Inv:', torch.allclose(src_occ_feats, src_occ_feats_R, atol=1e-3))
 
-        # 7. Combine Shape and Occupancy Descriptors
-        src_matching_feature = self.matching_mlp(torch.cat([src_shape_feats, src_occ_feats], dim=1))
-        trg_matching_feature = self.matching_mlp(torch.cat([trg_shape_feats, -trg_occ_feats], dim=1))
+        # 7-1. Optimal Transport (Shape)
+        matching_scores_shape = torch.einsum('b c n , b c m -> b n m', src_shape_feats, trg_shape_feats) # (1, N, M)
+        matching_scores_shape = matching_scores_shape / src_shape_feats.shape[1] ** 0.5 # (1, N, M)
+        matching_scores_shape = self.optimal_transport_shape(matching_scores_shape) # (1, N, M) -> (1, N+1, M+1)
+        matching_scores_shape_drop = matching_scores_shape[:,:-1,:-1] # (1, N+1, M+1) -> (1, N, M)
 
-        ##### CHECK INV #####
-        if self.debug:
-            with torch.no_grad():
-                src_matching_feature_R = self.matching_mlp(torch.cat([src_shape_feats_R, src_occ_feats_R], dim=1))
-                print('[8. Matching Score] Inv:', torch.allclose(src_matching_feature, src_matching_feature_R, atol=1e-3))
+        # 7-2. Optimal Transport (Occupancy)
+        matching_scores_occ = torch.einsum('b c n , b c m -> b n m', src_occ_feats, -trg_occ_feats) # (1, N, M)
+        matching_scores_occ = matching_scores_occ / src_occ_feats.shape[1] ** 0.5 # (1, N, M)
+        matching_scores_occ = self.optimal_transport_occ(matching_scores_occ) # (1, N, M) -> (1, N+1, M+1)
+        matching_scores_occ_drop = matching_scores_occ[:,:-1,:-1] # (1, N+1, M+1) -> (1, N, M)
 
-        # 7. Optimal Transport
-        matching_scores = torch.einsum('b c n , b c m -> b n m', src_matching_feature, trg_matching_feature) # (1, N, M)
-        matching_scores = matching_scores / src_matching_feature.shape[1] ** 0.5 # (1, N, M)
-        matching_scores = self.optimal_transport(matching_scores) # (1, N, M) -> (1, N+1, M+1)
-        matching_scores_drop = matching_scores[:,:-1,:-1] # (1, N+1, M+1) -> (1, N, M)
+        matching_scores_drop = (matching_scores_shape_drop + matching_scores_occ_drop) / 2
 
         # 8. Weighted SVD with top-k correspondence selections
         with torch.no_grad():
@@ -275,10 +274,10 @@ class EquiAssem_v2(pl.LightningModule):
 
         out_dict['src_shape_feats'] = src_shape_feats.squeeze(0)
         out_dict['src_occ_feats'] = src_occ_feats.squeeze(0)
-        out_dict['src_matching_feats'] = src_matching_feature.squeeze(0)
+        # out_dict['src_matching_feats'] = src_matching_feature.squeeze(0)
         out_dict['trg_shape_feats'] = trg_shape_feats.squeeze(0)
         out_dict['trg_occ_feats'] = trg_occ_feats.squeeze(0)
-        out_dict['trg_matching_feats'] = trg_matching_feature.squeeze(0)
+        # out_dict['trg_matching_feats'] = trg_matching_feature.squeeze(0)
 
         out_dict['src_ori'] = src_ori.squeeze(0)
         out_dict['trg_ori'] = trg_ori.squeeze(0)
@@ -303,14 +302,14 @@ class EquiAssem_v2(pl.LightningModule):
         loss['c_loss'], loss['FMR'] = self.circle_loss(src_pcd_raw, trg_pcd_raw, src_shape_feats.transpose(-2,-1), trg_shape_feats.transpose(-2,-1), gt_corr)
 
         # 9-2 point matching loss
-        loss['p_loss'] = self.matching_loss(matching_scores, gt_corr, src_pcd_raw, trg_pcd_raw)
+        loss['p_loss'] = (self.matching_loss(matching_scores_shape, gt_corr, src_pcd_raw, trg_pcd_raw) + self.matching_loss(matching_scores_occ, gt_corr, src_pcd_raw, trg_pcd_raw))/2
 
         # 9-3. orientation loss
         loss['o_loss'] = self.orientation_loss(src_ori, trg_ori, gt_corr, in_dict['gt_rotat'])
         
         # 9-4. occupancy loss
-        # loss['occ_loss']= self.occupancy_loss(src_occ_feats, -trg_occ_feats, gt_corr)
-        loss['occ_loss'], loss['occ_FMR'] = self.circle_loss(src_pcd_raw, trg_pcd_raw, src_occ_feats.transpose(-2,-1), -trg_occ_feats.transpose(-2,-1), gt_corr)
+        loss['occ_loss']= self.occupancy_loss(src_occ_feats, -trg_occ_feats, gt_corr)
+        # loss['occ_loss'], loss['occ_FMR'] = self.circle_loss(src_pcd_raw, trg_pcd_raw, src_occ_feats.transpose(-2,-1), -trg_occ_feats.transpose(-2,-1), gt_corr)
 
         # 9-4. final loss
         loss['loss'] = self.c_loss_weight * loss['c_loss'] + self.p_loss_weight * loss['p_loss'] + self.o_loss_weight * loss['o_loss'] +  self.occ_loss_weight * loss['occ_loss']

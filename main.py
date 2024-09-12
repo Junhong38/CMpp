@@ -21,6 +21,8 @@ from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor
 from model.equiassem_v1 import EquiAssem_v1
 from model.equiassem_v2 import EquiAssem_v2
 from model.equiassem_v3 import EquiAssem_v3
+from model.equiassem_double import EquiAssem_double
+
 # from model.equiassem_occ_v1 import EquiAssem_occ_v1
 # from model.equiassem_occ_v2 import EquiAssem_occ_v2
 # from model.equiassem_occ_v3 import EquiAssem_occ_v3
@@ -76,6 +78,8 @@ def main(args):
     elif args.model == 'fix_v5': model = EquiAssem_fix_v5(lr=args.lr, backbone=args.backbone)
     elif args.model == 'fix_v6': model = EquiAssem_fix_v6(lr=args.lr, backbone=args.backbone)
     elif args.model == 'fix_v7': model = EquiAssem_fix_v7(lr=args.lr, backbone=args.backbone)
+
+    elif args.model == 'double': model = EquiAssem_double(lr=args.lr, backbone=args.backbone)
     print(model)
 
     # Dataset initialization
