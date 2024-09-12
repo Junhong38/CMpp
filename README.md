@@ -33,9 +33,10 @@ mamba create -n equiassem_new python=3.8.19 -y
 mamba activate equiassem_new
 # pytorch: 2.4.1
 mamba install pytorch torchvision torchaudio pytorch-cuda=11.8 -c pytorch -c nvidia -y 
-# pytorch-lightning: 
+# pytorch-lightning: 2.0.8
 pip install pytorch-lightning==2.0.8
 pip install einops trimesh wandb open3d
 pip install git+https://github.com/KinglittleQ/torch-batch-svd
 pip install git+'https://github.com/otaheri/chamfer_distance'
+pip install "git+https://github.com/facebookresearch/pytorch3d.git@stable"
 ```

@@ -81,7 +81,7 @@ class EquiAssem_v2(pl.LightningModule):
         # Weights for losses
         self.c_loss_weight = 1. 
         self.p_loss_weight = 1. 
-        self.o_loss_weight = 0
+        self.o_loss_weight = 0.1
 
         # Random rotation for equivariance checking
         rotation_matrix = torch.tensor([[0.26726124, -0.57735027,  0.77151675],
