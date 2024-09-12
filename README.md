@@ -40,3 +40,6 @@ pip install git+https://github.com/KinglittleQ/torch-batch-svd
 pip install git+'https://github.com/otaheri/chamfer_distance'
 pip install "git+https://github.com/facebookresearch/pytorch3d.git@stable"
 ```
+
+#
+killall -9 /home/nahyuklee/miniforge3/envs/equiassem_new/bin/python
