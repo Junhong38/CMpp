@@ -7,7 +7,6 @@ import time
 import gc
 from distutils.dir_util import copy_tree
 
-
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -18,68 +17,31 @@ import pytorch_lightning as pl
 from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor
 
-from model.equiassem_v1 import EquiAssem_v1
-from model.equiassem_v2 import EquiAssem_v2
-from model.equiassem_v3 import EquiAssem_v3
-from model.equiassem_double import EquiAssem_double
 
-# from model.equiassem_occ_v1 import EquiAssem_occ_v1
-# from model.equiassem_occ_v2 import EquiAssem_occ_v2
-# from model.equiassem_occ_v3 import EquiAssem_occ_v3
-# from model.equiassem_occ_v4 import EquiAssem_occ_v4 
-# from model.equiassem_occ_v5 import EquiAssem_occ_v5
-# from model.equiassem_occ_v6 import EquiAssem_occ_v6
-# from model.equiassem_occ_v7 import EquiAssem_occ_v7
 
-# from model.equiassem_fix_v1 import EquiAssem_fix_v1
-# from model.equiassem_fix_v2 import EquiAssem_fix_v2
-# from model.equiassem_fix_v3 import EquiAssem_fix_v3
-# from model.equiassem_fix_v4 import EquiAssem_fix_v4 
-# from model.equiassem_fix_v5 import EquiAssem_fix_v5
-# from model.equiassem_fix_v6 import EquiAssem_fix_v6
-# from model.equiassem_fix_v7 import EquiAssem_fix_v7
-
-from common.logger import Logger
 from data.dataset import GADataset
 from common import utils
 import open3d as o3d
 
-from common.evaluation import Evaluator
-from common.logger import AverageMeter
-
 import warnings
 warnings.filterwarnings("ignore", message="divide by zero encountered in double_scalars", category=RuntimeWarning)
 
+torch.set_float32_matmul_precision('medium')
 
 def main(args):
     # Model initialization
-    if args.model == 'v1': model = EquiAssem_v1(lr=args.lr, backbone=args.backbone)
-    elif args.model == 'v1g': model = EquiAssem_v1g(lr=args.lr, backbone=args.backbone)
-    elif args.model == 'v2': model = EquiAssem_v2(lr=args.lr, backbone=args.backbone)
-    elif args.model == 'v2g': model = EquiAssem_v2g(lr=args.lr, backbone=args.backbone)
-    elif args.model == 'v3': model = EquiAssem_v3(lr=args.lr, backbone=args.backbone)
-    elif args.model == 'v3g': model = EquiAssem_v3g(lr=args.lr, backbone=args.backbone)
-    elif args.model == 'v4': model = EquiAssem_v4(lr=args.lr, backbone=args.backbone)
-    elif args.model == 'v4g': model = EquiAssem_v4g(lr=args.lr, backbone=args.backbone)
-    elif args.model == 'dgcnn': model = EquiAssem_dgcnn(lr=args.lr)
-
-    elif args.model == 'occ_v1': model = EquiAssem_occ_v1(lr=args.lr, backbone=args.backbone)
-    elif args.model == 'occ_v2': model = EquiAssem_occ_v2(lr=args.lr, backbone=args.backbone)
-    elif args.model == 'occ_v3': model = EquiAssem_occ_v3(lr=args.lr, backbone=args.backbone)
-    elif args.model == 'occ_v4': model = EquiAssem_occ_v4(lr=args.lr, backbone=args.backbone)
-    elif args.model == 'occ_v5': model = EquiAssem_occ_v5(lr=args.lr, backbone=args.backbone)
-    elif args.model == 'occ_v6': model = EquiAssem_occ_v6(lr=args.lr, backbone=args.backbone)
-    elif args.model == 'occ_v7': model = EquiAssem_occ_v7(lr=args.lr, backbone=args.backbone)
-
-    elif args.model == 'fix_v1': model = EquiAssem_fix_v1(lr=args.lr, backbone=args.backbone)
-    elif args.model == 'fix_v2': model = EquiAssem_fix_v2(lr=args.lr, backbone=args.backbone)
-    elif args.model == 'fix_v3': model = EquiAssem_fix_v3(lr=args.lr, backbone=args.backbone)
-    elif args.model == 'fix_v4': model = EquiAssem_fix_v4(lr=args.lr, backbone=args.backbone)
-    elif args.model == 'fix_v5': model = EquiAssem_fix_v5(lr=args.lr, backbone=args.backbone)
-    elif args.model == 'fix_v6': model = EquiAssem_fix_v6(lr=args.lr, backbone=args.backbone)
-    elif args.model == 'fix_v7': model = EquiAssem_fix_v7(lr=args.lr, backbone=args.backbone)
-
-    elif args.model == 'double': model = EquiAssem_double(lr=args.lr, backbone=args.backbone)
+    if args.model == 'v1': 
+        from model.equiassem_v1 import EquiAssem_v1
+        model = EquiAssem_v1(lr=args.lr)
+    elif args.model == 'v2': 
+        from model.equiassem_v2 import EquiAssem_v2
+        model = EquiAssem_v2(lr=args.lr)
+    elif args.model == 'v3': 
+        from model.equiassem_v3 import EquiAssem_v3
+        model = EquiAssem_v3(lr=args.lr)
+    elif args.model == 'v4': 
+        from model.equiassem_v4 import EquiAssem_v4
+        model = EquiAssem_v4(lr=args.lr)
     print(model)
 
     # Dataset initialization
@@ -158,7 +120,7 @@ def main(args):
     ]
 
     logger = WandbLogger(
-        project='equiassem-lightning',
+        project='equiassem_new',
         name=logger_name,
         id=logger_id,
         save_dir=ckp_dir,
@@ -168,14 +130,16 @@ def main(args):
 
     trainer = pl.Trainer(
         logger=logger,
-        gpus=all_gpus,
+        accelerator='gpu',
+        devices=all_gpus,
+        precision=32,
+        gradient_clip_val=None,
         strategy=args.parallel_strategy,
         max_epochs=args.epochs,
         callbacks=callbacks,
         check_val_every_n_epoch=1,
-        # log_every_n_steps=100,
-        profiler='simple',  # training time bottleneck analysis
-        # precision=64,
+        profiler='simple',
+        fast_dev_run=False,
     )
 
     # automatically detect existing checkpoints in case of preemption
@@ -230,8 +194,10 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     if len(args.gpus) > 1: 
-        args.parallel_strategy = 'ddp'
+        from pytorch_lightning.strategies import DDPStrategy
+        args.parallel_strategy = DDPStrategy(find_unused_parameters=True)
         args.lr = len(args.gpus) * args.lr
-    else: args.parallel_strategy = None
+        args.n_worker = len(args.gpus) * 8
+    else: args.parallel_strategy = 'auto'
 
     main(args)

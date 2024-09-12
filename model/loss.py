@@ -19,50 +19,6 @@ class CircleLoss(nn.Module):
 
         self.max_points = 128
 
-
-    # def get_circle_loss(self, coords_dist, feats_dist):
-    #     """
-    #     Modified from: https://github.com/XuyangBai/D3Feat.pytorch
-    #     """
-
-    #     pos_mask = coords_dist < self.pos_radius
-    #     neg_mask = coords_dist > self.safe_radius
-
-    #     # get anchors that have both positive and negative pairs
-    #     row_sel = ((pos_mask.sum(-1) > 0) * (neg_mask.sum(-1) > 0)).detach()
-    #     col_sel = ((pos_mask.sum(-2) > 0) * (neg_mask.sum(-2) > 0)).detach()
-
-    #     # get alpha for both positive and negative pairs
-    #     pos_weight = feats_dist - 1e5 * (~pos_mask).float()  # mask the non-positive 
-    #     pos_weight = (pos_weight - self.pos_optimal)  # mask the uninformative positive
-    #     pos_weight = torch.max(torch.zeros_like(pos_weight), pos_weight).detach() 
-
-    #     neg_weight = feats_dist + 1e5 * (~neg_mask).float()  # mask the non-negative
-    #     neg_weight = (self.neg_optimal - neg_weight)  # mask the uninformative negative
-    #     neg_weight = torch.max(torch.zeros_like(neg_weight), neg_weight).detach()
-
-    #     # Positive loss calculation
-    #     lse_pos_row = torch.logsumexp(self.log_scale * (feats_dist - self.pos_margin) * pos_weight, dim=-1)
-    #     lse_pos_col = torch.logsumexp(self.log_scale * (feats_dist - self.pos_margin) * pos_weight, dim=-2)
-
-    #     # Negative loss calculation
-    #     lse_neg_row = torch.logsumexp(self.log_scale * (self.neg_margin - feats_dist) * neg_weight, dim=-1)
-    #     lse_neg_col = torch.logsumexp(self.log_scale * (self.neg_margin - feats_dist) * neg_weight, dim=-2)
-
-    #     # The following steps return the circle_loss as per the original code
-    #     loss_row = F.softplus(lse_pos_row + lse_neg_row) / self.log_scale
-    #     loss_col = F.softplus(lse_pos_col + lse_neg_col) / self.log_scale
-
-    #     circle_loss = (loss_row[row_sel].mean() + loss_col[col_sel].mean()) / 2
-
-    #     with torch.no_grad():
-    #         # Additionally return pos_loss and neg_loss
-    #         pos_loss = (F.softplus(lse_pos_row) / self.log_scale)[row_sel].mean()
-    #         neg_loss = (F.softplus(lse_neg_row) / self.log_scale)[row_sel].mean()
-
-    #     return circle_loss, pos_loss, neg_loss
-
-
     def get_circle_loss(self, coords_dist, feats_dist):
         """
         Modified from: https://github.com/XuyangBai/D3Feat.pytorch
@@ -143,11 +99,11 @@ class CircleLoss(nn.Module):
         # Calculate circle loss and feature matching recall (FMR)
         circle_loss = self.get_circle_loss(coords_dist, feats_dist)
         recall = self.get_recall(coords_dist, feats_dist)
-
+        
         if circle_loss != circle_loss:
             print("circle_loss: NaN detected !!")
             circle_loss = torch.tensor(0.).to(src_feats.device)
-
+            
         return circle_loss, recall
 
 class PointMatchingLoss(nn.Module):

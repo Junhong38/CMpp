@@ -53,17 +53,11 @@ def weighted_procrustes(
     ref_points_centered = ref_points - ref_centroid  # (B, N, 3)
 
     H = src_points_centered.permute(0, 2, 1) @ (weights * ref_points_centered)
-    U, _, V = torch.svd(H.cpu())  # H = USV^T
-
-    # try:
-    #     U, _, V = svd(H)  # H = USV^T # 1,3,3 에러
-    # except:
-    #     U, _, V = torch.svd(H.cpu())
+    try: U, _, V = svd(H)
+    except: U, _, V = torch.svd(H.cpu())
     Ut, V = U.transpose(1, 2).cuda(), V.cuda()
     eye = torch.eye(3).unsqueeze(0).repeat(batch_size, 1, 1).cuda()
-    # eye[:, -1, -1] = torch.sign(torch.det(V @ Ut))
-    V_Ut = (V @ Ut).to(dtype=torch.float32)
-    eye[:, -1, -1] = torch.sign(torch.det(V_Ut).to(dtype=torch.float16))
+    eye[:, -1, -1] = torch.sign(torch.det(V @ Ut))
     R = V @ eye @ Ut
 
     t = ref_centroid.permute(0, 2, 1) - R @ src_centroid.permute(0, 2, 1)

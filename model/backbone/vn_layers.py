@@ -17,7 +17,7 @@ import torch.nn as nn
 import torch.nn.init as init
 import torch.nn.functional as F
 
-EPS = 0 # 1e-6
+EPS = 1e-6
 
 def knn(x, k):
     inner = -2*torch.matmul(x.transpose(2, 1), x)

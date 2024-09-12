@@ -86,8 +86,6 @@ class EQCNN_equi(nn.Module):
 
         self.conv5 = VNLinearLeakyReLU(256//3+128//3+64//3*2, feat_dim//3, dim=4, share_nonlinearity=True)
 
-        self.std_feature = VNStdFeature(feat_dim//3*2, dim=4, normalize_frame=False)
-
     def forward(self, x):
         x = x.transpose(2, 1) # (batch_size, 3, num_points)
         batch_size = x.size(0)
@@ -112,7 +110,6 @@ class EQCNN_equi(nn.Module):
         x4 = self.pool4(x)
         
         x = torch.cat((x1, x2, x3, x4), dim=1)
-        equi_feat = self.conv5(x) # (batch_size, feat_dim//3//2, num_points)
+        equi_feat = self.conv5(x) # (batch_size, feat_dim//3, num_points)
         
-
         return equi_feat
