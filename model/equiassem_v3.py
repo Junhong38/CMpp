@@ -65,7 +65,11 @@ class EquiAssem_v3(pl.LightningModule):
         self.global_mlp = nn.Sequential(nn.Conv1d(self.feat_dim//2, self.feat_dim//2, kernel_size=1),
                                 nn.InstanceNorm1d(self.feat_dim//2),
                                 nn.Tanh())
-                                
+
+        self.matching_mlp = nn.Sequential(nn.Conv1d(self.feat_dim//3*3, self.feat_dim//3*3, kernel_size=1),
+                                nn.InstanceNorm1d(self.feat_dim//3*3),
+                                nn.LeakyReLU())
+
         # Optimal Transport
         self.optimal_transport = LearnableLogOptimalTransport(num_iterations=100)
 
@@ -185,8 +189,8 @@ class EquiAssem_v3(pl.LightningModule):
         trg_occ_feats = self.global_mlp(trg_occ_feats)
 
         # 7. Combine Shape and Occupancy Descriptors
-        src_matching_feature = torch.cat([src_shape_feats, src_occ_feats], dim=1)
-        trg_matching_feature = torch.cat([trg_shape_feats, trg_occ_feats], dim=1)
+        src_matching_feature = self.matching_mlp(torch.cat([src_shape_feats, src_occ_feats], dim=1))
+        trg_matching_feature = self.matching_mlp( torch.cat([trg_shape_feats, trg_occ_feats], dim=1))
 
         # 8. Optimal Transport
         matching_scores = torch.einsum('b c n , b c m -> b n m', src_matching_feature, trg_matching_feature) # (1, N, M)
