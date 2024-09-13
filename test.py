@@ -33,13 +33,13 @@ def test(args):
     # Model initialization
     if args.model == 'v1': 
         from model.equiassem_v1 import EquiAssem_v1
-        model = EquiAssem_v1(lr=args.lr)
+        model = EquiAssem_v1(lr=args.lr, visualize=args.visualize)
     elif args.model == 'v2': 
         from model.equiassem_v2 import EquiAssem_v2
-        model = EquiAssem_v2(lr=args.lr)
+        model = EquiAssem_v2(lr=args.lr, visualize=args.visualize)
     elif args.model == 'v3': 
         from model.equiassem_v3 import EquiAssem_v3
-        model = EquiAssem_v3(lr=args.lr)
+        model = EquiAssem_v3(lr=args.lr, visualize=args.visualize)
     elif args.model == 'v4': 
         from model.equiassem_v4 import EquiAssem_v4
         model = EquiAssem_v4(lr=args.lr, visualize=args.visualize)
