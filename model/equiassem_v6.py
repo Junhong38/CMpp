@@ -43,9 +43,9 @@ def save_pc(filename:str, pcd_tensors:list):
         combined_cloud += pcd
     o3d.io.write_point_cloud(filename, combined_cloud)
 
-class EquiAssem_v5(pl.LightningModule):
+class EquiAssem_v6(pl.LightningModule):
     def __init__(self, lr, backbone='eqcnn', visualize=False):
-        super(EquiAssem_v5, self).__init__()
+        super(EquiAssem_v6, self).__init__()
 
         self.lr = lr
 
@@ -91,13 +91,13 @@ class EquiAssem_v5(pl.LightningModule):
         self.circle_loss = CircleLoss()
         self.matching_loss = PointMatchingLoss()
         self.orientation_loss = OrientationLoss()
-        self.occupancy_loss = OccupancyLossCosineDistance()
+        self.occupancy_loss = CircleLoss() # OccupancyLossCosineDistance()
 
         # Weights for losses
         self.c_loss_weight = 1. 
         self.p_loss_weight = 1. 
         self.o_loss_weight = 0.1
-        self.occ_loss_weight = 1.
+        self.occ_loss_weight = 0.1
 
         # Random rotation for equivariance checking
         rotation_matrix = torch.tensor([[0.26726124, -0.57735027,  0.77151675],
@@ -253,7 +253,7 @@ class EquiAssem_v5(pl.LightningModule):
         loss['o_loss'] = self.orientation_loss(src_ori, trg_ori, gt_corr, in_dict['gt_rotat'])
         
         # 9-4. occupancy loss
-        loss['occ_loss']= self.occupancy_loss(src_occ_feats, -trg_occ_feats, gt_corr)
+        loss['occ_loss'], loss['occ_FMR']= self.occupancy_loss(src_pcd_raw, trg_pcd_raw, src_occ_feats.transpose(-2,-1), -trg_occ_feats.transpose(-2,-1), gt_corr)
 
         # 9-4. final loss
         loss['loss'] = self.c_loss_weight * loss['c_loss'] + self.p_loss_weight * loss['p_loss'] + self.o_loss_weight * loss['o_loss'] +  self.occ_loss_weight * loss['occ_loss']

@@ -236,7 +236,6 @@ class EquiAssem_v2(pl.LightningModule):
         # (c) Compute CoRrespondence Distance (CRD) betwween prediction & ground-truth
         eval_result['crd'] = self._correspondence_distance(assm_pred, assm_grtr, is_trg_larger)
 
-        
         filepath = in_dict['filepath']
         base_path = os.path.join('../../data/bbad_v2', filepath[0])
         obj_paths = [os.path.join(base_path, x) for x in os.listdir(base_path)]

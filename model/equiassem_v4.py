@@ -108,7 +108,7 @@ class EquiAssem_v4(pl.LightningModule):
                   [0.80178373,  0.57735027,  0.15430335]], dtype=torch.float64)
         self.R = rotation_matrix.unsqueeze(0)
         
-        self.debug = True
+        self.debug = False
         self.visualize = visualize
 
         self.validation_step_outputs = []
@@ -298,7 +298,7 @@ class EquiAssem_v4(pl.LightningModule):
         # (c) Compute CoRrespondence Distance (CRD) betwween prediction & ground-truth
         eval_result['crd'] = self._correspondence_distance(assm_pred, assm_grtr, is_trg_larger)
 
-        
+        # if self.debug:
         # filepath = in_dict['filepath']
         # base_path = os.path.join('../../data/bbad_v2', filepath[0])
         # obj_paths = [os.path.join(base_path, x) for x in os.listdir(base_path)]
