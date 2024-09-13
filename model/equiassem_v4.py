@@ -29,6 +29,9 @@ import random
 
 import pickle
 
+from common.evaluation import Evaluator
+import os
+import trimesh
 def save_pc(filename:str, pcd_tensors:list):
     pcds = []
     for tensor_ in pcd_tensors:
@@ -109,6 +112,7 @@ class EquiAssem_v4(pl.LightningModule):
         self.visualize = visualize
 
         self.validation_step_outputs = []
+        self.test_step_outputs = []
         
     def configure_optimizers(self):
         """Build optimizer and lr scheduler."""
@@ -140,19 +144,21 @@ class EquiAssem_v4(pl.LightningModule):
         self.validation_step_outputs.clear()
 
     def test_step(self, in_dict, batch_idx):
-        _, loss_dict = self.forward_pass(in_dict, mode='test', optimizer_idx=-1, visualize=self.visualize)
+        _, loss_dict = self.forward_pass(in_dict, mode='test', visualize=self.visualize)
+        self.test_step_outputs.append(loss_dict)
         return loss_dict
 
-    def test_epoch_end(self, outputs):    
+    def on_test_epoch_end(self):    
         # avg_loss among all data
         losses = {
-            f'test/{k}': torch.stack([output[k] for output in outputs])
-            for k in outputs[0].keys()
+            f'val/{k}': torch.stack([output[k] for output in self.test_step_outputs])
+            for k in self.test_step_outputs[0].keys()
         }
         avg_loss = {k: (v).sum() / v.size(0) for k, v in losses.items()}
         print('; '.join([f'{k}: {v.item():.6f}' for k, v in avg_loss.items()]))
         # this is a hack to get results outside `Trainer.test()` function
         self.test_results = avg_loss
+        self.test_step_outputs.clear()
 
     def forward_pass(self, in_dict, mode, visualize=False):
 
@@ -264,6 +270,7 @@ class EquiAssem_v4(pl.LightningModule):
             log_dict = {f'{mode}/{k}': v.item() for k, v in loss.items()}
             self.log_dict(log_dict, logger=True, sync_dist=False, rank_zero_only=True, on_step=False, on_epoch=True, batch_size=1)
         
+
         return out_dict, loss
 
     @torch.no_grad()
@@ -290,9 +297,39 @@ class EquiAssem_v4(pl.LightningModule):
         # (c) Compute CoRrespondence Distance (CRD) betwween prediction & ground-truth
         eval_result['crd'] = self._correspondence_distance(assm_pred, assm_grtr, is_trg_larger)
 
+        
+        filepath = in_dict['filepath']
+        base_path = os.path.join('../../data/bbad_v2', filepath[0])
+        obj_paths = [os.path.join(base_path, x) for x in os.listdir(base_path)]
+        mesh = [trimesh.load_mesh(x) for x in obj_paths]
+        mesh_t = [m.copy() for m in mesh]
+        for idx, trans in enumerate(in_dict['gt_trans']):
+            mesh_t[idx].vertices -= trans[0].cpu().detach().numpy()
+        mesh_t2 = [m.copy() for m in mesh_t]
+        for idx, rotat in enumerate(in_dict['gt_rotat']):
+            mesh_t2[idx].vertices = torch.einsum('x y, n y -> n x', rotat[0].cpu().detach(), torch.tensor(mesh_t2[idx].vertices).float()).numpy()
+        
+        pcd0 = torch.tensor(mesh_t2[0].vertices).float()
+        pcd1 = torch.tensor(mesh_t2[1].vertices).float()
+        _, pred = self._pairwise_mating(pcd0, pcd1, pred_relative_trsfm[0], pred_relative_trsfm[1], is_trg_larger)
+        mesh_t3 = mesh_t2.copy()
+        mesh_t3[0].vertices = pred[0].cpu().detach()
+        mesh_t3[1].vertices = pred[1].cpu().detach()
+        combined_mesh = trimesh.util.concatenate([mesh_t3[0], mesh_t3[1]])
+
+        try:
+            intersection_volume = trimesh.boolean.intersection([mesh_t3[0], mesh_t3[1]]).volume
+            union_volume = mesh_t3[0].volume + mesh_t3[1].volume 
+            iou = min((intersection_volume / union_volume) * 100, 1.0)
+        except ValueError as e:
+            print('not watertight mesh!')
+            iou = 0
+        eval_result['iou'] = torch.tensor(iou)
+
         if visualize:
-            save_pc(f"./vis/o_loss{round(out_dict['o_loss'].item(),2)}_occ_loss{round(out_dict['occ_loss'].item(),2)}_rrmse{round(eval_result['rrmse'].item(),1)}_crd{round(eval_result['crd'].item(),2)}_pred.pcd", pcds_pred)
-            save_pc(f"./vis/o_loss{round(out_dict['o_loss'].item(),2)}_occ_loss{round(out_dict['occ_loss'].item(),2)}_rrmse{round(eval_result['rrmse'].item(),1)}_crd{round(eval_result['crd'].item(),2)}_grtr.pcd", pcds_grtr)
+            save_pc(f"./vis/iou{round(iou,2)}_o_loss{round(out_dict['o_loss'].item(),2)}_occ_loss{round(out_dict['occ_loss'].item(),2)}_rrmse{round(eval_result['rrmse'].item(),1)}_crd{round(eval_result['crd'].item(),2)}_pred.pcd", pcds_pred)
+            save_pc(f"./vis/iou{round(iou,2)}_o_loss{round(out_dict['o_loss'].item(),2)}_occ_loss{round(out_dict['occ_loss'].item(),2)}_rrmse{round(eval_result['rrmse'].item(),1)}_crd{round(eval_result['crd'].item(),2)}_grtr.pcd", pcds_grtr)
+
 
         return eval_result
     

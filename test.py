@@ -42,7 +42,7 @@ def test(args):
         model = EquiAssem_v3(lr=args.lr)
     elif args.model == 'v4': 
         from model.equiassem_v4 import EquiAssem_v4
-        model = EquiAssem_v4(lr=args.lr)
+        model = EquiAssem_v4(lr=args.lr, visualize=args.visualize)
     print(model)
     model.to(torch.device('cuda:0'))
     model.eval()
