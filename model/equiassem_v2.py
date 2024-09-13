@@ -94,7 +94,8 @@ class EquiAssem_v2(pl.LightningModule):
         self.visualize = visualize
 
         self.validation_step_outputs = []
-        
+        self.test_step_outputs = []
+
     def configure_optimizers(self):
         """Build optimizer and lr scheduler."""
         lr = self.lr
@@ -125,19 +126,21 @@ class EquiAssem_v2(pl.LightningModule):
         self.validation_step_outputs.clear()
 
     def test_step(self, in_dict, batch_idx):
-        _, loss_dict = self.forward_pass(in_dict, mode='test', optimizer_idx=-1, visualize=self.visualize)
+        _, loss_dict = self.forward_pass(in_dict, mode='test', visualize=self.visualize)
+        self.test_step_outputs.append(loss_dict)
         return loss_dict
 
-    def test_epoch_end(self, outputs):    
+    def on_test_epoch_end(self):    
         # avg_loss among all data
         losses = {
-            f'test/{k}': torch.stack([output[k] for output in outputs])
-            for k in outputs[0].keys()
+            f'val/{k}': torch.stack([output[k] for output in self.test_step_outputs])
+            for k in self.test_step_outputs[0].keys()
         }
         avg_loss = {k: (v).sum() / v.size(0) for k, v in losses.items()}
         print('; '.join([f'{k}: {v.item():.6f}' for k, v in avg_loss.items()]))
         # this is a hack to get results outside `Trainer.test()` function
         self.test_results = avg_loss
+        self.test_step_outputs.clear()
 
     def forward_pass(self, in_dict, mode, visualize=False):
 
