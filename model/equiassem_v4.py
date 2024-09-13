@@ -108,7 +108,7 @@ class EquiAssem_v4(pl.LightningModule):
                   [0.80178373,  0.57735027,  0.15430335]], dtype=torch.float64)
         self.R = rotation_matrix.unsqueeze(0)
         
-        self.debug = False
+        self.debug = True
         self.visualize = visualize
 
         self.validation_step_outputs = []
@@ -241,7 +241,8 @@ class EquiAssem_v4(pl.LightningModule):
             out_dict['trg_gt_rot'] = in_dict['gt_rotat'][1].squeeze(0)
             out_dict['gt_correspondence'] = in_dict['gt_correspondence'].squeeze(0)
             with open('debug.pickle', 'wb') as f: pickle.dump(out_dict, f, pickle.HIGHEST_PROTOCOL)
-        
+            breakpoint()
+            
         # 10. Calculate Loss
         gt_corr = in_dict['gt_correspondence'].squeeze(0)
         
@@ -298,33 +299,33 @@ class EquiAssem_v4(pl.LightningModule):
         eval_result['crd'] = self._correspondence_distance(assm_pred, assm_grtr, is_trg_larger)
 
         
-        filepath = in_dict['filepath']
-        base_path = os.path.join('../../data/bbad_v2', filepath[0])
-        obj_paths = [os.path.join(base_path, x) for x in os.listdir(base_path)]
-        mesh = [trimesh.load_mesh(x) for x in obj_paths]
-        mesh_t = [m.copy() for m in mesh]
-        for idx, trans in enumerate(in_dict['gt_trans']):
-            mesh_t[idx].vertices -= trans[0].cpu().detach().numpy()
-        mesh_t2 = [m.copy() for m in mesh_t]
-        for idx, rotat in enumerate(in_dict['gt_rotat']):
-            mesh_t2[idx].vertices = torch.einsum('x y, n y -> n x', rotat[0].cpu().detach(), torch.tensor(mesh_t2[idx].vertices).float()).numpy()
+        # filepath = in_dict['filepath']
+        # base_path = os.path.join('../../data/bbad_v2', filepath[0])
+        # obj_paths = [os.path.join(base_path, x) for x in os.listdir(base_path)]
+        # mesh = [trimesh.load_mesh(x) for x in obj_paths]
+        # mesh_t = [m.copy() for m in mesh]
+        # for idx, trans in enumerate(in_dict['gt_trans']):
+        #     mesh_t[idx].vertices -= trans[0].cpu().detach().numpy()
+        # mesh_t2 = [m.copy() for m in mesh_t]
+        # for idx, rotat in enumerate(in_dict['gt_rotat']):
+        #     mesh_t2[idx].vertices = torch.einsum('x y, n y -> n x', rotat[0].cpu().detach(), torch.tensor(mesh_t2[idx].vertices).float()).numpy()
         
-        pcd0 = torch.tensor(mesh_t2[0].vertices).float()
-        pcd1 = torch.tensor(mesh_t2[1].vertices).float()
-        _, pred = self._pairwise_mating(pcd0, pcd1, pred_relative_trsfm[0], pred_relative_trsfm[1], is_trg_larger)
-        mesh_t3 = mesh_t2.copy()
-        mesh_t3[0].vertices = pred[0].cpu().detach()
-        mesh_t3[1].vertices = pred[1].cpu().detach()
-        combined_mesh = trimesh.util.concatenate([mesh_t3[0], mesh_t3[1]])
+        # pcd0 = torch.tensor(mesh_t2[0].vertices).float()
+        # pcd1 = torch.tensor(mesh_t2[1].vertices).float()
+        # _, pred = self._pairwise_mating(pcd0, pcd1, pred_relative_trsfm[0], pred_relative_trsfm[1], is_trg_larger)
+        # mesh_t3 = mesh_t2.copy()
+        # mesh_t3[0].vertices = pred[0].cpu().detach()
+        # mesh_t3[1].vertices = pred[1].cpu().detach()
+        # combined_mesh = trimesh.util.concatenate([mesh_t3[0], mesh_t3[1]])
 
-        try:
-            intersection_volume = trimesh.boolean.intersection([mesh_t3[0], mesh_t3[1]]).volume
-            union_volume = mesh_t3[0].volume + mesh_t3[1].volume 
-            iou = min((intersection_volume / union_volume) * 100, 1.0)
-        except ValueError as e:
-            print('not watertight mesh!')
-            iou = 0
-        eval_result['iou'] = torch.tensor(iou)
+        # try:
+        #     intersection_volume = trimesh.boolean.intersection([mesh_t3[0], mesh_t3[1]]).volume
+        #     union_volume = mesh_t3[0].volume + mesh_t3[1].volume 
+        #     iou = min((intersection_volume / union_volume) * 100, 1.0)
+        # except ValueError as e:
+        #     print('not watertight mesh!')
+        #     iou = 0
+        # eval_result['iou'] = torch.tensor(iou)
 
         if visualize:
             save_pc(f"./vis/iou{round(iou,2)}_o_loss{round(out_dict['o_loss'].item(),2)}_occ_loss{round(out_dict['occ_loss'].item(),2)}_rrmse{round(eval_result['rrmse'].item(),1)}_crd{round(eval_result['crd'].item(),2)}_pred.pcd", pcds_pred)
