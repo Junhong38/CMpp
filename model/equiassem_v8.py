@@ -43,9 +43,9 @@ def save_pc(filename:str, pcd_tensors:list):
         combined_cloud += pcd
     o3d.io.write_point_cloud(filename, combined_cloud)
 
-class EquiAssem_v7(pl.LightningModule):
+class EquiAssem_v1(pl.LightningModule):
     def __init__(self, lr, backbone='eqcnn', visualize=False):
-        super(EquiAssem_v7, self).__init__()
+        super(EquiAssem_v1, self).__init__()
 
         self.lr = lr
 
@@ -58,19 +58,27 @@ class EquiAssem_v7(pl.LightningModule):
         # Basis Vector
         self.proj = VNLinear(self.feat_dim//3, 2)
 
-        self.inv_mlp = nn.Sequential(nn.InstanceNorm1d(self.feat_dim//3*3),
-                                    nn.LeakyReLU(),
-                                    nn.Conv1d(self.feat_dim//3*3, self.feat_dim//3*3, kernel_size=1))
-
-        self.global_mlp = nn.Sequential(nn.InstanceNorm1d(self.feat_dim//2*2),
-                                    nn.LeakyReLU(),
-                                    nn.Conv1d(self.feat_dim//2*2, self.feat_dim//2, kernel_size=1))
-
-        self.matching_mlp = nn.Sequential(nn.Conv1d(self.feat_dim//3*3, self.feat_dim//3*3, kernel_size=1),
+        self.inv_mlp = nn.Sequential(nn.Conv1d(self.feat_dim//3*3, self.feat_dim//3*3, kernel_size=1),
+                                nn.InstanceNorm1d(self.feat_dim//3*3),
+                                nn.LeakyReLU(),
+                                nn.Conv1d(self.feat_dim//3*3, self.feat_dim//3*3, kernel_size=1),
                                 nn.InstanceNorm1d(self.feat_dim//3*3),
                                 nn.LeakyReLU())
 
+        self.global_mlp = nn.Sequential(nn.Conv1d(self.feat_dim, self.feat_dim//2, kernel_size=1),
+                                nn.InstanceNorm1d(self.feat_dim//2),
+                                nn.LeakyReLU(),
+                                nn.Conv1d(self.feat_dim//2, self.feat_dim//2, kernel_size=1),
+                                nn.InstanceNorm1d(self.feat_dim//2),
+                                nn.Tanh())
         self.pooling = 'max'
+
+        self.matching_mlp = nn.Sequential(nn.Conv1d(self.feat_dim//3*3, self.feat_dim//3*3, kernel_size=1),
+                                nn.InstanceNorm1d(self.feat_dim//3*3),
+                                nn.LeakyReLU(),
+                                nn.Conv1d(self.feat_dim//3*3, self.feat_dim//3*3, kernel_size=1),
+                                nn.InstanceNorm1d(self.feat_dim//3*3),
+                                nn.LeakyReLU())
 
         # Optimal Transport
         self.optimal_transport = LearnableLogOptimalTransport(num_iterations=100)
@@ -91,13 +99,13 @@ class EquiAssem_v7(pl.LightningModule):
         self.circle_loss = CircleLoss()
         self.matching_loss = PointMatchingLoss()
         self.orientation_loss = OrientationLoss()
-        self.occupancy_loss = CircleLoss() # OccupancyLossCosineDistance()
+        self.occupancy_loss = OccupancyLossCosineDistance()
 
         # Weights for losses
-        self.c_loss_weight = 0.5 
-        self.p_loss_weight = 1.0
-        self.o_loss_weight = 0.1
-        self.occ_loss_weight = 0.5
+        self.c_loss_weight = 1. 
+        self.p_loss_weight = 1. 
+        self.o_loss_weight = 1.
+        self.occ_loss_weight = 0.1
 
         # Random rotation for equivariance checking
         rotation_matrix = torch.tensor([[0.26726124, -0.57735027,  0.77151675],
@@ -109,7 +117,6 @@ class EquiAssem_v7(pl.LightningModule):
         self.visualize = visualize
 
         self.validation_step_outputs = []
-        self.test_step_outputs = []
         
     def configure_optimizers(self):
         """Build optimizer and lr scheduler."""
@@ -141,21 +148,19 @@ class EquiAssem_v7(pl.LightningModule):
         self.validation_step_outputs.clear()
 
     def test_step(self, in_dict, batch_idx):
-        _, loss_dict = self.forward_pass(in_dict, mode='test', visualize=self.visualize)
-        self.test_step_outputs.append(loss_dict)
+        _, loss_dict = self.forward_pass(in_dict, mode='test', optimizer_idx=-1, visualize=self.visualize)
         return loss_dict
 
-    def on_test_epoch_end(self):    
+    def test_epoch_end(self, outputs):    
         # avg_loss among all data
         losses = {
-            f'val/{k}': torch.stack([output[k] for output in self.test_step_outputs])
-            for k in self.test_step_outputs[0].keys()
+            f'test/{k}': torch.stack([output[k] for output in outputs])
+            for k in outputs[0].keys()
         }
         avg_loss = {k: (v).sum() / v.size(0) for k, v in losses.items()}
         print('; '.join([f'{k}: {v.item():.6f}' for k, v in avg_loss.items()]))
         # this is a hack to get results outside `Trainer.test()` function
         self.test_results = avg_loss
-        self.test_step_outputs.clear()
 
     def forward_pass(self, in_dict, mode, visualize=False):
 
@@ -169,19 +174,46 @@ class EquiAssem_v7(pl.LightningModule):
         src_equi_feats = self.backbone(src_pcd)
         trg_equi_feats = self.backbone(trg_pcd)
 
+        ##### CHECK EQUIV #####
+        if self.debug:
+            with torch.no_grad():
+                R = self.R.to(in_dict['pcd_t'][0].device)
+                src_R = torch.matmul(in_dict['pcd_t'][0], R)
+                src_R_feats = self.backbone(src_R)
+                print('[1. Backbone] Equiv:', torch.allclose(src_equi_feats.permute(0,3,1,2), torch.matmul(src_R_feats.permute(0,3,1,2), R.transpose(1,2)), atol=1e-3))
+        
         # 2. Basis Vector Projection 
         src_vecs = self.proj(src_equi_feats).permute(0, 3, 1, 2) # (1, C//3, 3, N) -> (1, 2, 3, N) -> (1, N, 2, 3)
         trg_vecs = self.proj(trg_equi_feats).permute(0, 3, 1, 2) # (1, C//3, 3, M) -> (1, 2, 3, M) -> (1, M, 2, 3)
 
+        ##### CHECK EQUIV #####
+        if self.debug:
+            with torch.no_grad():
+                src_R_vecs = self.proj(src_R_feats).permute(0, 3, 1, 2)
+                print('[3. Proj] Equiv:', torch.allclose(src_vecs, torch.matmul(src_R_vecs, R.transpose(1,2)), atol=1e-3))
+
         # 3. Gram Schmidt & Cross-product
         src_ori = ortho2rotation(src_vecs) # (1, N, 2, 3) -> (1, N, 3, 3)
         trg_ori = ortho2rotation(trg_vecs) # (1, M, 2, 3) -> (1, M, 3, 3)
+
+        ##### CHECK EQUIV #####
+        if self.debug:
+            with torch.no_grad():
+                src_R_ori = ortho2rotation(src_R_vecs)
+                print('[4. Ori] Equiv:', torch.allclose(src_ori, torch.matmul(src_R_ori, R.transpose(1,2)), atol=1e-3))
 
         # 4. Invariant Features
         src_inv_feats = torch.matmul(src_equi_feats.permute(0, 3, 1, 2), src_ori.transpose(-2,-1)) # (1, N, C//3, 3) x (1, N, 3, 3) -> (1, N, C//3, 3)
         trg_inv_feats = torch.matmul(trg_equi_feats.permute(0, 3, 1, 2), trg_ori.transpose(-2,-1)) # (1, M, C//3, 3) x (1, M, 3, 3) -> (1, M, C//3, 3)
         src_inv_feats = rearrange(src_inv_feats, 'b n c r -> b (c r) n') # (1, N, C//3, 3) -> (1, C, N)
         trg_inv_feats = rearrange(trg_inv_feats, 'b n c r -> b (c r) n') # (1, M, C//3, 3) -> (1, C, M)
+
+        ##### CHECK INV #####
+        if self.debug:
+            with torch.no_grad():
+                src_inv_feats_R = torch.matmul(src_R_feats.permute(0, 3, 1, 2), src_R_ori.transpose(-2,-1)) 
+                src_inv_feats_R_before = rearrange(src_inv_feats_R, 'b n c r -> b (c r) n') # (1, N, C//3, 3) -> (1, C, N)
+                print('[5. Inv] Inv:', torch.allclose(src_inv_feats_before, src_inv_feats_R_before, atol=1e-3))
 
         # 5. Divide shape and occupancy descriptors
         src_inv_feats = self.inv_mlp(src_inv_feats)
@@ -190,10 +222,14 @@ class EquiAssem_v7(pl.LightningModule):
         src_shape_feats, src_occ_feats = src_inv_feats[:, :C], src_inv_feats[:, C:]
         trg_shape_feats, trg_occ_feats = trg_inv_feats[:, :C], trg_inv_feats[:, C:]
 
-        src_shape_feats = F.normalize(src_shape_feats, p=2, dim=1)
-        src_occ_feats = F.normalize(src_occ_feats, p=2, dim=1)
-        trg_shape_feats = F.normalize(trg_shape_feats, p=2, dim=1)
-        trg_occ_feats = F.normalize(trg_occ_feats, p=2, dim=1)
+        ##### CHECK INV #####
+        if self.debug:
+            with torch.no_grad():
+                src_inv_feats_R = self.inv_mlp(src_inv_feats_R_before)
+                C = src_inv_feats_R.size(1)//2
+                src_shape_feats_R, src_occ_feats_R = src_inv_feats_R[:, :C], src_inv_feats_R[:, C:]
+                print('[6. Div-shape] Inv:', torch.allclose(src_shape_feats, src_shape_feats_R, atol=1e-3))
+                print('[6. Div-occ] Inv:', torch.allclose(src_occ_feats, src_occ_feats_R, atol=1e-3))
 
         # 6. Occupancy descriptor: Global Pooling
         if self.pooling == 'max':
@@ -208,13 +244,24 @@ class EquiAssem_v7(pl.LightningModule):
         trg_occ_feats = torch.cat([trg_occ_feats, trg_global_feats], dim=1)
         trg_occ_feats = self.global_mlp(trg_occ_feats)
 
-        src_occ_feats = F.normalize(src_occ_feats, p=2, dim=1)
-        trg_occ_feats = F.normalize(trg_occ_feats, p=2, dim=1)
-        
+        ##### CHECK INV #####
+        if self.debug:
+            with torch.no_grad():
+                src_global_feats_R = torch.max(src_occ_feats_R, dim=-1, keepdim=True)[0].expand_as(src_occ_feats_R)
+                src_occ_feats_R = torch.cat([src_occ_feats_R, src_global_feats_R], dim=1)
+                src_occ_feats_R = self.global_mlp(src_occ_feats_R)
+                print('[7. Global Max- Pool] Inv:', torch.allclose(src_occ_feats, src_occ_feats_R, atol=1e-3))
+
         # 7. Combine Shape and Occupancy Descriptors
         src_matching_feature = self.matching_mlp(torch.cat([src_shape_feats, src_occ_feats], dim=1))
-        trg_matching_feature = self.matching_mlp( torch.cat([trg_shape_feats, trg_occ_feats], dim=1))
+        trg_matching_feature = self.matching_mlp(torch.cat([trg_shape_feats, -trg_occ_feats], dim=1))
 
+        ##### CHECK INV #####
+        if self.debug:
+            with torch.no_grad():
+                src_matching_feature_R = self.matching_mlp(torch.cat([src_shape_feats_R, src_occ_feats_R], dim=1))
+                print('[8. Matching Score] Inv:', torch.allclose(src_matching_feature, src_matching_feature_R, atol=1e-3))
+        
         # 8. Optimal Transport
         matching_scores = torch.einsum('b c n , b c m -> b n m', src_matching_feature, trg_matching_feature) # (1, N, M)
         matching_scores = matching_scores / src_matching_feature.shape[1] ** 0.5 # (1, N, M)
@@ -246,8 +293,7 @@ class EquiAssem_v7(pl.LightningModule):
             out_dict['trg_gt_rot'] = in_dict['gt_rotat'][1].squeeze(0)
             out_dict['gt_correspondence'] = in_dict['gt_correspondence'].squeeze(0)
             with open('debug.pickle', 'wb') as f: pickle.dump(out_dict, f, pickle.HIGHEST_PROTOCOL)
-            breakpoint()
-            
+        
         # 10. Calculate Loss
         gt_corr = in_dict['gt_correspondence'].squeeze(0)
         
@@ -261,7 +307,7 @@ class EquiAssem_v7(pl.LightningModule):
         loss['o_loss'] = self.orientation_loss(src_ori, trg_ori, gt_corr, in_dict['gt_rotat'])
         
         # 9-4. occupancy loss
-        loss['occ_loss'], loss['occ_FMR']= self.occupancy_loss(src_pcd_raw, trg_pcd_raw, src_occ_feats.transpose(-2,-1), -trg_occ_feats.transpose(-2,-1), gt_corr)
+        loss['occ_loss']= self.occupancy_loss(src_occ_feats, -trg_occ_feats, gt_corr)
 
         # 9-4. final loss
         loss['loss'] = self.c_loss_weight * loss['c_loss'] + self.p_loss_weight * loss['p_loss'] + self.o_loss_weight * loss['o_loss'] +  self.occ_loss_weight * loss['occ_loss']
@@ -276,7 +322,6 @@ class EquiAssem_v7(pl.LightningModule):
             log_dict = {f'{mode}/{k}': v.item() for k, v in loss.items()}
             self.log_dict(log_dict, logger=True, sync_dist=False, rank_zero_only=True, on_step=False, on_epoch=True, batch_size=1)
         
-
         return out_dict, loss
 
     @torch.no_grad()
@@ -303,39 +348,9 @@ class EquiAssem_v7(pl.LightningModule):
         # (c) Compute CoRrespondence Distance (CRD) betwween prediction & ground-truth
         eval_result['crd'] = self._correspondence_distance(assm_pred, assm_grtr, is_trg_larger)
 
-        # if self.debug:
-        # filepath = in_dict['filepath']
-        # base_path = os.path.join('../../data/bbad_v2', filepath[0])
-        # obj_paths = [os.path.join(base_path, x) for x in os.listdir(base_path)]
-        # mesh = [trimesh.load_mesh(x) for x in obj_paths]
-        # mesh_t = [m.copy() for m in mesh]
-        # for idx, trans in enumerate(in_dict['gt_trans']):
-        #     mesh_t[idx].vertices -= trans[0].cpu().detach().numpy()
-        # mesh_t2 = [m.copy() for m in mesh_t]
-        # for idx, rotat in enumerate(in_dict['gt_rotat']):
-        #     mesh_t2[idx].vertices = torch.einsum('x y, n y -> n x', rotat[0].cpu().detach(), torch.tensor(mesh_t2[idx].vertices).float()).numpy()
-        
-        # pcd0 = torch.tensor(mesh_t2[0].vertices).float()
-        # pcd1 = torch.tensor(mesh_t2[1].vertices).float()
-        # _, pred = self._pairwise_mating(pcd0, pcd1, pred_relative_trsfm[0], pred_relative_trsfm[1], is_trg_larger)
-        # mesh_t3 = mesh_t2.copy()
-        # mesh_t3[0].vertices = pred[0].cpu().detach()
-        # mesh_t3[1].vertices = pred[1].cpu().detach()
-        # combined_mesh = trimesh.util.concatenate([mesh_t3[0], mesh_t3[1]])
-
-        # try:
-        #     intersection_volume = trimesh.boolean.intersection([mesh_t3[0], mesh_t3[1]]).volume
-        #     union_volume = mesh_t3[0].volume + mesh_t3[1].volume 
-        #     iou = min((intersection_volume / union_volume) * 100, 1.0)
-        # except ValueError as e:
-        #     print('not watertight mesh!')
-        #     iou = 0
-        # eval_result['iou'] = torch.tensor(iou)
-
         if visualize:
-            save_pc(f"./vis/iou{round(iou,2)}_o_loss{round(out_dict['o_loss'].item(),2)}_occ_loss{round(out_dict['occ_loss'].item(),2)}_rrmse{round(eval_result['rrmse'].item(),1)}_crd{round(eval_result['crd'].item(),2)}_pred.pcd", pcds_pred)
-            save_pc(f"./vis/iou{round(iou,2)}_o_loss{round(out_dict['o_loss'].item(),2)}_occ_loss{round(out_dict['occ_loss'].item(),2)}_rrmse{round(eval_result['rrmse'].item(),1)}_crd{round(eval_result['crd'].item(),2)}_grtr.pcd", pcds_grtr)
-
+            save_pc(f"./vis/o_loss{round(out_dict['o_loss'].item(),2)}_occ_loss{round(out_dict['occ_loss'].item(),2)}_rrmse{round(eval_result['rrmse'].item(),1)}_crd{round(eval_result['crd'].item(),2)}_pred.pcd", pcds_pred)
+            save_pc(f"./vis/o_loss{round(out_dict['o_loss'].item(),2)}_occ_loss{round(out_dict['occ_loss'].item(),2)}_rrmse{round(eval_result['rrmse'].item(),1)}_crd{round(eval_result['crd'].item(),2)}_grtr.pcd", pcds_grtr)
 
         return eval_result
     
