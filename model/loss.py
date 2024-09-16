@@ -109,7 +109,7 @@ class CircleLoss(nn.Module):
 class PointMatchingLoss(nn.Module):
     def __init__(self):
         super(PointMatchingLoss, self).__init__()
-        self.positive_radius = 0.018 # 0.05
+        self.positive_radius = 0.018
     
     def forward(self, matching_scores, correlations, src_pcd, trg_pcd):
         coords_dist = torch.sqrt(torch.sum((src_pcd[:, None, :] - trg_pcd[None, :, :]) ** 2, dim=-1))
@@ -130,6 +130,42 @@ class PointMatchingLoss(nn.Module):
         loss = -matching_scores[labels].mean()
         
         return loss
+
+class PointMatchingLossAdv(nn.Module):
+    def __init__(self):
+        super(PointMatchingLossAdv, self).__init__()
+        self.positive_radius = 0.018
+
+    def forward(self, matching_scores, correlations, src_pcd, trg_pcd):
+        coords_dist = torch.sqrt(torch.sum((src_pcd[:, None, :] - trg_pcd[None, :, :]) ** 2, dim=-1))
+        gt_corr_map = coords_dist < self.positive_radius
+
+        # Initialize labels for the loss calculation
+        labels = torch.zeros_like(matching_scores, dtype=torch.bool)
+        
+        # Handle slack rows and columns
+        slack_row_labels = torch.sum(gt_corr_map[:, :-1], dim=1) == 0
+        slack_col_labels = torch.sum(gt_corr_map[:-1, :], dim=0) == 0
+
+        labels[:, :-1, :-1] = gt_corr_map
+        labels[:, :-1, -1] = slack_row_labels
+        labels[:, -1, :-1] = slack_col_labels
+        
+        # Calculate the loss
+        loss = -matching_scores[labels].mean()
+
+        with torch.no_grad():
+            pos_labels = torch.zeros_like(matching_scores, dtype=torch.bool)
+            neg_labels = torch.zeros_like(matching_scores, dtype=torch.bool)
+
+            pos_labels[:, :-1, :-1] = gt_corr_map
+            neg_labels[:, :-1, -1] = slack_row_labels
+            neg_labels[:, -1, :-1] = slack_col_labels
+
+            pos_loss = -matching_scores[pos_labels].mean()
+            neg_loss = -matching_scores[neg_labels].mean()
+
+        return loss, pos_loss, neg_loss
 
 class OccupancyLoss(nn.Module):
     def __init__(self):

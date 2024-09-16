@@ -15,9 +15,9 @@ from scipy.spatial.transform import Rotation
 from common.rotation import ortho2rotation
 from chamfer_distance import ChamferDistance as chamfer_dist
 
-from model.backbone.vn_dgcnn import EQCNN_equi
+from model.backbone.vn_dgcnn import EQCNN_equi, EQCNN_equi2
 from model.backbone.vn_layers import VNLinear, VNLeakyReLU, VNLinearLeakyReLU, VNLinearNoActivation
-from model.loss import CircleLoss, PointMatchingLoss, OrientationLoss, OccupancyLossCosineDistance
+from model.loss import CircleLoss, PointMatchingLoss, OrientationLoss, OccupancyLossCosineDistance, PointMatchingLossAdv
 from model.learnable_sinkhorn import LearnableLogOptimalTransport
 from model.local_global_registration import LocalGlobalRegistration, WeightedProcrustes
 
@@ -62,7 +62,13 @@ class EquiAssem_v7(pl.LightningModule):
                                     nn.LeakyReLU(),
                                     nn.Conv1d(self.feat_dim//3*3, self.feat_dim//3*3, kernel_size=1))
 
+        # self.global_mlp = nn.Sequential(nn.InstanceNorm1d(self.feat_dim//2*2),
+        #                             nn.LeakyReLU(),
+        #                             nn.Conv1d(self.feat_dim//2*2, self.feat_dim//2, kernel_size=1))
         self.global_mlp = nn.Sequential(nn.InstanceNorm1d(self.feat_dim//2*2),
+                                    nn.LeakyReLU(),
+                                    nn.Conv1d(self.feat_dim//2*2, self.feat_dim//2*2, kernel_size=1),
+                                    nn.InstanceNorm1d(self.feat_dim//2*2),
                                     nn.LeakyReLU(),
                                     nn.Conv1d(self.feat_dim//2*2, self.feat_dim//2, kernel_size=1))
 
@@ -89,7 +95,7 @@ class EquiAssem_v7(pl.LightningModule):
         )
         
         self.circle_loss = CircleLoss()
-        self.matching_loss = PointMatchingLoss()
+        self.matching_loss = PointMatchingLossAdv()
         self.orientation_loss = OrientationLoss()
         self.occupancy_loss = CircleLoss() # OccupancyLossCosineDistance()
 
@@ -213,7 +219,7 @@ class EquiAssem_v7(pl.LightningModule):
         
         # 7. Combine Shape and Occupancy Descriptors
         src_matching_feature = self.matching_mlp(torch.cat([src_shape_feats, src_occ_feats], dim=1))
-        trg_matching_feature = self.matching_mlp( torch.cat([trg_shape_feats, trg_occ_feats], dim=1))
+        trg_matching_feature = self.matching_mlp(torch.cat([trg_shape_feats, -trg_occ_feats], dim=1))
 
         # 8. Optimal Transport
         matching_scores = torch.einsum('b c n , b c m -> b n m', src_matching_feature, trg_matching_feature) # (1, N, M)
@@ -255,7 +261,7 @@ class EquiAssem_v7(pl.LightningModule):
         loss['c_loss'], loss['FMR'] = self.circle_loss(src_pcd_raw, trg_pcd_raw, src_shape_feats.transpose(-2,-1), trg_shape_feats.transpose(-2,-1), gt_corr)
 
         # 9-2 point matching loss
-        loss['p_loss'] = self.matching_loss(matching_scores, gt_corr, src_pcd_raw, trg_pcd_raw)
+        loss['p_loss'], loss['pos_p_loss'], loss['neg_p_loss'] = self.matching_loss(matching_scores, gt_corr, src_pcd_raw, trg_pcd_raw)
 
         # 9-3. orientation loss
         loss['o_loss'] = self.orientation_loss(src_ori, trg_ori, gt_corr, in_dict['gt_rotat'])
