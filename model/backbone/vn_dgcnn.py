@@ -66,7 +66,7 @@ class EQCNN_equi(nn.Module):
 
     def __init__(self, feat_dim, pooling='mean'):
         super(EQCNN_equi, self).__init__()
-        self.k = 20
+        self.k = 64
 
         if pooling == 'max':
             self.pool1 = VNMaxPool(64//3)
