@@ -49,6 +49,9 @@ def main(args):
     elif args.model == 'v7': 
         from model.equiassem_v7 import EquiAssem_v7
         model = EquiAssem_v7(lr=args.lr)
+    elif args.model == 'v8': 
+        from model.equiassem_v8 import EquiAssem_v8
+        model = EquiAssem_v8(lr=args.lr)
     print(model)
 
     # Dataset initialization
