@@ -51,7 +51,10 @@ def test(args):
         model = EquiAssem_v6(lr=args.lr)
     elif args.model == 'v7': 
         from model.equiassem_v7 import EquiAssem_v7
-        model = EquiAssem_v7(lr=args.lr)
+        model = EquiAssem_v7(lr=args.lr, visualize=args.visualize)
+    elif args.model == 'v8': 
+        from model.equiassem_v8 import EquiAssem_v8
+        model = EquiAssem_v8(lr=args.lr, visualize=args.visualize)
     print(model)
     model.to(torch.device('cuda:0'))
     model.eval()
@@ -86,5 +89,16 @@ if __name__ == '__main__':
     parser.add_argument('--scale', type=str, default='small')
     parser.add_argument('--visualize', action='store_true')
 
+    # DDP argument
+    parser.add_argument('--gpus', nargs='+', default=[0], type=int)
+
     args = parser.parse_args()
+
+    if len(args.gpus) > 1: 
+        from pytorch_lightning.strategies import DDPStrategy
+        args.parallel_strategy = DDPStrategy(find_unused_parameters=False)
+        args.lr = len(args.gpus) * args.lr
+        args.n_worker = len(args.gpus) * 4
+    else: args.parallel_strategy = 'auto'
+    
     test(args)

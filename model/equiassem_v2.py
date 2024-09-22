@@ -61,6 +61,14 @@ class EquiAssem_v2(pl.LightningModule):
         # Basis Vector
         self.proj = VNLinear(self.feat_dim//3, 2)
 
+        self.inv_mlp = nn.Sequential(nn.InstanceNorm1d(self.feat_dim//3*3),
+                                    nn.LeakyReLU(),
+                                    nn.Conv1d(self.feat_dim//3*3, self.feat_dim//3*3, kernel_size=1))
+
+        self.matching_mlp = nn.Sequential(nn.Conv1d(self.feat_dim//3*3, self.feat_dim//3*3, kernel_size=1),
+                                nn.InstanceNorm1d(self.feat_dim//3*3),
+                                nn.LeakyReLU())
+        
         # Optimal Transport
         self.optimal_transport = LearnableLogOptimalTransport(num_iterations=100)
 
@@ -170,6 +178,18 @@ class EquiAssem_v2(pl.LightningModule):
         trg_inv_feats = torch.matmul(trg_equi_feats.permute(0, 3, 1, 2), trg_ori.transpose(-2,-1)) # (1, M, C//3, 3) x (1, M, 3, 3) -> (1, M, C//3, 3)
         src_inv_feats = rearrange(src_inv_feats, 'b n c r -> b (c r) n') # (1, N, C//3, 3) -> (1, C, N)
         trg_inv_feats = rearrange(trg_inv_feats, 'b n c r -> b (c r) n') # (1, M, C//3, 3) -> (1, C, M)
+    
+        src_inv_feats = F.normalize(src_inv_feats, p=2, dim=1)
+        trg_inv_feats = F.normalize(trg_inv_feats, p=2, dim=1)
+        
+        src_inv_feats = self.inv_mlp(src_inv_feats)
+        trg_inv_feats = self.inv_mlp(trg_inv_feats)
+
+        src_inv_feats = F.normalize(src_inv_feats, p=2, dim=1)
+        trg_inv_feats = F.normalize(trg_inv_feats, p=2, dim=1)
+
+        src_inv_feats = self.matching_mlp(src_inv_feats)
+        trg_inv_feats = self.matching_mlp(trg_inv_feats)
 
         # 5. Optimal Transport
         matching_scores = torch.einsum('b c n , b c m -> b n m', src_inv_feats, trg_inv_feats) # (1, N, M)
@@ -236,33 +256,33 @@ class EquiAssem_v2(pl.LightningModule):
         # (c) Compute CoRrespondence Distance (CRD) betwween prediction & ground-truth
         eval_result['crd'] = self._correspondence_distance(assm_pred, assm_grtr, is_trg_larger)
 
-        filepath = in_dict['filepath']
-        base_path = os.path.join('../../data/bbad_v2', filepath[0])
-        obj_paths = [os.path.join(base_path, x) for x in os.listdir(base_path)]
-        mesh = [trimesh.load_mesh(x) for x in obj_paths]
-        mesh_t = [m.copy() for m in mesh]
-        for idx, trans in enumerate(in_dict['gt_trans']):
-            mesh_t[idx].vertices -= trans[0].cpu().detach().numpy()
-        mesh_t2 = [m.copy() for m in mesh_t]
-        for idx, rotat in enumerate(in_dict['gt_rotat']):
-            mesh_t2[idx].vertices = torch.einsum('x y, n y -> n x', rotat[0].cpu().detach(), torch.tensor(mesh_t2[idx].vertices).float()).numpy()
+        # filepath = in_dict['filepath']
+        # base_path = os.path.join('../../data/bbad_v2', filepath[0])
+        # obj_paths = [os.path.join(base_path, x) for x in os.listdir(base_path)]
+        # mesh = [trimesh.load_mesh(x) for x in obj_paths]
+        # mesh_t = [m.copy() for m in mesh]
+        # for idx, trans in enumerate(in_dict['gt_trans']):
+        #     mesh_t[idx].vertices -= trans[0].cpu().detach().numpy()
+        # mesh_t2 = [m.copy() for m in mesh_t]
+        # for idx, rotat in enumerate(in_dict['gt_rotat']):
+        #     mesh_t2[idx].vertices = torch.einsum('x y, n y -> n x', rotat[0].cpu().detach(), torch.tensor(mesh_t2[idx].vertices).float()).numpy()
         
-        pcd0 = torch.tensor(mesh_t2[0].vertices).float()
-        pcd1 = torch.tensor(mesh_t2[1].vertices).float()
-        _, pred = self._pairwise_mating(pcd0, pcd1, pred_relative_trsfm[0], pred_relative_trsfm[1], is_trg_larger)
-        mesh_t3 = mesh_t2.copy()
-        mesh_t3[0].vertices = pred[0].cpu().detach()
-        mesh_t3[1].vertices = pred[1].cpu().detach()
-        combined_mesh = trimesh.util.concatenate([mesh_t3[0], mesh_t3[1]])
+        # pcd0 = torch.tensor(mesh_t2[0].vertices).float()
+        # pcd1 = torch.tensor(mesh_t2[1].vertices).float()
+        # _, pred = self._pairwise_mating(pcd0, pcd1, pred_relative_trsfm[0], pred_relative_trsfm[1], is_trg_larger)
+        # mesh_t3 = mesh_t2.copy()
+        # mesh_t3[0].vertices = pred[0].cpu().detach()
+        # mesh_t3[1].vertices = pred[1].cpu().detach()
+        # combined_mesh = trimesh.util.concatenate([mesh_t3[0], mesh_t3[1]])
 
-        try:
-            intersection_volume = trimesh.boolean.intersection([mesh_t3[0], mesh_t3[1]]).volume
-            union_volume = mesh_t3[0].volume + mesh_t3[1].volume 
-            iou = min((intersection_volume / union_volume) * 100, 1.0)
-        except ValueError as e:
-            print('not watertight mesh!')
-            iou = 0
-        eval_result['iou'] = torch.tensor(iou)
+        # try:
+        #     intersection_volume = trimesh.boolean.intersection([mesh_t3[0], mesh_t3[1]]).volume
+        #     union_volume = mesh_t3[0].volume + mesh_t3[1].volume 
+        #     iou = min((intersection_volume / union_volume) * 100, 1.0)
+        # except ValueError as e:
+        #     print('not watertight mesh!')
+        #     iou = 0
+        # eval_result['iou'] = torch.tensor(iou)
 
         if visualize:
             save_pc(f"./vis/iou{round(iou,2)}_rrmse{round(eval_result['rrmse'].item(),1)}_crd{round(eval_result['crd'].item(),2)}_pred.pcd", pcds_pred)

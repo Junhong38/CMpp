@@ -15,7 +15,7 @@ from scipy.spatial.transform import Rotation
 from common.rotation import ortho2rotation
 from chamfer_distance import ChamferDistance as chamfer_dist
 
-from model.backbone.vn_dgcnn import EQCNN_equi, EQCNN_equi2
+from model.backbone.vn_dgcnn import EQCNN_equi
 from model.backbone.vn_layers import VNLinear, VNLeakyReLU, VNLinearLeakyReLU, VNLinearNoActivation
 from model.loss import CircleLoss, PointMatchingLoss, OrientationLoss, OccupancyLossCosineDistance, PointMatchingLossAdv
 from model.learnable_sinkhorn import LearnableLogOptimalTransport
@@ -62,15 +62,18 @@ class EquiAssem_v7(pl.LightningModule):
                                     nn.LeakyReLU(),
                                     nn.Conv1d(self.feat_dim//3*3, self.feat_dim//3*3, kernel_size=1))
 
-        # self.global_mlp = nn.Sequential(nn.InstanceNorm1d(self.feat_dim//2*2),
-        #                             nn.LeakyReLU(),
-        #                             nn.Conv1d(self.feat_dim//2*2, self.feat_dim//2, kernel_size=1))
         self.global_mlp = nn.Sequential(nn.InstanceNorm1d(self.feat_dim//2*2),
                                     nn.LeakyReLU(),
-                                    nn.Conv1d(self.feat_dim//2*2, self.feat_dim//2*2, kernel_size=1),
-                                    nn.InstanceNorm1d(self.feat_dim//2*2),
-                                    nn.LeakyReLU(),
                                     nn.Conv1d(self.feat_dim//2*2, self.feat_dim//2, kernel_size=1))
+        # self.global_mlp = nn.Sequential(nn.InstanceNorm1d(self.feat_dim//2*2),
+        #                             nn.LeakyReLU(),
+        #                             nn.Conv1d(self.feat_dim//2*2, self.feat_dim//2*2, kernel_size=1),
+        #                             nn.InstanceNorm1d(self.feat_dim//2*2),
+        #                             nn.LeakyReLU(),
+        #                             nn.Conv1d(self.feat_dim//2*2, self.feat_dim//2*2, kernel_size=1),
+        #                             nn.InstanceNorm1d(self.feat_dim//2*2),
+        #                             nn.LeakyReLU(),
+        #                             nn.Conv1d(self.feat_dim//2*2, self.feat_dim//2, kernel_size=1))
 
         self.matching_mlp = nn.Sequential(nn.Conv1d(self.feat_dim//3*3, self.feat_dim//3*3, kernel_size=1),
                                 nn.InstanceNorm1d(self.feat_dim//3*3),
@@ -188,6 +191,9 @@ class EquiAssem_v7(pl.LightningModule):
         trg_inv_feats = torch.matmul(trg_equi_feats.permute(0, 3, 1, 2), trg_ori.transpose(-2,-1)) # (1, M, C//3, 3) x (1, M, 3, 3) -> (1, M, C//3, 3)
         src_inv_feats = rearrange(src_inv_feats, 'b n c r -> b (c r) n') # (1, N, C//3, 3) -> (1, C, N)
         trg_inv_feats = rearrange(trg_inv_feats, 'b n c r -> b (c r) n') # (1, M, C//3, 3) -> (1, C, M)
+        
+        src_inv_feats = F.normalize(src_inv_feats, p=2, dim=1)
+        trg_inv_feats = F.normalize(trg_inv_feats, p=2, dim=1)
 
         # 5. Divide shape and occupancy descriptors
         src_inv_feats = self.inv_mlp(src_inv_feats)
@@ -339,8 +345,8 @@ class EquiAssem_v7(pl.LightningModule):
         # eval_result['iou'] = torch.tensor(iou)
 
         if visualize:
-            save_pc(f"./vis/iou{round(iou,2)}_o_loss{round(out_dict['o_loss'].item(),2)}_occ_loss{round(out_dict['occ_loss'].item(),2)}_rrmse{round(eval_result['rrmse'].item(),1)}_crd{round(eval_result['crd'].item(),2)}_pred.pcd", pcds_pred)
-            save_pc(f"./vis/iou{round(iou,2)}_o_loss{round(out_dict['o_loss'].item(),2)}_occ_loss{round(out_dict['occ_loss'].item(),2)}_rrmse{round(eval_result['rrmse'].item(),1)}_crd{round(eval_result['crd'].item(),2)}_grtr.pcd", pcds_grtr)
+            save_pc(f"./vis/crd{round(eval_result['crd'].item(),2)}_o_loss{round(out_dict['o_loss'].item(),2)}_occ_loss{round(out_dict['occ_loss'].item(),2)}_rrmse{round(eval_result['rrmse'].item(),1)}_pred.pcd", pcds_pred)
+            save_pc(f"./vis/crd{round(eval_result['crd'].item(),2)}_o_loss{round(out_dict['o_loss'].item(),2)}_occ_loss{round(out_dict['occ_loss'].item(),2)}_rrmse{round(eval_result['rrmse'].item(),1)}_grtr.pcd", pcds_grtr)
 
 
         return eval_result

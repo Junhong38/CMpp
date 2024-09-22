@@ -19,6 +19,6 @@ class GADataset:
         shuffle = training
 
         dataset = DatasetBreakingBad(cls.datapath, cls.data_category, cls.sub_category, cls.n_pts, split, cls.scale, visualize)
-        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=shuffle, num_workers=nworker)
+        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=shuffle, num_workers=nworker, pin_memory=True)
 
         return dataloader

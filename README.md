@@ -39,6 +39,9 @@ pip install einops trimesh wandb open3d
 pip install git+https://github.com/KinglittleQ/torch-batch-svd
 pip install git+'https://github.com/otaheri/chamfer_distance'
 pip install "git+https://github.com/facebookresearch/pytorch3d.git@stable"
+
+pip install torch_geometric
+pip install pyg_lib torch_scatter torch_sparse torch_cluster torch_spline_conv -f https://data.pyg.org/whl/torch-2.4.0+cu118.html
 ```
 
 #
