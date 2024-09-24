@@ -55,6 +55,12 @@ def main(args):
     elif args.model == 'attn_v1': 
         from model.equiassem_attn_v1 import EquiAssem_attn_v1
         model = EquiAssem_attn_v1(lr=args.lr)
+    elif args.model == 'attn_v2': 
+        from model.equiassem_attn_v2 import EquiAssem_attn_v2
+        model = EquiAssem_attn_v2(lr=args.lr)
+    elif args.model == 'attn_v3': 
+        from model.equiassem_attn_v3 import EquiAssem_attn_v3
+        model = EquiAssem_attn_v3(lr=args.lr)
     print(model)
 
     # Dataset initialization
@@ -150,7 +156,6 @@ def main(args):
         strategy=args.parallel_strategy,
         max_epochs=args.epochs,
         callbacks=callbacks,
-        log_every_n_steps=500,
         check_val_every_n_epoch=1,
         profiler='simple',
         fast_dev_run=False,

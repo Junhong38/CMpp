@@ -29,29 +29,29 @@ import random
 
 import pickle
 
-class ChannelAttentionModule(nn.Module):
-    """ this function is used to achieve the channel attention module in CBAM paper"""
-    def __init__(self, C, ratio=16):
-        super(ChannelAttentionModule, self).__init__()
+class SpatialAttentionModule(nn.Module):
+    """ this function is used to achieve the spatial attention module in CBAM paper"""
+    def __init__(self):
+        super(SpatialAttentionModule, self).__init__()
 
-        self.mlp = nn.Sequential(
-            nn.Conv1d(in_channels=C, out_channels=C // ratio, kernel_size=1, bias=False),
-            nn.ReLU(),
-            nn.Conv1d(in_channels= C // ratio, out_channels=C, kernel_size=1, bias=False)
-        )
+        self.conv1 = nn.Conv1d(in_channels=2, out_channels=1, kernel_size=1, bias=False)
+        self.bn = nn.BatchNorm1d(1, eps=1e-5, momentum=0.01, affine=True)
+        self.relu = nn.ReLU()
 
         self.sigmoid = nn.Sigmoid()
 
-    def forward(self,x):
+    def forward(self, x):
+        out1 = torch.mean(x,dim=1,keepdim=True) # [B, 1, N]
 
-        out1 = torch.mean(x, dim=-1, keepdim=True)  # b, c, 1
-        out1 = self.mlp(out1) # b, c, 1
+        out2, _ = torch.max(x, dim=1,keepdim=True) # [B, 1, N]
 
-        out2 = nn.AdaptiveMaxPool1d(1)(x) # b, c, 1
-        out2 = self.mlp(out2) # b, c, 1
+        out = torch.cat([out2, out1], dim=1) # [B, 2, N]
 
-        out = self.sigmoid(out1 + out2)
+        out = self.conv1(out) # [B, 1, N]
+        out = self.bn(out) # [B, 1, N]
+        out =self.relu(out) # [B, 1, N]
 
+        out = self.sigmoid(out) # [B, C, N]
         return out * x
 
 def save_pc(filename:str, pcd_tensors:list):
@@ -68,9 +68,9 @@ def save_pc(filename:str, pcd_tensors:list):
         combined_cloud += pcd
     o3d.io.write_point_cloud(filename, combined_cloud)
 
-class EquiAssem_attn_v1(pl.LightningModule):
+class EquiAssem_attn_v2(pl.LightningModule):
     def __init__(self, lr, backbone='eqcnn', visualize=False):
-        super(EquiAssem_attn_v1, self).__init__()
+        super(EquiAssem_attn_v2, self).__init__()
 
         self.lr = lr
 
@@ -91,7 +91,7 @@ class EquiAssem_attn_v1(pl.LightningModule):
                                 nn.InstanceNorm1d(self.feat_dim//3*3),
                                 nn.LeakyReLU())
 
-        self.attention = ChannelAttentionModule(self.feat_dim//2)
+        self.attention = SpatialAttentionModule()
 
         # Optimal Transport
         self.optimal_transport = LearnableLogOptimalTransport(num_iterations=100)

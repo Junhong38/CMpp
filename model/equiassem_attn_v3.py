@@ -54,6 +54,31 @@ class ChannelAttentionModule(nn.Module):
 
         return out * x
 
+class SpatialAttentionModule(nn.Module):
+    """ this function is used to achieve the spatial attention module in CBAM paper"""
+    def __init__(self):
+        super(SpatialAttentionModule, self).__init__()
+
+        self.conv1 = nn.Conv1d(in_channels=2, out_channels=1, kernel_size=1, bias=False)
+        self.inorm = nn.InstanceNorm1d(1, eps=1e-5, momentum=0.01, affine=True)
+        self.relu = nn.ReLU()
+
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x):
+        out1 = torch.mean(x,dim=1,keepdim=True) # [B, 1, N]
+
+        out2, _ = torch.max(x, dim=1,keepdim=True) # [B, 1, N]
+
+        out = torch.cat([out2, out1], dim=1) # [B, 2, N]
+
+        out = self.conv1(out) # [B, 1, N]
+        out = self.inorm(out) # [B, 1, N]
+        out = self.relu(out) # [B, 1, N]
+
+        out = self.sigmoid(out) # [B, C, N]
+        return out * x
+
 def save_pc(filename:str, pcd_tensors:list):
     pcds = []
     for tensor_ in pcd_tensors:
@@ -68,9 +93,9 @@ def save_pc(filename:str, pcd_tensors:list):
         combined_cloud += pcd
     o3d.io.write_point_cloud(filename, combined_cloud)
 
-class EquiAssem_attn_v1(pl.LightningModule):
+class EquiAssem_attn_v3(pl.LightningModule):
     def __init__(self, lr, backbone='eqcnn', visualize=False):
-        super(EquiAssem_attn_v1, self).__init__()
+        super(EquiAssem_attn_v3, self).__init__()
 
         self.lr = lr
 
@@ -91,7 +116,8 @@ class EquiAssem_attn_v1(pl.LightningModule):
                                 nn.InstanceNorm1d(self.feat_dim//3*3),
                                 nn.LeakyReLU())
 
-        self.attention = ChannelAttentionModule(self.feat_dim//2)
+        self.c_attention = ChannelAttentionModule(self.feat_dim//2)
+        self.s_attention = SpatialAttentionModule()
 
         # Optimal Transport
         self.optimal_transport = LearnableLogOptimalTransport(num_iterations=100)
@@ -219,8 +245,15 @@ class EquiAssem_attn_v1(pl.LightningModule):
         trg_shape_feats = F.normalize(trg_shape_feats, p=2, dim=1)
         trg_occ_feats = F.normalize(trg_occ_feats, p=2, dim=1)
 
-        src_occ_feats = self.attention(src_occ_feats)
-        trg_occ_feats = self.attention(trg_occ_feats)
+        src_occ_feats_before = src_occ_feats
+        trg_occ_feats_before = trg_occ_feats
+        src_occ_feats = self.c_attention(src_occ_feats)
+        src_occ_feats = self.s_attention(src_occ_feats)
+        trg_occ_feats = self.c_attention(trg_occ_feats)
+        trg_occ_feats = self.s_attention(trg_occ_feats)
+        src_occ_feats = src_occ_feats + src_occ_feats_before
+        trg_occ_feats = trg_occ_feats + trg_occ_feats_before
+
         src_occ_feats = F.normalize(src_occ_feats, p=2, dim=1)
         trg_occ_feats = F.normalize(trg_occ_feats, p=2, dim=1)
         
