@@ -71,6 +71,7 @@ class CircleLoss(nn.Module):
 
     def forward(self, src_pcd, tgt_pcd, src_feats, tgt_feats, correspondence):
         if len(correspondence) == 0:
+            print("circle_loss: No correspondence !!")
             return torch.tensor(0.).to(src_feats.device), torch.tensor(0.).to(src_feats.device)
 
         c_dist = torch.norm(src_pcd[correspondence[:,0]] - tgt_pcd[correspondence[:,1]], dim = 1)

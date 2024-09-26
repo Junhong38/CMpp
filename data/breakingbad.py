@@ -76,9 +76,6 @@ class DatasetBreakingBad(Dataset):
 
     def _rotate(self, mesh, pcd):
         gt_rotat = [torch.tensor(R.random().as_matrix(), dtype=torch.float) for _ in pcd]
-        # gt_rotat = [torch.tensor([[0.26726124, -0.57735027,  0.77151675],
-        #           [0.53452248, -0.57735027, -0.6172134],
-        #           [0.80178373,  0.57735027,  0.15430335]], dtype=torch.float32) for _ in pcd]
         pcd_t, mesh_t = [], [m.copy() for m in mesh]
         for idx, rotat in enumerate(gt_rotat):
             pcd_t.append(torch.einsum('x y, n y -> n x', rotat, pcd[idx]))

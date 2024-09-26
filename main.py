@@ -24,7 +24,8 @@ import open3d as o3d
 import warnings
 warnings.filterwarnings("ignore", message="divide by zero encountered in double_scalars", category=RuntimeWarning)
 
-torch.set_float32_matmul_precision('medium')
+torch.backends.cuda.matmul.allow_tf32 = False
+torch.backends.cudnn.allow_tf32 = False
 
 def main(args):
     # Model initialization
@@ -61,6 +62,9 @@ def main(args):
     elif args.model == 'attn_v3': 
         from model.equiassem_attn_v3 import EquiAssem_attn_v3
         model = EquiAssem_attn_v3(lr=args.lr)
+    elif args.model == 'unet_v1': 
+        from model.equiassem_unet_v1 import EquiAssem_unet_v1
+        model = EquiAssem_unet_v1(lr=args.lr)
     print(model)
 
     # Dataset initialization
@@ -217,6 +221,6 @@ if __name__ == '__main__':
         args.parallel_strategy = DDPStrategy(find_unused_parameters=False)
         args.lr = len(args.gpus) * args.lr
         args.n_worker = len(args.gpus) * 4
-    else: args.parallel_strategy = 'auto'
+    else: args.parallel_strategy = None
 
     main(args)

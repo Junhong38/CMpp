@@ -26,7 +26,8 @@ import open3d as o3d
 import warnings
 warnings.filterwarnings("ignore", message="divide by zero encountered in double_scalars", category=RuntimeWarning)
 
-torch.set_float32_matmul_precision('medium')
+torch.backends.cuda.matmul.allow_tf32 = False
+torch.backends.cudnn.allow_tf32 = False
 
 @torch.no_grad()
 def test(args):
@@ -55,6 +56,18 @@ def test(args):
     elif args.model == 'v8': 
         from model.equiassem_v8 import EquiAssem_v8
         model = EquiAssem_v8(lr=args.lr, visualize=args.visualize)
+    elif args.model == 'attn_v1': 
+        from model.equiassem_attn_v1 import EquiAssem_attn_v1
+        model = EquiAssem_attn_v1(lr=args.lr, visualize=args.visualize)
+    elif args.model == 'attn_v2': 
+        from model.equiassem_attn_v2 import EquiAssem_attn_v2
+        model = EquiAssem_attn_v2(lr=args.lr, visualize=args.visualize)
+    elif args.model == 'attn_v3': 
+        from model.equiassem_attn_v3 import EquiAssem_attn_v3
+        model = EquiAssem_attn_v3(lr=args.lr, visualize=args.visualize)
+    elif args.model == 'unet_v1': 
+        from model.equiassem_unet_v1 import EquiAssem_unet_v1
+        model = EquiAssem_unet_v1(lr=args.lr, visualize=args.visualize)
     print(model)
     model.to(torch.device('cuda:0'))
     model.eval()
