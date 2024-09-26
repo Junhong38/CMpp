@@ -15,7 +15,7 @@ from scipy.spatial.transform import Rotation
 from common.rotation import ortho2rotation
 from chamfer_distance import ChamferDistance as chamfer_dist
 
-from model.backbone.vn_dgcnn import EQCNN_equi
+from model.backbone.vn_dgcnn import EQCNN_equi_unet
 from model.backbone.vn_layers import VNLinear, VNLeakyReLU, VNLinearLeakyReLU, VNLinearNoActivation
 from model.loss import CircleLoss, PointMatchingLoss, OrientationLoss, OccupancyLossCosineDistance, PointMatchingLossAdv
 from model.learnable_sinkhorn import LearnableLogOptimalTransport
@@ -28,6 +28,56 @@ import open3d as o3d
 import random
 
 import pickle
+
+class ChannelAttentionModule(nn.Module):
+    """ this function is used to achieve the channel attention module in CBAM paper"""
+    def __init__(self, C, ratio=16):
+        super(ChannelAttentionModule, self).__init__()
+
+        self.mlp = nn.Sequential(
+            nn.Conv1d(in_channels=C, out_channels=C // ratio, kernel_size=1, bias=False),
+            nn.ReLU(),
+            nn.Conv1d(in_channels= C // ratio, out_channels=C, kernel_size=1, bias=False)
+        )
+
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self,x):
+
+        out1 = torch.mean(x, dim=-1, keepdim=True)  # b, c, 1
+        out1 = self.mlp(out1) # b, c, 1
+
+        out2 = nn.AdaptiveMaxPool1d(1)(x) # b, c, 1
+        out2 = self.mlp(out2) # b, c, 1
+
+        out = self.sigmoid(out1 + out2)
+
+        return out * x
+
+class SpatialAttentionModule(nn.Module):
+    """ this function is used to achieve the spatial attention module in CBAM paper"""
+    def __init__(self):
+        super(SpatialAttentionModule, self).__init__()
+
+        self.conv1 = nn.Conv1d(in_channels=2, out_channels=1, kernel_size=1, bias=False)
+        self.inorm = nn.InstanceNorm1d(1, eps=1e-5, momentum=0.01, affine=True)
+        self.relu = nn.ReLU()
+
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x):
+        out1 = torch.mean(x,dim=1,keepdim=True) # [B, 1, N]
+
+        out2, _ = torch.max(x, dim=1,keepdim=True) # [B, 1, N]
+
+        out = torch.cat([out2, out1], dim=1) # [B, 2, N]
+
+        out = self.conv1(out) # [B, 1, N]
+        out = self.inorm(out) # [B, 1, N]
+        out = self.relu(out) # [B, 1, N]
+
+        out = self.sigmoid(out) # [B, C, N]
+        return out * x
 
 def save_pc(filename:str, pcd_tensors:list):
     pcds = []
@@ -43,9 +93,9 @@ def save_pc(filename:str, pcd_tensors:list):
         combined_cloud += pcd
     o3d.io.write_point_cloud(filename, combined_cloud)
 
-class EquiAssem_v7(pl.LightningModule):
+class EquiAssem_unet_v2(pl.LightningModule):
     def __init__(self, lr, backbone='eqcnn', visualize=False):
-        super(EquiAssem_v7, self).__init__()
+        super(EquiAssem_unet_v2, self).__init__()
 
         self.lr = lr
 
@@ -53,7 +103,7 @@ class EquiAssem_v7(pl.LightningModule):
         self.feat_dim = 1024
 
         # Feature Extractor
-        self.backbone = EQCNN_equi(feat_dim=self.feat_dim, pooling="mean")
+        self.backbone = EQCNN_equi_unet(feat_dim=self.feat_dim, pooling="mean")
         
         # Basis Vector
         self.proj = VNLinear(self.feat_dim//3, 2)
@@ -62,24 +112,12 @@ class EquiAssem_v7(pl.LightningModule):
                                     nn.LeakyReLU(),
                                     nn.Conv1d(self.feat_dim//3*3, self.feat_dim//3*3, kernel_size=1))
 
-        self.global_mlp = nn.Sequential(nn.InstanceNorm1d(self.feat_dim//2*2),
-                                    nn.LeakyReLU(),
-                                    nn.Conv1d(self.feat_dim//2*2, self.feat_dim//2, kernel_size=1))
-        # self.global_mlp = nn.Sequential(nn.InstanceNorm1d(self.feat_dim//2*2),
-        #                             nn.LeakyReLU(),
-        #                             nn.Conv1d(self.feat_dim//2*2, self.feat_dim//2*2, kernel_size=1),
-        #                             nn.InstanceNorm1d(self.feat_dim//2*2),
-        #                             nn.LeakyReLU(),
-        #                             nn.Conv1d(self.feat_dim//2*2, self.feat_dim//2*2, kernel_size=1),
-        #                             nn.InstanceNorm1d(self.feat_dim//2*2),
-        #                             nn.LeakyReLU(),
-        #                             nn.Conv1d(self.feat_dim//2*2, self.feat_dim//2, kernel_size=1))
-
         self.matching_mlp = nn.Sequential(nn.Conv1d(self.feat_dim//3*3, self.feat_dim//3*3, kernel_size=1),
                                 nn.InstanceNorm1d(self.feat_dim//3*3),
                                 nn.LeakyReLU())
 
-        self.pooling = 'max'
+        self.c_attention = ChannelAttentionModule(self.feat_dim//2)
+        self.s_attention = SpatialAttentionModule()
 
         # Optimal Transport
         self.optimal_transport = LearnableLogOptimalTransport(num_iterations=100)
@@ -100,7 +138,7 @@ class EquiAssem_v7(pl.LightningModule):
         self.circle_loss = CircleLoss()
         self.matching_loss = PointMatchingLossAdv()
         self.orientation_loss = OrientationLoss()
-        self.occupancy_loss = CircleLoss() # OccupancyLossCosineDistance()
+        self.occupancy_loss = CircleLoss()
 
         # Weights for losses
         self.c_loss_weight = 0.5 
@@ -108,12 +146,6 @@ class EquiAssem_v7(pl.LightningModule):
         self.o_loss_weight = 0.1
         self.occ_loss_weight = 0.5
 
-        # Random rotation for equivariance checking
-        rotation_matrix = torch.tensor([[0.26726124, -0.57735027,  0.77151675],
-                  [0.53452248, -0.57735027, -0.6172134],
-                  [0.80178373,  0.57735027,  0.15430335]], dtype=torch.float64)
-        self.R = rotation_matrix.unsqueeze(0)
-        
         self.debug = False
         self.visualize = visualize
 
@@ -198,42 +230,40 @@ class EquiAssem_v7(pl.LightningModule):
         C = src_inv_feats.size(1)//2
         src_shape_feats, src_occ_feats = src_inv_feats[:, :C], src_inv_feats[:, C:]
         trg_shape_feats, trg_occ_feats = trg_inv_feats[:, :C], trg_inv_feats[:, C:]
-
+        
         src_shape_feats = F.normalize(src_shape_feats, p=2, dim=1)
         src_occ_feats = F.normalize(src_occ_feats, p=2, dim=1)
         trg_shape_feats = F.normalize(trg_shape_feats, p=2, dim=1)
         trg_occ_feats = F.normalize(trg_occ_feats, p=2, dim=1)
 
-        # 6. Occupancy descriptor: Global Pooling
-        if self.pooling == 'max':
-            src_global_feats = torch.max(src_occ_feats, dim=-1, keepdim=True)[0].expand_as(src_occ_feats)
-            trg_global_feats = torch.max(trg_occ_feats, dim=-1, keepdim=True)[0].expand_as(trg_occ_feats)
-        elif self.pooling == 'mean':
-            src_global_feats = torch.mean(src_occ_feats, dim=-1, keepdim=True).expand_as(src_occ_feats)
-            trg_global_feats = torch.mean(trg_occ_feats, dim=-1, keepdim=True).expand_as(trg_occ_feats)
-        
-        src_occ_feats = torch.cat([src_occ_feats, src_global_feats], dim=1)
-        src_occ_feats = self.global_mlp(src_occ_feats)
-        trg_occ_feats = torch.cat([trg_occ_feats, trg_global_feats], dim=1)
-        trg_occ_feats = self.global_mlp(trg_occ_feats)
+        src_occ_feats_before = src_occ_feats
+        trg_occ_feats_before = trg_occ_feats
+        src_occ_feats = self.c_attention(src_occ_feats)
+        trg_occ_feats = self.c_attention(trg_occ_feats)
+        src_occ_feats = src_occ_feats + src_occ_feats_before
+        trg_occ_feats = trg_occ_feats + trg_occ_feats_before
 
-        src_occ_feats = F.normalize(src_occ_feats, p=2, dim=1)
-        trg_occ_feats = F.normalize(trg_occ_feats, p=2, dim=1)
-        
+        src_shape_feats_before = src_shape_feats
+        trg_shape_feats_before = trg_shape_feats
+        src_shape_feats = self.s_attention(src_shape_feats)
+        trg_shape_feats = self.s_attention(trg_shape_feats)
+        src_shape_feats = src_shape_feats + src_shape_feats_before
+        trg_shape_feats = trg_shape_feats + trg_shape_feats_before
+
         # 7. Combine Shape and Occupancy Descriptors
         src_matching_feature = self.matching_mlp(torch.cat([src_shape_feats, src_occ_feats], dim=1))
         trg_matching_feature = self.matching_mlp(torch.cat([trg_shape_feats, -trg_occ_feats], dim=1))
-
+        
         # 8. Optimal Transport
         matching_scores = torch.einsum('b c n , b c m -> b n m', src_matching_feature, trg_matching_feature) # (1, N, M)
         matching_scores = matching_scores / src_matching_feature.shape[1] ** 0.5 # (1, N, M)
         matching_scores = self.optimal_transport(matching_scores) # (1, N, M) -> (1, N+1, M+1)
         matching_scores_drop = matching_scores[:,:-1,:-1] # (1, N+1, M+1) -> (1, N, M)
-
+        
         # 9. Weighted SVD with top-k correspondence selections
         with torch.no_grad():
             src_corr_pts, trg_corr_pts, corr_scores, estimated_transform = self.fine_matching(
-                src_pcd, trg_pcd, matching_scores_drop, k=128)
+                src_pcd, trg_pcd, matching_scores_drop, k=64)
 
         out_dict['estimated_rotat'] = estimated_transform[:3, :3].T
         out_dict['estimated_trans'] = -(estimated_transform[:3, :3].inverse() @ -estimated_transform[:3, 3])
@@ -279,12 +309,12 @@ class EquiAssem_v7(pl.LightningModule):
         # 10. Evaluation
         eval_dict = self.evaluate_prediction(in_dict, out_dict, visualize=visualize)
         loss.update(eval_dict)
-
+        
         # in training we log for every step
         if mode == 'train':
             log_dict = {f'{mode}/{k}': v.item() for k, v in loss.items()}
             self.log_dict(log_dict, logger=True, sync_dist=False, rank_zero_only=True, on_step=False, on_epoch=True, batch_size=1)
-        
+
 
         return out_dict, loss
 
@@ -312,39 +342,9 @@ class EquiAssem_v7(pl.LightningModule):
         # (c) Compute CoRrespondence Distance (CRD) betwween prediction & ground-truth
         eval_result['crd'] = self._correspondence_distance(assm_pred, assm_grtr, is_trg_larger)
 
-        # if self.debug:
-        # filepath = in_dict['filepath']
-        # base_path = os.path.join('../../data/bbad_v2', filepath[0])
-        # obj_paths = [os.path.join(base_path, x) for x in os.listdir(base_path)]
-        # mesh = [trimesh.load_mesh(x) for x in obj_paths]
-        # mesh_t = [m.copy() for m in mesh]
-        # for idx, trans in enumerate(in_dict['gt_trans']):
-        #     mesh_t[idx].vertices -= trans[0].cpu().detach().numpy()
-        # mesh_t2 = [m.copy() for m in mesh_t]
-        # for idx, rotat in enumerate(in_dict['gt_rotat']):
-        #     mesh_t2[idx].vertices = torch.einsum('x y, n y -> n x', rotat[0].cpu().detach(), torch.tensor(mesh_t2[idx].vertices).float()).numpy()
-        
-        # pcd0 = torch.tensor(mesh_t2[0].vertices).float()
-        # pcd1 = torch.tensor(mesh_t2[1].vertices).float()
-        # _, pred = self._pairwise_mating(pcd0, pcd1, pred_relative_trsfm[0], pred_relative_trsfm[1], is_trg_larger)
-        # mesh_t3 = mesh_t2.copy()
-        # mesh_t3[0].vertices = pred[0].cpu().detach()
-        # mesh_t3[1].vertices = pred[1].cpu().detach()
-        # combined_mesh = trimesh.util.concatenate([mesh_t3[0], mesh_t3[1]])
-
-        # try:
-        #     intersection_volume = trimesh.boolean.intersection([mesh_t3[0], mesh_t3[1]]).volume
-        #     union_volume = mesh_t3[0].volume + mesh_t3[1].volume 
-        #     iou = min((intersection_volume / union_volume) * 100, 1.0)
-        # except ValueError as e:
-        #     print('not watertight mesh!')
-        #     iou = 0
-        # eval_result['iou'] = torch.tensor(iou)
-
         if visualize:
             save_pc(f"./vis/crd{round(eval_result['crd'].item(),2)}_o_loss{round(out_dict['o_loss'].item(),2)}_occ_loss{round(out_dict['occ_loss'].item(),2)}_rrmse{round(eval_result['rrmse'].item(),1)}_pred.pcd", pcds_pred)
             save_pc(f"./vis/crd{round(eval_result['crd'].item(),2)}_o_loss{round(out_dict['o_loss'].item(),2)}_occ_loss{round(out_dict['occ_loss'].item(),2)}_rrmse{round(eval_result['rrmse'].item(),1)}_grtr.pcd", pcds_grtr)
-
 
         return eval_result
     
