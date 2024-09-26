@@ -56,6 +56,8 @@ pip install git+https://github.com/KinglittleQ/torch-batch-svd
 pip install git+'https://github.com/otaheri/chamfer_distance'
 pip install "git+https://github.com/facebookresearch/pytorch3d.git@stable"
 
+cd lib/pointops
+python setup.py install && cd -
 ```
 
 #
