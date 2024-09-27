@@ -197,7 +197,7 @@ class EquiAssem_unet_v1(pl.LightningModule):
         # 9. Weighted SVD with top-k correspondence selections
         with torch.no_grad():
             src_corr_pts, trg_corr_pts, corr_scores, estimated_transform = self.fine_matching(
-                src_pcd, trg_pcd, matching_scores_drop, k=64)
+                src_pcd, trg_pcd, matching_scores_drop, k=128)
 
         out_dict['estimated_rotat'] = estimated_transform[:3, :3].T
         out_dict['estimated_trans'] = -(estimated_transform[:3, :3].inverse() @ -estimated_transform[:3, 3])

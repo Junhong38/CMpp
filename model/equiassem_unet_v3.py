@@ -80,9 +80,9 @@ def save_pc(filename:str, pcd_tensors:list):
         combined_cloud += pcd
     o3d.io.write_point_cloud(filename, combined_cloud)
 
-class EquiAssem_unet_v2(pl.LightningModule):
+class EquiAssem_unet_v3(pl.LightningModule):
     def __init__(self, lr, backbone='eqcnn', visualize=False):
-        super(EquiAssem_unet_v2, self).__init__()
+        super(EquiAssem_unet_v3, self).__init__()
 
         self.lr = lr
 
@@ -219,13 +219,17 @@ class EquiAssem_unet_v2(pl.LightningModule):
         trg_ori = ortho2rotation(trg_vecs) # (1, M, 2, 3) -> (1, M, 3, 3)
 
         # 4. Invariant Features
-        src_inv_feats = torch.matmul(src_equi_feats.permute(0, 3, 1, 2), src_ori.transpose(-2,-1)) # (1, N, C//3, 3) x (1, N, 3, 3) -> (1, N, C//3, 3)
-        trg_inv_feats = torch.matmul(trg_equi_feats.permute(0, 3, 1, 2), trg_ori.transpose(-2,-1)) # (1, M, C//3, 3) x (1, M, 3, 3) -> (1, M, C//3, 3)
-        src_inv_feats = rearrange(src_inv_feats, 'b n c r -> b (c r) n') # (1, N, C//3, 3) -> (1, C, N)
-        trg_inv_feats = rearrange(trg_inv_feats, 'b n c r -> b (c r) n') # (1, M, C//3, 3) -> (1, C, M)
+        src_shape_feats = torch.matmul(src_equi_feats.permute(0, 3, 1, 2), src_ori.transpose(-2,-1)) # (1, N, C//3, 3) x (1, N, 3, 3) -> (1, N, C//3, 3)
+        trg_shape_feats = torch.matmul(trg_equi_feats.permute(0, 3, 1, 2), trg_ori.transpose(-2,-1)) # (1, M, C//3, 3) x (1, M, 3, 3) -> (1, M, C//3, 3)
+        src_occ_feats = torch.matmul(src_equi_feats.permute(0, 3, 1, 2), src_ori.transpose(-2,-1)) # (1, N, C//3, 3) x (1, N, 3, 3) -> (1, N, C//3, 3)
+        trg_occ_feats = torch.matmul(trg_equi_feats.permute(0, 3, 1, 2), -trg_ori.transpose(-2,-1)) # (1, M, C//3, 3) x (1, M, 3, 3) -> (1, M, C//3, 3)
+        src_shape_feats = rearrange(src_shape_feats, 'b n c r -> b (c r) n') # (1, N, C//3, 3) -> (1, C, N)
+        trg_shape_feats = rearrange(trg_shape_feats, 'b n c r -> b (c r) n') # (1, M, C//3, 3) -> (1, C, M)
+        src_occ_feats = rearrange(src_occ_feats, 'b n c r -> b (c r) n') # (1, N, C//3, 3) -> (1, C, N)
+        trg_occ_feats = rearrange(trg_occ_feats, 'b n c r -> b (c r) n') # (1, M, C//3, 3) -> (1, C, M)
         
         #### OCCUPANCY - Conv with kNN ####
-        src_occ_feats = get_graph_feature(src_inv_feats, k=20)
+        src_occ_feats = get_graph_feature(src_occ_feats, k=20)
         src_occ_feats = self.conv1(src_occ_feats)
         src_occ_feats = src_occ_feats.max(dim=-1)[0]
 
@@ -237,7 +241,7 @@ class EquiAssem_unet_v2(pl.LightningModule):
         src_occ_feats = self.conv3(src_occ_feats)
         src_occ_feats = src_occ_feats.max(dim=-1)[0]
 
-        trg_occ_feats = get_graph_feature(trg_inv_feats, k=20)
+        trg_occ_feats = get_graph_feature(trg_occ_feats, k=20)
         trg_occ_feats = self.conv1(trg_occ_feats)
         trg_occ_feats = trg_occ_feats.max(dim=-1)[0]
 
@@ -251,11 +255,11 @@ class EquiAssem_unet_v2(pl.LightningModule):
         #### OCCUPANCY - Conv with kNN ####
 
         #### SHAPE - MLP ####
-        src_shape_feats = self.mlp1(src_inv_feats)
+        src_shape_feats = self.mlp1(src_shape_feats)
         src_shape_feats = self.mlp2(src_shape_feats)
         src_shape_feats = self.mlp3(src_shape_feats)
 
-        trg_shape_feats = self.mlp1(trg_inv_feats)
+        trg_shape_feats = self.mlp1(trg_shape_feats)
         trg_shape_feats = self.mlp2(trg_shape_feats)
         trg_shape_feats = self.mlp3(trg_shape_feats)
         #### SHAPE - MLP ####
