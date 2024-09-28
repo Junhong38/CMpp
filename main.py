@@ -68,6 +68,9 @@ def main(args):
     elif args.model == 'unet_v2': 
         from model.equiassem_unet_v2 import EquiAssem_unet_v2
         model = EquiAssem_unet_v2(lr=args.lr)
+    elif args.model == 'unet_v2_no_knn': 
+        from model.equiassem_unet_v2_no_knn import EquiAssem_unet_v2_no_knn
+        model = EquiAssem_unet_no_knn(lr=args.lr)
     elif args.model == 'unet_v3': 
         from model.equiassem_unet_v3 import EquiAssem_unet_v3
         model = EquiAssem_unet_v3(lr=args.lr)
@@ -75,6 +78,12 @@ def main(args):
         from model.equiassem_unet_v4 import EquiAssem_unet_v4
         model = EquiAssem_unet_v4(lr=args.lr)
     print(model)
+
+    def _count_model_param(model):
+        n_param = 0
+        for k in model.state_dict().keys():
+            n_param += model.state_dict()[k].reshape(-1).contiguous().size(0)
+        return n_param
 
     # Dataset initialization
     GADataset.initialize(args.datapath, args.data_category, args.sub_category, args.n_pts, args.scale)

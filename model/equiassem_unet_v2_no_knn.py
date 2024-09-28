@@ -80,9 +80,9 @@ def save_pc(filename:str, pcd_tensors:list):
         combined_cloud += pcd
     o3d.io.write_point_cloud(filename, combined_cloud)
 
-class EquiAssem_unet_v2(pl.LightningModule):
+class EquiAssem_unet_v2_no_knn(pl.LightningModule):
     def __init__(self, lr, backbone='eqcnn', visualize=False):
-        super(EquiAssem_unet_v2, self).__init__()
+        super(EquiAssem_unet_v2_no_knn, self).__init__()
 
         self.lr = lr
 
@@ -99,25 +99,26 @@ class EquiAssem_unet_v2(pl.LightningModule):
                                 nn.InstanceNorm1d(1024),
                                 nn.LeakyReLU())
 
-        self.conv1 = nn.Sequential(nn.Conv2d(2*1023, 512, kernel_size=1, bias=False),
-                                  nn.InstanceNorm2d(512),
-                                  nn.LeakyReLU(negative_slope=0.2)) # 1047552
-        self.conv2 = nn.Sequential(nn.Conv2d(2*512, 512, kernel_size=1, bias=False),
-                                  nn.InstanceNorm2d(512),
-                                  nn.LeakyReLU(negative_slope=0.2)) # 524288
-        self.conv3 = nn.Sequential(nn.Conv2d(2*512, 512, kernel_size=1, bias=False),
-                                  nn.InstanceNorm2d(512),
-                                  nn.LeakyReLU(negative_slope=0.2)) # 524288
+        self.conv1 = nn.Sequential(nn.Conv1d(1023, 930, kernel_size=1, bias=False),
+                                    nn.InstanceNorm1d(930),
+                                    nn.LeakyReLU(negative_slope=0.2)) # 951390
+        self.conv2 = nn.Sequential(nn.Conv1d(930, 794, kernel_size=1, bias=False),
+                                    nn.InstanceNorm1d(794),
+                                    nn.LeakyReLU(negative_slope=0.2)) # 738420
+        self.conv3 = nn.Sequential(nn.Conv1d(794, 512, kernel_size=1, bias=False),
+                                    nn.InstanceNorm1d(512),
+                                    nn.LeakyReLU(negative_slope=0.2)) # 406528
         
         self.mlp1 = nn.Sequential(nn.Conv1d(1023, 512, kernel_size=1, bias=False),
                                   nn.InstanceNorm1d(512),
-                                  nn.LeakyReLU(negative_slope=0.2))
+                                  nn.LeakyReLU(negative_slope=0.2)) # 523776
         self.mlp2 = nn.Sequential(nn.Conv1d(512, 512, kernel_size=1, bias=False),
                                   nn.InstanceNorm1d(512),
-                                  nn.LeakyReLU(negative_slope=0.2))
+                                  nn.LeakyReLU(negative_slope=0.2)) # 262144
         self.mlp3 = nn.Sequential(nn.Conv1d(512, 512, kernel_size=1, bias=False),
                                   nn.InstanceNorm1d(512),
-                                  nn.LeakyReLU(negative_slope=0.2))
+                                  nn.LeakyReLU(negative_slope=0.2)) # 262144
+            
 
         # Optimal Transport
         self.optimal_transport = LearnableLogOptimalTransport(num_iterations=100)
@@ -225,29 +226,13 @@ class EquiAssem_unet_v2(pl.LightningModule):
         trg_inv_feats = rearrange(trg_inv_feats, 'b n c r -> b (c r) n') # (1, M, C//3, 3) -> (1, C, M)
         
         #### OCCUPANCY - Conv with kNN ####
-        src_occ_feats = get_graph_feature(src_inv_feats, k=20)
-        src_occ_feats = self.conv1(src_occ_feats)
-        src_occ_feats = src_occ_feats.max(dim=-1)[0]
-
-        src_occ_feats = get_graph_feature(src_occ_feats, k=20)
+        src_occ_feats = self.conv1(src_inv_feats)
         src_occ_feats = self.conv2(src_occ_feats)
-        src_occ_feats = src_occ_feats.max(dim=-1)[0] 
-
-        src_occ_feats = get_graph_feature(src_occ_feats, k=20) 
         src_occ_feats = self.conv3(src_occ_feats)
-        src_occ_feats = src_occ_feats.max(dim=-1)[0]
 
-        trg_occ_feats = get_graph_feature(trg_inv_feats, k=20)
-        trg_occ_feats = self.conv1(trg_occ_feats)
-        trg_occ_feats = trg_occ_feats.max(dim=-1)[0]
-
-        trg_occ_feats = get_graph_feature(trg_occ_feats, k=20)
+        trg_occ_feats = self.conv1(trg_inv_feats)
         trg_occ_feats = self.conv2(trg_occ_feats)
-        trg_occ_feats = trg_occ_feats.max(dim=-1)[0] 
-
-        trg_occ_feats = get_graph_feature(trg_occ_feats, k=20) 
         trg_occ_feats = self.conv3(trg_occ_feats)
-        trg_occ_feats = trg_occ_feats.max(dim=-1)[0]   
         #### OCCUPANCY - Conv with kNN ####
 
         #### SHAPE - MLP ####
