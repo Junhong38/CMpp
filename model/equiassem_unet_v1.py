@@ -249,6 +249,9 @@ class EquiAssem_unet_v1(pl.LightningModule):
             log_dict = {f'{mode}/{k}': v.item() for k, v in loss.items()}
             self.log_dict(log_dict, logger=True, sync_dist=False, rank_zero_only=True, on_step=False, on_epoch=True, batch_size=1)
 
+        with open('./unet_v1_small.txt', 'a') as f:
+            text = f"{in_dict['eval_idx'].item()} | {in_dict['obj_class'][0]} | {in_dict['pcd_t'][0].squeeze(0).size(0)} | {in_dict['pcd_t'][1].squeeze(0).size(0)} | {round(eval_dict['rrmse'].item(),2)} | {round(eval_dict['trmse'].item(),2)} | {round(eval_dict['crd'].item(),2)} | {round(eval_dict['cd'].item(),2)} | {round(loss['c_loss'].item(),3)} | {round(loss['occ_loss'].item(),3)} | {round(loss['p_loss'].item(),3)} | {round(loss['o_loss'].item(),3)}\n"
+            f.write(text)
 
         return out_dict, loss
 
