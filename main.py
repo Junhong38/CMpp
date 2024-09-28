@@ -71,6 +71,9 @@ def main(args):
     elif args.model == 'unet_v3': 
         from model.equiassem_unet_v3 import EquiAssem_unet_v3
         model = EquiAssem_unet_v3(lr=args.lr)
+    elif args.model == 'unet_v4': 
+        from model.equiassem_unet_v4 import EquiAssem_unet_v4
+        model = EquiAssem_unet_v4(lr=args.lr)
     print(model)
 
     # Dataset initialization
