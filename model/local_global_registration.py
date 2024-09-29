@@ -331,4 +331,4 @@ class LocalGlobalRegistration(nn.Module):
         # print(num_common, gt_corr.size(0))
         ref_corr_points, src_corr_points, corr_scores, estimated_transform = self.local_to_global_registration(ref_points, src_points, pred_corr, score_mat)
 
-        return ref_corr_points, src_corr_points, corr_scores, estimated_transform # , pred_corr
+        return ref_corr_points, src_corr_points, corr_scores, estimated_transform, pred_corr

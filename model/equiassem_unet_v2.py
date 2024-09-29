@@ -108,7 +108,7 @@ class EquiAssem_unet_v2(pl.LightningModule):
         self.conv3 = nn.Sequential(nn.Conv2d(2*512, 512, kernel_size=1, bias=False),
                                   nn.InstanceNorm2d(512),
                                   nn.LeakyReLU(negative_slope=0.2)) # 524288
-        
+
         self.mlp1 = nn.Sequential(nn.Conv1d(1023, 512, kernel_size=1, bias=False),
                                   nn.InstanceNorm1d(512),
                                   nn.LeakyReLU(negative_slope=0.2))
@@ -272,7 +272,7 @@ class EquiAssem_unet_v2(pl.LightningModule):
         
         # 9. Weighted SVD with top-k correspondence selections
         with torch.no_grad():
-            src_corr_pts, trg_corr_pts, corr_scores, estimated_transform = self.fine_matching(
+            src_corr_pts, trg_corr_pts, corr_scores, estimated_transform, pred_corr = self.fine_matching(
                 src_pcd, trg_pcd, matching_scores_drop, k=128)
 
         out_dict['estimated_rotat'] = estimated_transform[:3, :3].T
@@ -294,8 +294,8 @@ class EquiAssem_unet_v2(pl.LightningModule):
             out_dict['src_gt_rot'] = in_dict['gt_rotat'][0].squeeze(0)
             out_dict['trg_gt_rot'] = in_dict['gt_rotat'][1].squeeze(0)
             out_dict['gt_correspondence'] = in_dict['gt_correspondence'].squeeze(0)
+            out_dict['pred_corr'] = pred_corr
             with open('debug.pickle', 'wb') as f: pickle.dump(out_dict, f, pickle.HIGHEST_PROTOCOL)
-            breakpoint()
             
         # 10. Calculate Loss
         gt_corr = in_dict['gt_correspondence'].squeeze(0)

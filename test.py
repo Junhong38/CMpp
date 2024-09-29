@@ -68,6 +68,13 @@ def test(args):
     elif args.model == 'unet_v1': 
         from model.equiassem_unet_v1 import EquiAssem_unet_v1
         model = EquiAssem_unet_v1(lr=args.lr, visualize=args.visualize)
+    elif args.model == 'unet_v2': 
+        from model.equiassem_unet_v2 import EquiAssem_unet_v2
+        model = EquiAssem_unet_v2(lr=args.lr, visualize=args.visualize)
+    elif args.model == 'unet_v2_no_knn': 
+        from model.equiassem_unet_v2_no_knn import EquiAssem_unet_v2_no_knn
+        model = EquiAssem_unet_v2_no_knn(lr=args.lr, visualize=args.visualize)
+
     print(model)
     model.to(torch.device('cuda:0'))
     model.eval()

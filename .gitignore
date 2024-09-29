@@ -3,3 +3,10 @@ wandb/
 **/__pycache__/**
 model/backbone/__pycache__
 lightning_logs/
+lib/pointops/build/*
+lib/pointops/dist/*
+vis/
+.ipynb_checkpoints/
+*.pickle
+*.txt
+*.sh
