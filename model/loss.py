@@ -53,7 +53,6 @@ class CircleLoss(nn.Module):
 
         return circle_loss
 
-
     def get_recall(self, coords_dist, feats_dist):
         """
         Get feature match recall, divided by number of true inliers
@@ -106,6 +105,112 @@ class CircleLoss(nn.Module):
             circle_loss = torch.tensor(0.).to(src_feats.device)
             
         return circle_loss, recall
+
+class CircleLossOcc(nn.Module):
+
+    def __init__(self, log_scale=16, pos_optimal=0.1, neg_optimal=1.4):
+        super(CircleLossOcc,self).__init__()
+        self.log_scale = 24
+        self.pos_optimal = pos_optimal
+        self.neg_optimal = neg_optimal
+
+        self.pos_margin = 0.1
+        self.neg_margin = 1.4
+        
+        self.pos_radius = 0.018
+        self.safe_radius = 0.06
+
+        self.max_points = 128
+
+    def get_circle_loss(self, coords_dist, feats_dist):
+        """
+        Modified from: https://github.com/XuyangBai/D3Feat.pytorch
+        """
+
+        # pos_mask = coords_dist < self.pos_radius
+        # neg_mask = coords_dist > self.safe_radius
+        neg_mask = coords_dist < self.pos_radius
+        pos_mask = coords_dist > self.safe_radius
+
+        # get anchors that have both positive and negative pairs
+        row_sel = ((pos_mask.sum(-1)>0) * (neg_mask.sum(-1)>0)).detach()
+        col_sel = ((pos_mask.sum(-2)>0) * (neg_mask.sum(-2)>0)).detach()
+
+        # get alpha for both positive and negative pairs
+        pos_weight = feats_dist - 1e5 * (~pos_mask).float() # mask the non-positive 
+        pos_weight = (pos_weight - self.pos_optimal) # mask the uninformative positive
+        pos_weight = torch.max(torch.zeros_like(pos_weight), pos_weight).detach() 
+
+        neg_weight = feats_dist + 1e5 * (~neg_mask).float() # mask the non-negative
+        neg_weight = (self.neg_optimal - neg_weight) # mask the uninformative negative
+        neg_weight = torch.max(torch.zeros_like(neg_weight),neg_weight).detach()
+
+        lse_pos_row = torch.logsumexp(self.log_scale * (feats_dist - self.pos_margin) * pos_weight,dim=-1)
+        lse_pos_col = torch.logsumexp(self.log_scale * (feats_dist - self.pos_margin) * pos_weight,dim=-2)
+
+        lse_neg_row = torch.logsumexp(self.log_scale * (self.neg_margin - feats_dist) * neg_weight,dim=-1)
+        lse_neg_col = torch.logsumexp(self.log_scale * (self.neg_margin - feats_dist) * neg_weight,dim=-2)
+
+        loss_row = F.softplus(lse_pos_row + lse_neg_row)/self.log_scale
+        loss_col = F.softplus(lse_pos_col + lse_neg_col)/self.log_scale
+
+        circle_loss = (loss_row[row_sel].mean() + loss_col[col_sel].mean()) / 2
+
+        return circle_loss
+
+    def get_recall(self, coords_dist, feats_dist):
+        """
+        Get feature match recall, divided by number of true inliers
+        """
+        pos_mask = coords_dist < self.pos_radius
+        n_gt_pos = (pos_mask.sum(-1)>0).float().sum()+1e-12
+        try:
+            _, sel_idx = torch.max(feats_dist, -1)
+        except:
+            return torch.tensor(0.).to(feats_dist.device)
+        sel_dist = torch.gather(coords_dist,dim=-1,index=sel_idx[:,None])[pos_mask.sum(-1)>0]
+        n_pred_pos = (sel_dist < self.pos_radius).float().sum()
+        recall = n_pred_pos / n_gt_pos
+        return recall
+
+    def forward(self, src_pcd, tgt_pcd, src_feats, tgt_feats, correspondence):
+        if len(correspondence) == 0:
+            print("circle_loss: No correspondence !!")
+            return torch.tensor(0.).to(src_feats.device), torch.tensor(0.).to(src_feats.device)
+
+        c_dist = torch.norm(src_pcd[correspondence[:,0]] - tgt_pcd[correspondence[:,1]], dim = 1)
+        c_select = c_dist < self.pos_radius - 0.001
+        try: correspondence = correspondence[c_select]
+        except: torch.tensor(0.).to(src_feats.device), torch.tensor(0.).to(src_feats.device)
+        
+        if correspondence.size(0) > self.max_points:
+            choice = np.random.permutation(correspondence.size(0))[:self.max_points]
+            correspondence = correspondence[choice]
+
+        # Use only correspondence points
+        src_idx = correspondence[:,0]
+        tgt_idx = correspondence[:,1]
+        src_pcd, tgt_pcd = src_pcd[src_idx], tgt_pcd[tgt_idx]
+        src_feats, tgt_feats = src_feats[:, src_idx, :], tgt_feats[:, tgt_idx, :]
+
+        # Get coordinate distance
+        coords_dist = torch.sqrt(torch.sum((src_pcd[:, None, :] - tgt_pcd[None, :, :]) ** 2, dim=-1))
+
+        # Get feature distance (from GeoTransformer Implementation)
+        src_feats = F.normalize(src_feats.squeeze(0), p=2, dim=-1)
+        tgt_feats = F.normalize(tgt_feats.squeeze(0), p=2, dim=-1)
+        feats_dist = (2.0 - 2.0 * torch.einsum('x d, y d -> x y', src_feats, tgt_feats)).pow(0.5)
+        
+        # Calculate circle loss and feature matching recall (FMR)
+        circle_loss = self.get_circle_loss(coords_dist, feats_dist)
+        recall = self.get_recall(coords_dist, feats_dist)
+        
+        if circle_loss != circle_loss:
+            print("circle_loss: NaN detected !!")
+            circle_loss = torch.tensor(0.).to(src_feats.device)
+            
+        return circle_loss, recall
+
 
 class PointMatchingLoss(nn.Module):
     def __init__(self):
@@ -225,37 +330,9 @@ class OccupancyLossCosineDistance(nn.Module):
         
         # Compute cosine similarity and then convert to cosine distance
         cos_sim_corr = F.cosine_similarity(src_occ_corr, trg_occ_corr, dim=1)
-        loss_corr = (1 - cos_sim_corr).mean()
+        loss_corr = ((1 + cos_sim_corr) / 2).mean()
 
-        # # L2 between non-correspondences
-        # src_indices = set(range(src_occ.size(2)))
-        # trg_indices = set(range(trg_occ.size(2)))
-        
-        # src_non_corr_indices = list(src_indices - set(correspondence[:, 0].tolist()))
-        # trg_non_corr_indices = list(trg_indices - set(correspondence[:, 1].tolist()))
-
-        # with torch.no_grad():
-        #     if src_non_corr_indices and trg_non_corr_indices:
-        #         src_occ_non_corr = src_occ[:, :, src_non_corr_indices]
-        #         trg_occ_non_corr = trg_occ[:, :, trg_non_corr_indices]
-
-        #         loss_non_corr = 0.
-        #         batch_size = src_occ_non_corr.size(0)
-        #         channel_size = src_occ_non_corr.size(1)
-        #         src_num_points = src_occ_non_corr.size(2)
-        #         trg_num_points = trg_occ_non_corr.size(2)
-
-        #         for i in range(src_num_points):
-        #             src_point = src_occ_non_corr[:, :, i].unsqueeze(-1)  # [B, C, 1]
-        #             src_point_expanded = src_point.expand(-1, -1, trg_num_points)
-                    
-        #             # Compute cosine similarity and then convert to cosine distance
-        #             cos_sim_non_corr = F.cosine_similarity(src_point_expanded, trg_occ_non_corr, dim=1)
-        #             loss_non_corr += (1 - cos_sim_non_corr).mean()
-
-        #     loss_non_corr = loss_non_corr / src_num_points  # Average over source points
-
-        return loss_corr #, loss_non_corr
+        return loss_corr
 
 class OrientationLoss(nn.Module):
     def __init__(self):
