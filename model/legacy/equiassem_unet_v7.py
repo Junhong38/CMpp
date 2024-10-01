@@ -17,7 +17,7 @@ from chamfer_distance import ChamferDistance as chamfer_dist
 
 from model.backbone.vn_dgcnn import EQCNN_equi_unet
 from model.backbone.vn_layers import VNLinear, VNLeakyReLU, VNLinearLeakyReLU, VNLinearNoActivation
-from model.loss import CircleLoss, PointMatchingLoss, OrientationLoss, OccupancyLossCosineDistance, PointMatchingLossAdv
+from model.loss import CircleLoss, PointMatchingLoss, OrientationLoss, OccupancyLossCosineDistance, PointMatchingLossAdv, CircleLossOcc
 from model.learnable_sinkhorn import LearnableLogOptimalTransport
 from model.local_global_registration import LocalGlobalRegistration, WeightedProcrustes
 
@@ -28,6 +28,9 @@ import open3d as o3d
 import random
 
 import pickle
+
+def sigmoid(x, k=2):
+    return 1 / (1+ torch.exp(-k * x))
 
 def knn(x, k):
     inner = -2*torch.matmul(x.transpose(2, 1), x)
@@ -80,9 +83,9 @@ def save_pc(filename:str, pcd_tensors:list):
         combined_cloud += pcd
     o3d.io.write_point_cloud(filename, combined_cloud)
 
-class EquiAssem_unet_v2_no_knn(pl.LightningModule):
+class EquiAssem_unet_v7(pl.LightningModule):
     def __init__(self, lr, backbone='eqcnn', visualize=False):
-        super(EquiAssem_unet_v2_no_knn, self).__init__()
+        super(EquiAssem_unet_v7, self).__init__()
 
         self.lr = lr
 
@@ -95,30 +98,29 @@ class EquiAssem_unet_v2_no_knn(pl.LightningModule):
         # Basis Vector
         self.proj = VNLinear(self.feat_dim//3, 2)
 
-        self.matching_mlp = nn.Sequential(nn.Conv1d(1024, 1024, kernel_size=1),
-                                nn.InstanceNorm1d(1024),
-                                nn.LeakyReLU())
+        self.conv1 = nn.Sequential(nn.Conv2d(2*1023, 512, kernel_size=1, bias=False),
+                                  nn.InstanceNorm2d(512),
+                                  nn.LeakyReLU(negative_slope=0.2)) # 1047552
+        self.conv2 = nn.Sequential(nn.Conv2d(2*512, 512, kernel_size=1, bias=False),
+                                  nn.InstanceNorm2d(512),
+                                  nn.LeakyReLU(negative_slope=0.2)) # 524288
+        self.conv3 = nn.Sequential(nn.Conv2d(2*512, 512, kernel_size=1, bias=False),
+                                  nn.InstanceNorm2d(512),
+                                  nn.LeakyReLU(negative_slope=0.2)) # 524288
 
-        self.conv1 = nn.Sequential(nn.Conv1d(1023, 930, kernel_size=1, bias=False),
-                                    nn.InstanceNorm1d(930),
-                                    nn.LeakyReLU(negative_slope=0.2)) # 951390
-        self.conv2 = nn.Sequential(nn.Conv1d(930, 794, kernel_size=1, bias=False),
-                                    nn.InstanceNorm1d(794),
-                                    nn.LeakyReLU(negative_slope=0.2)) # 738420
-        self.conv3 = nn.Sequential(nn.Conv1d(794, 512, kernel_size=1, bias=False),
-                                    nn.InstanceNorm1d(512),
-                                    nn.LeakyReLU(negative_slope=0.2)) # 406528
+        self.conv4 = nn.Sequential(nn.Conv1d(3*512, 512, kernel_size=1, bias=False),
+                                  nn.InstanceNorm1d(512),
+                                  nn.LeakyReLU(negative_slope=0.2)) # 524288
         
         self.mlp1 = nn.Sequential(nn.Conv1d(1023, 512, kernel_size=1, bias=False),
                                   nn.InstanceNorm1d(512),
-                                  nn.LeakyReLU(negative_slope=0.2)) # 523776
+                                  nn.LeakyReLU(negative_slope=0.2))
         self.mlp2 = nn.Sequential(nn.Conv1d(512, 512, kernel_size=1, bias=False),
                                   nn.InstanceNorm1d(512),
-                                  nn.LeakyReLU(negative_slope=0.2)) # 262144
+                                  nn.LeakyReLU(negative_slope=0.2))
         self.mlp3 = nn.Sequential(nn.Conv1d(512, 512, kernel_size=1, bias=False),
                                   nn.InstanceNorm1d(512),
-                                  nn.LeakyReLU(negative_slope=0.2)) # 262144
-            
+                                  nn.LeakyReLU(negative_slope=0.2))
 
         # Optimal Transport
         self.optimal_transport = LearnableLogOptimalTransport(num_iterations=100)
@@ -226,13 +228,39 @@ class EquiAssem_unet_v2_no_knn(pl.LightningModule):
         trg_inv_feats = rearrange(trg_inv_feats, 'b n c r -> b (c r) n') # (1, M, C//3, 3) -> (1, C, M)
         
         #### OCCUPANCY - Conv with kNN ####
-        src_occ_feats = self.conv1(src_inv_feats)
-        src_occ_feats = self.conv2(src_occ_feats)
-        src_occ_feats = self.conv3(src_occ_feats)
+        src_occ_feats = get_graph_feature(src_inv_feats, k=20)
+        src_occ_feats = self.conv1(src_occ_feats)
+        src_occ_feats_1 = src_occ_feats.max(dim=-1)[0]
 
-        trg_occ_feats = self.conv1(trg_inv_feats)
+        src_occ_feats = get_graph_feature(src_occ_feats_1, k=20)
+        src_occ_feats = self.conv2(src_occ_feats)
+        src_occ_feats_2 = src_occ_feats.max(dim=-1)[0] 
+
+        src_occ_feats = get_graph_feature(src_occ_feats_2, k=20) 
+        src_occ_feats = self.conv3(src_occ_feats)
+        src_occ_feats_3 = src_occ_feats.max(dim=-1)[0]
+
+        src_occ_feats = torch.cat((src_occ_feats_1, src_occ_feats_2, src_occ_feats_3), dim=1)
+        src_occ_feats = self.conv4(src_occ_feats)
+        src_occ_global_feats = F.adaptive_max_pool1d(src_occ_feats, 1).expand_as(src_occ_feats)
+        src_occ_feats = src_occ_feats_3 + src_occ_global_feats
+
+        trg_occ_feats = get_graph_feature(trg_inv_feats, k=20)
+        trg_occ_feats = self.conv1(trg_occ_feats)
+        trg_occ_feats_1 = trg_occ_feats.max(dim=-1)[0]
+
+        trg_occ_feats = get_graph_feature(trg_occ_feats_1, k=20)
         trg_occ_feats = self.conv2(trg_occ_feats)
+        trg_occ_feats_2 = trg_occ_feats.max(dim=-1)[0] 
+
+        trg_occ_feats = get_graph_feature(trg_occ_feats_2, k=20) 
         trg_occ_feats = self.conv3(trg_occ_feats)
+        trg_occ_feats_3 = trg_occ_feats.max(dim=-1)[0]
+
+        trg_occ_feats = torch.cat((trg_occ_feats_1, trg_occ_feats_2, trg_occ_feats_3), dim=1)
+        trg_occ_feats = self.conv4(trg_occ_feats)
+        trg_occ_global_feats = F.adaptive_max_pool1d(trg_occ_feats, 1).expand_as(trg_occ_feats)
+        trg_occ_feats = trg_occ_feats_3 + trg_occ_global_feats
         #### OCCUPANCY - Conv with kNN ####
 
         #### SHAPE - MLP ####
@@ -245,20 +273,23 @@ class EquiAssem_unet_v2_no_knn(pl.LightningModule):
         trg_shape_feats = self.mlp3(trg_shape_feats)
         #### SHAPE - MLP ####
 
-        # 7. Combine Shape and Occupancy Descriptors
-        src_matching_feature = self.matching_mlp(torch.cat([src_shape_feats, src_occ_feats], dim=1))
-        trg_matching_feature = self.matching_mlp(torch.cat([trg_shape_feats, -trg_occ_feats], dim=1))
-        
+        src_occ_feats = F.normalize(src_occ_feats, p=2, dim=1)
+        trg_occ_feats = F.normalize(trg_occ_feats, p=2, dim=1)
+
+        cosine_distance = torch.einsum('b c n , b c m -> b n m', src_occ_feats, trg_occ_feats)
+        confidence = sigmoid(-cosine_distance)
+
         # 8. Optimal Transport
-        matching_scores = torch.einsum('b c n , b c m -> b n m', src_matching_feature, trg_matching_feature) # (1, N, M)
-        matching_scores = matching_scores / src_matching_feature.shape[1] ** 0.5 # (1, N, M)
+        matching_scores = torch.einsum('b c n , b c m -> b n m', src_shape_feats, trg_shape_feats) # (1, N, M)
+        matching_scores = matching_scores * confidence
+        matching_scores = matching_scores / src_shape_feats.shape[1] ** 0.5 # (1, N, M)
         matching_scores = self.optimal_transport(matching_scores) # (1, N, M) -> (1, N+1, M+1)
         matching_scores_drop = matching_scores[:,:-1,:-1] # (1, N+1, M+1) -> (1, N, M)
         
         # 9. Weighted SVD with top-k correspondence selections
         with torch.no_grad():
-            src_corr_pts, trg_corr_pts, corr_scores, estimated_transform = self.fine_matching(
-                src_pcd, trg_pcd, matching_scores_drop, k=128)
+            src_corr_pts, trg_corr_pts, corr_scores, estimated_transform, pred_corr = self.fine_matching(
+                src_pcd, trg_pcd, matching_scores_drop, confidence, k=128)
 
         out_dict['estimated_rotat'] = estimated_transform[:3, :3].T
         out_dict['estimated_trans'] = -(estimated_transform[:3, :3].inverse() @ -estimated_transform[:3, 3])
@@ -279,8 +310,8 @@ class EquiAssem_unet_v2_no_knn(pl.LightningModule):
             out_dict['src_gt_rot'] = in_dict['gt_rotat'][0].squeeze(0)
             out_dict['trg_gt_rot'] = in_dict['gt_rotat'][1].squeeze(0)
             out_dict['gt_correspondence'] = in_dict['gt_correspondence'].squeeze(0)
+            out_dict['pred_corr'] = pred_corr
             with open('debug.pickle', 'wb') as f: pickle.dump(out_dict, f, pickle.HIGHEST_PROTOCOL)
-            breakpoint()
             
         # 10. Calculate Loss
         gt_corr = in_dict['gt_correspondence'].squeeze(0)
@@ -308,7 +339,7 @@ class EquiAssem_unet_v2_no_knn(pl.LightningModule):
         # in training we log for every step
         if mode == 'train':
             log_dict = {f'{mode}/{k}': v.item() for k, v in loss.items()}
-            self.log_dict(log_dict, logger=True, sync_dist=False, rank_zero_only=True, on_step=False, on_epoch=True, batch_size=1)
+            self.log_dict(log_dict, logger=True, sync_dist=True, rank_zero_only=True, on_step=False, on_epoch=True, batch_size=1)
 
 
         return out_dict, loss

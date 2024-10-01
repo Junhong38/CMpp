@@ -17,7 +17,7 @@ from chamfer_distance import ChamferDistance as chamfer_dist
 
 from model.backbone.vn_dgcnn import EQCNN_equi_unet
 from model.backbone.vn_layers import VNLinear, VNLeakyReLU, VNLinearLeakyReLU, VNLinearNoActivation
-from model.loss import CircleLoss, PointMatchingLoss, OrientationLoss
+from model.loss import CircleLoss, PointMatchingLoss, OrientationLoss, OccupancyLossCosineDistance, PointMatchingLossAdv
 from model.learnable_sinkhorn import LearnableLogOptimalTransport
 from model.local_global_registration import LocalGlobalRegistration, WeightedProcrustes
 
@@ -28,10 +28,10 @@ import open3d as o3d
 import random
 
 import pickle
-from common.utils import save_pc, knn, get_graph_feature
+from common.utils import save_pc
 
 class EquiAssem_unet_v1(pl.LightningModule):
-    def __init__(self, lr, backbone='eqcnn', local=False, positive=False, visualize=False):
+    def __init__(self, lr, backbone='eqcnn', visualize=False):
         super(EquiAssem_unet_v1, self).__init__()
 
         self.lr = lr
@@ -45,33 +45,13 @@ class EquiAssem_unet_v1(pl.LightningModule):
         # Basis Vector
         self.proj = VNLinear(self.feat_dim//3, 2)
 
-        self.matching_mlp = nn.Sequential(nn.Conv1d(1024, 1024, kernel_size=1),
-                                nn.InstanceNorm1d(1024),
+        self.inv_mlp = nn.Sequential(nn.InstanceNorm1d(self.feat_dim//3*3),
+                                    nn.LeakyReLU(),
+                                    nn.Conv1d(self.feat_dim//3*3, self.feat_dim//3*3, kernel_size=1))
+
+        self.matching_mlp = nn.Sequential(nn.Conv1d(self.feat_dim//3*3, self.feat_dim//3*3, kernel_size=1),
+                                nn.InstanceNorm1d(self.feat_dim//3*3),
                                 nn.LeakyReLU())
-
-        self.conv1 = nn.Sequential(nn.Conv2d(2*1023, 512, kernel_size=1, bias=False),
-                                  nn.InstanceNorm2d(512),
-                                  nn.LeakyReLU(negative_slope=0.2)) # 1047552
-        self.conv2 = nn.Sequential(nn.Conv2d(2*512, 512, kernel_size=1, bias=False),
-                                  nn.InstanceNorm2d(512),
-                                  nn.LeakyReLU(negative_slope=0.2)) # 524288
-        self.conv3 = nn.Sequential(nn.Conv2d(2*512, 512, kernel_size=1, bias=False),
-                                  nn.InstanceNorm2d(512),
-                                  nn.LeakyReLU(negative_slope=0.2)) # 524288
-
-        self.conv4 = nn.Sequential(nn.Conv1d(3*512, 512, kernel_size=1, bias=False),
-                                  nn.InstanceNorm1d(512),
-                                  nn.LeakyReLU(negative_slope=0.2)) # 524288
-        
-        self.mlp1 = nn.Sequential(nn.Conv1d(1023, 512, kernel_size=1, bias=False),
-                                  nn.InstanceNorm1d(512),
-                                  nn.LeakyReLU(negative_slope=0.2))
-        self.mlp2 = nn.Sequential(nn.Conv1d(512, 512, kernel_size=1, bias=False),
-                                  nn.InstanceNorm1d(512),
-                                  nn.LeakyReLU(negative_slope=0.2))
-        self.mlp3 = nn.Sequential(nn.Conv1d(512, 512, kernel_size=1, bias=False),
-                                  nn.InstanceNorm1d(512),
-                                  nn.LeakyReLU(negative_slope=0.2))
 
         # Optimal Transport
         self.optimal_transport = LearnableLogOptimalTransport(num_iterations=100)
@@ -90,7 +70,7 @@ class EquiAssem_unet_v1(pl.LightningModule):
         )
         
         self.circle_loss = CircleLoss()
-        self.matching_loss = PointMatchingLoss()
+        self.matching_loss = PointMatchingLossAdv()
         self.orientation_loss = OrientationLoss()
         self.occupancy_loss = CircleLoss()
 
@@ -102,9 +82,6 @@ class EquiAssem_unet_v1(pl.LightningModule):
 
         self.debug = False
         self.visualize = visualize
-
-        self.local = local
-        self.positive = positive
 
         self.validation_step_outputs = []
         self.test_step_outputs = []
@@ -181,61 +158,21 @@ class EquiAssem_unet_v1(pl.LightningModule):
         src_inv_feats = rearrange(src_inv_feats, 'b n c r -> b (c r) n') # (1, N, C//3, 3) -> (1, C, N)
         trg_inv_feats = rearrange(trg_inv_feats, 'b n c r -> b (c r) n') # (1, M, C//3, 3) -> (1, C, M)
         
-        #### OCCUPANCY - Conv with kNN ####
-        src_occ_feats = get_graph_feature(src_inv_feats, k=20)
-        src_occ_feats = self.conv1(src_occ_feats)
-        src_occ_feats_1 = src_occ_feats.max(dim=-1)[0]
+        # 5. Divide shape and occupancy descriptors
+        src_inv_feats = self.inv_mlp(src_inv_feats)
+        trg_inv_feats = self.inv_mlp(trg_inv_feats)
+        C = src_inv_feats.size(1)//2
+        src_shape_feats, src_occ_feats = src_inv_feats[:, :C], src_inv_feats[:, C:]
+        trg_shape_feats, trg_occ_feats = trg_inv_feats[:, :C], trg_inv_feats[:, C:]
 
-        src_occ_feats = get_graph_feature(src_occ_feats_1, k=20)
-        src_occ_feats = self.conv2(src_occ_feats)
-        src_occ_feats_2 = src_occ_feats.max(dim=-1)[0] 
-
-        src_occ_feats = get_graph_feature(src_occ_feats_2, k=20) 
-        src_occ_feats = self.conv3(src_occ_feats)
-        src_occ_feats_3 = src_occ_feats.max(dim=-1)[0]
-
-        src_occ_feats = torch.cat((src_occ_feats_1, src_occ_feats_2, src_occ_feats_3), dim=1)
-        src_occ_feats = self.conv4(src_occ_feats)
-        if self.local:
-            src_occ_global_feats = F.adaptive_max_pool1d(src_occ_feats, 1).expand_as(src_occ_feats)
-            src_occ_feats = src_occ_feats_3 + src_occ_global_feats
-
-        trg_occ_feats = get_graph_feature(trg_inv_feats, k=20)
-        trg_occ_feats = self.conv1(trg_occ_feats)
-        trg_occ_feats_1 = trg_occ_feats.max(dim=-1)[0]
-
-        trg_occ_feats = get_graph_feature(trg_occ_feats_1, k=20)
-        trg_occ_feats = self.conv2(trg_occ_feats)
-        trg_occ_feats_2 = trg_occ_feats.max(dim=-1)[0] 
-
-        trg_occ_feats = get_graph_feature(trg_occ_feats_2, k=20) 
-        trg_occ_feats = self.conv3(trg_occ_feats)
-        trg_occ_feats_3 = trg_occ_feats.max(dim=-1)[0]
-
-        trg_occ_feats = torch.cat((trg_occ_feats_1, trg_occ_feats_2, trg_occ_feats_3), dim=1)
-        trg_occ_feats = self.conv4(trg_occ_feats)
-        if self.local:
-            trg_occ_global_feats = F.adaptive_max_pool1d(trg_occ_feats, 1).expand_as(trg_occ_feats)
-            trg_occ_feats = trg_occ_feats_3 + trg_occ_global_feats
-        #### OCCUPANCY - Conv with kNN ####
-
-        #### SHAPE - MLP ####
-        src_shape_feats = self.mlp1(src_inv_feats)
-        src_shape_feats = self.mlp2(src_shape_feats)
-        src_shape_feats = self.mlp3(src_shape_feats)
-
-        trg_shape_feats = self.mlp1(trg_inv_feats)
-        trg_shape_feats = self.mlp2(trg_shape_feats)
-        trg_shape_feats = self.mlp3(trg_shape_feats)
-        #### SHAPE - MLP ####
-
+        src_shape_feats = F.normalize(src_shape_feats, p=2, dim=1)
         src_occ_feats = F.normalize(src_occ_feats, p=2, dim=1)
+        trg_shape_feats = F.normalize(trg_shape_feats, p=2, dim=1)
         trg_occ_feats = F.normalize(trg_occ_feats, p=2, dim=1)
 
         # 7. Combine Shape and Occupancy Descriptors
         src_matching_feature = self.matching_mlp(torch.cat([src_shape_feats, src_occ_feats], dim=1))
-        if self.positive: trg_matching_feature = self.matching_mlp(torch.cat([trg_shape_feats, trg_occ_feats], dim=1))
-        else: trg_matching_feature = self.matching_mlp(torch.cat([trg_shape_feats, -trg_occ_feats], dim=1))
+        trg_matching_feature = self.matching_mlp(torch.cat([trg_shape_feats, -trg_occ_feats], dim=1))
         
         # 8. Optimal Transport
         matching_scores = torch.einsum('b c n , b c m -> b n m', src_matching_feature, trg_matching_feature) # (1, N, M)
@@ -245,7 +182,7 @@ class EquiAssem_unet_v1(pl.LightningModule):
         
         # 9. Weighted SVD with top-k correspondence selections
         with torch.no_grad():
-            src_corr_pts, trg_corr_pts, corr_scores, estimated_transform, pred_corr = self.fine_matching(
+            src_corr_pts, trg_corr_pts, corr_scores, estimated_transform = self.fine_matching(
                 src_pcd, trg_pcd, matching_scores_drop, k=128)
 
         out_dict['estimated_rotat'] = estimated_transform[:3, :3].T
@@ -267,8 +204,8 @@ class EquiAssem_unet_v1(pl.LightningModule):
             out_dict['src_gt_rot'] = in_dict['gt_rotat'][0].squeeze(0)
             out_dict['trg_gt_rot'] = in_dict['gt_rotat'][1].squeeze(0)
             out_dict['gt_correspondence'] = in_dict['gt_correspondence'].squeeze(0)
-            out_dict['pred_corr'] = pred_corr
             with open('debug.pickle', 'wb') as f: pickle.dump(out_dict, f, pickle.HIGHEST_PROTOCOL)
+            breakpoint()
             
         # 10. Calculate Loss
         gt_corr = in_dict['gt_correspondence'].squeeze(0)
@@ -283,8 +220,7 @@ class EquiAssem_unet_v1(pl.LightningModule):
         loss['o_loss'] = self.orientation_loss(src_ori, trg_ori, gt_corr, in_dict['gt_rotat'])
         
         # 9-4. occupancy loss
-        if self.positive: loss['occ_loss'], loss['occ_FMR']  = self.occupancy_loss(src_pcd_raw, trg_pcd_raw, src_occ_feats.transpose(-2,-1), trg_occ_feats.transpose(-2,-1), gt_corr)
-        else: loss['occ_loss'], loss['occ_FMR']  = self.occupancy_loss(src_pcd_raw, trg_pcd_raw, src_occ_feats.transpose(-2,-1), -trg_occ_feats.transpose(-2,-1), gt_corr)
+        loss['occ_loss'], loss['occ_FMR']= self.occupancy_loss(src_pcd_raw, trg_pcd_raw, src_occ_feats.transpose(-2,-1), -trg_occ_feats.transpose(-2,-1), gt_corr)
 
         # 9-4. final loss
         loss['loss'] = self.c_loss_weight * loss['c_loss'] + self.p_loss_weight * loss['p_loss'] + self.o_loss_weight * loss['o_loss'] +  self.occ_loss_weight * loss['occ_loss']
@@ -297,7 +233,11 @@ class EquiAssem_unet_v1(pl.LightningModule):
         # in training we log for every step
         if mode == 'train':
             log_dict = {f'{mode}/{k}': v.item() for k, v in loss.items()}
-            self.log_dict(log_dict, logger=True, sync_dist=True, rank_zero_only=True, on_step=False, on_epoch=True, batch_size=1)
+            self.log_dict(log_dict, logger=True, sync_dist=False, rank_zero_only=True, on_step=False, on_epoch=True, batch_size=1)
+
+        with open('./unet_v1_small.txt', 'a') as f:
+            text = f"{in_dict['eval_idx'].item()} | {in_dict['obj_class'][0]} | {in_dict['pcd_t'][0].squeeze(0).size(0)} | {in_dict['pcd_t'][1].squeeze(0).size(0)} | {round(eval_dict['rrmse'].item(),2)} | {round(eval_dict['trmse'].item(),2)} | {round(eval_dict['crd'].item(),2)} | {round(eval_dict['cd'].item(),2)} | {round(loss['c_loss'].item(),3)} | {round(loss['occ_loss'].item(),3)} | {round(loss['p_loss'].item(),3)} | {round(loss['o_loss'].item(),3)}\n"
+            f.write(text)
 
         return out_dict, loss
 

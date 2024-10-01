@@ -10,3 +10,5 @@ vis/
 *.pickle
 *.txt
 *.sh
+*.ipynb
+*.pcd

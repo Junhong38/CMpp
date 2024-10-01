@@ -17,7 +17,7 @@ from chamfer_distance import ChamferDistance as chamfer_dist
 
 from model.backbone.vn_dgcnn import EQCNN_equi_unet
 from model.backbone.vn_layers import VNLinear, VNLeakyReLU, VNLinearLeakyReLU, VNLinearNoActivation
-from model.loss import CircleLoss, PointMatchingLoss, OrientationLoss
+from model.loss import CircleLoss, PointMatchingLoss, OrientationLoss, OccupancyLossCosineDistance, PointMatchingLossAdv, CircleLossOcc
 from model.learnable_sinkhorn import LearnableLogOptimalTransport
 from model.local_global_registration import LocalGlobalRegistration, WeightedProcrustes
 
@@ -28,11 +28,61 @@ import open3d as o3d
 import random
 
 import pickle
-from common.utils import save_pc, knn, get_graph_feature
 
-class EquiAssem_unet_v1(pl.LightningModule):
-    def __init__(self, lr, backbone='eqcnn', local=False, positive=False, visualize=False):
-        super(EquiAssem_unet_v1, self).__init__()
+def knn(x, k):
+    inner = -2*torch.matmul(x.transpose(2, 1), x)
+    xx = torch.sum(x**2, dim=1, keepdim=True)
+    pairwise_distance = -xx - inner - xx.transpose(2, 1)
+ 
+    idx = pairwise_distance.topk(k=k, dim=-1)[1]   # (batch_size, num_points, k)
+    return idx
+
+def get_graph_feature(x, k=20, idx=None, dim9=False):
+    batch_size = x.size(0)
+    num_points = x.size(2)
+    x = x.view(batch_size, -1, num_points)
+    if idx is None:
+        if dim9 == False:
+            idx = knn(x, k=k)   # (batch_size, num_points, k)
+        else:
+            idx = knn(x[:, 6:], k=k)
+    device = torch.device('cuda')
+
+    idx_base = torch.arange(0, batch_size, device=device).view(-1, 1, 1)*num_points
+
+    idx = idx + idx_base
+
+    idx = idx.view(-1)
+ 
+    _, num_dims, _ = x.size()
+
+    x = x.transpose(2, 1).contiguous()   # (batch_size, num_points, num_dims)  -> (batch_size*num_points, num_dims) #   batch_size * num_points * k + range(0, batch_size*num_points)
+    feature = x.view(batch_size*num_points, -1)[idx, :]
+    feature = feature.view(batch_size, num_points, k, num_dims) 
+    x = x.view(batch_size, num_points, 1, num_dims).repeat(1, 1, k, 1)
+    
+    feature = torch.cat((feature-x, x), dim=3).permute(0, 3, 1, 2).contiguous()
+  
+    return feature      # (batch_size, 2*num_dims, num_points, k)
+
+
+def save_pc(filename:str, pcd_tensors:list):
+    pcds = []
+    for tensor_ in pcd_tensors:
+        if tensor_.size()[0] == 1:
+            tensor_ = tensor_.squeeze(0)
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = o3d.utility.Vector3dVector(tensor_.cpu().numpy())
+        pcd.paint_uniform_color([random.uniform(0, 1) for _ in range(3)])
+        pcds.append(pcd)
+    combined_cloud = o3d.geometry.PointCloud()
+    for pcd in pcds:
+        combined_cloud += pcd
+    o3d.io.write_point_cloud(filename, combined_cloud)
+
+class EquiAssem_unet_v3(pl.LightningModule):
+    def __init__(self, lr, backbone='eqcnn', visualize=False):
+        super(EquiAssem_unet_v3, self).__init__()
 
         self.lr = lr
 
@@ -90,21 +140,18 @@ class EquiAssem_unet_v1(pl.LightningModule):
         )
         
         self.circle_loss = CircleLoss()
-        self.matching_loss = PointMatchingLoss()
+        self.matching_loss = PointMatchingLossAdv()
         self.orientation_loss = OrientationLoss()
-        self.occupancy_loss = CircleLoss()
+        self.occupancy_loss = OccupancyLossCosineDistance()
 
         # Weights for losses
         self.c_loss_weight = 0.5 
         self.p_loss_weight = 1.0
         self.o_loss_weight = 0.1
-        self.occ_loss_weight = 0.5
+        self.occ_loss_weight = 1
 
         self.debug = False
         self.visualize = visualize
-
-        self.local = local
-        self.positive = positive
 
         self.validation_step_outputs = []
         self.test_step_outputs = []
@@ -196,9 +243,8 @@ class EquiAssem_unet_v1(pl.LightningModule):
 
         src_occ_feats = torch.cat((src_occ_feats_1, src_occ_feats_2, src_occ_feats_3), dim=1)
         src_occ_feats = self.conv4(src_occ_feats)
-        if self.local:
-            src_occ_global_feats = F.adaptive_max_pool1d(src_occ_feats, 1).expand_as(src_occ_feats)
-            src_occ_feats = src_occ_feats_3 + src_occ_global_feats
+        src_occ_global_feats = F.adaptive_max_pool1d(src_occ_feats, 1).expand_as(src_occ_feats)
+        src_occ_feats = src_occ_feats_3 + src_occ_global_feats
 
         trg_occ_feats = get_graph_feature(trg_inv_feats, k=20)
         trg_occ_feats = self.conv1(trg_occ_feats)
@@ -214,9 +260,8 @@ class EquiAssem_unet_v1(pl.LightningModule):
 
         trg_occ_feats = torch.cat((trg_occ_feats_1, trg_occ_feats_2, trg_occ_feats_3), dim=1)
         trg_occ_feats = self.conv4(trg_occ_feats)
-        if self.local:
-            trg_occ_global_feats = F.adaptive_max_pool1d(trg_occ_feats, 1).expand_as(trg_occ_feats)
-            trg_occ_feats = trg_occ_feats_3 + trg_occ_global_feats
+        trg_occ_global_feats = F.adaptive_max_pool1d(trg_occ_feats, 1).expand_as(trg_occ_feats)
+        trg_occ_feats = trg_occ_feats_3 + trg_occ_global_feats
         #### OCCUPANCY - Conv with kNN ####
 
         #### SHAPE - MLP ####
@@ -234,8 +279,7 @@ class EquiAssem_unet_v1(pl.LightningModule):
 
         # 7. Combine Shape and Occupancy Descriptors
         src_matching_feature = self.matching_mlp(torch.cat([src_shape_feats, src_occ_feats], dim=1))
-        if self.positive: trg_matching_feature = self.matching_mlp(torch.cat([trg_shape_feats, trg_occ_feats], dim=1))
-        else: trg_matching_feature = self.matching_mlp(torch.cat([trg_shape_feats, -trg_occ_feats], dim=1))
+        trg_matching_feature = self.matching_mlp(torch.cat([trg_shape_feats, -trg_occ_feats], dim=1))
         
         # 8. Optimal Transport
         matching_scores = torch.einsum('b c n , b c m -> b n m', src_matching_feature, trg_matching_feature) # (1, N, M)
@@ -283,8 +327,8 @@ class EquiAssem_unet_v1(pl.LightningModule):
         loss['o_loss'] = self.orientation_loss(src_ori, trg_ori, gt_corr, in_dict['gt_rotat'])
         
         # 9-4. occupancy loss
-        if self.positive: loss['occ_loss'], loss['occ_FMR']  = self.occupancy_loss(src_pcd_raw, trg_pcd_raw, src_occ_feats.transpose(-2,-1), trg_occ_feats.transpose(-2,-1), gt_corr)
-        else: loss['occ_loss'], loss['occ_FMR']  = self.occupancy_loss(src_pcd_raw, trg_pcd_raw, src_occ_feats.transpose(-2,-1), -trg_occ_feats.transpose(-2,-1), gt_corr)
+        # loss['occ_loss'], loss['occ_FMR']= self.occupancy_loss(src_pcd_raw, trg_pcd_raw, src_occ_feats.transpose(-2,-1), trg_occ_feats.transpose(-2,-1), gt_corr)
+        loss['occ_loss'] = self.occupancy_loss(src_occ_feats, trg_occ_feats, gt_corr)
 
         # 9-4. final loss
         loss['loss'] = self.c_loss_weight * loss['c_loss'] + self.p_loss_weight * loss['p_loss'] + self.o_loss_weight * loss['o_loss'] +  self.occ_loss_weight * loss['occ_loss']
@@ -298,6 +342,7 @@ class EquiAssem_unet_v1(pl.LightningModule):
         if mode == 'train':
             log_dict = {f'{mode}/{k}': v.item() for k, v in loss.items()}
             self.log_dict(log_dict, logger=True, sync_dist=True, rank_zero_only=True, on_step=False, on_epoch=True, batch_size=1)
+
 
         return out_dict, loss
 

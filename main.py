@@ -29,54 +29,27 @@ torch.backends.cudnn.allow_tf32 = False
 
 def main(args):
     # Model initialization
-    if args.model == 'v1': 
-        from model.equiassem_v1 import EquiAssem_v1
-        model = EquiAssem_v1(lr=args.lr)
-    elif args.model == 'v2': 
-        from model.equiassem_v2 import EquiAssem_v2
-        model = EquiAssem_v2(lr=args.lr)
-    elif args.model == 'v3': 
-        from model.equiassem_v3 import EquiAssem_v3
-        model = EquiAssem_v3(lr=args.lr)
-    elif args.model == 'v4': 
-        from model.equiassem_v4 import EquiAssem_v4
-        model = EquiAssem_v4(lr=args.lr)
-    elif args.model == 'v5': 
-        from model.equiassem_v5 import EquiAssem_v5
-        model = EquiAssem_v5(lr=args.lr)
-    elif args.model == 'v6': 
-        from model.equiassem_v6 import EquiAssem_v6
-        model = EquiAssem_v6(lr=args.lr)
-    elif args.model == 'v7': 
-        from model.equiassem_v7 import EquiAssem_v7
-        model = EquiAssem_v7(lr=args.lr)
-    elif args.model == 'v8': 
-        from model.equiassem_v8 import EquiAssem_v8
-        model = EquiAssem_v8(lr=args.lr)
-    elif args.model == 'attn_v1': 
-        from model.equiassem_attn_v1 import EquiAssem_attn_v1
-        model = EquiAssem_attn_v1(lr=args.lr)
-    elif args.model == 'attn_v2': 
-        from model.equiassem_attn_v2 import EquiAssem_attn_v2
-        model = EquiAssem_attn_v2(lr=args.lr)
-    elif args.model == 'attn_v3': 
-        from model.equiassem_attn_v3 import EquiAssem_attn_v3
-        model = EquiAssem_attn_v3(lr=args.lr)
-    elif args.model == 'unet_v1': 
+    if args.model == 'unet_v1': 
         from model.equiassem_unet_v1 import EquiAssem_unet_v1
-        model = EquiAssem_unet_v1(lr=args.lr)
+        model = EquiAssem_unet_v1(lr=args.lr, local=args.local, positive=args.positive)
     elif args.model == 'unet_v2': 
         from model.equiassem_unet_v2 import EquiAssem_unet_v2
-        model = EquiAssem_unet_v2(lr=args.lr)
-    elif args.model == 'unet_v2_no_knn': 
-        from model.equiassem_unet_v2_no_knn import EquiAssem_unet_v2_no_knn
-        model = EquiAssem_unet_no_knn(lr=args.lr)
+        model = EquiAssem_unet_v2(lr=args.lr, local=args.local, positive=args.positive)
     elif args.model == 'unet_v3': 
         from model.equiassem_unet_v3 import EquiAssem_unet_v3
-        model = EquiAssem_unet_v3(lr=args.lr)
+        model = EquiAssem_unet_v3(lr=args.lr, local=args.local, positive=args.positive)
     elif args.model == 'unet_v4': 
         from model.equiassem_unet_v4 import EquiAssem_unet_v4
-        model = EquiAssem_unet_v4(lr=args.lr)
+        model = EquiAssem_unet_v4(lr=args.lr, local=args.local, positive=args.positive)
+    elif args.model == 'unet_v5': 
+        from model.equiassem_unet_v5 import EquiAssem_unet_v5
+        model = EquiAssem_unet_v5(lr=args.lr, local=args.local, positive=args.positive)
+    elif args.model == 'unet_v6': 
+        from model.equiassem_unet_v6 import EquiAssem_unet_v6
+        model = EquiAssem_unet_v6(lr=args.lr, local=args.local, positive=args.positive)
+    elif args.model == 'unet_v7': 
+        from model.equiassem_unet_v7 import EquiAssem_unet_v7
+        model = EquiAssem_unet_v7(lr=args.lr, local=args.local, positive=args.positive)
     print(model)
 
     def _count_model_param(model):
@@ -229,6 +202,8 @@ if __name__ == '__main__':
     parser.add_argument('--backbone', type=str, default='eqcnn', choices=['eqcnn', 'dgcnn'])
     parser.add_argument('--model', type=str)
     parser.add_argument('--scale', type=str, default='small')
+    parser.add_argument('--local', action='store_true')
+    parser.add_argument('--positive', action='store_true')
 
     # DDP argument
     parser.add_argument('--gpus', nargs='+', default=[0], type=int)
@@ -237,7 +212,7 @@ if __name__ == '__main__':
 
     if len(args.gpus) > 1: 
         from pytorch_lightning.strategies import DDPStrategy
-        args.parallel_strategy = DDPStrategy() # find_unused_parameters=False
+        args.parallel_strategy = DDPStrategy(find_unused_parameters=False) #
         args.lr = len(args.gpus) * args.lr
         args.n_worker = len(args.gpus) * 4
     else: args.parallel_strategy = None

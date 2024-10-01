@@ -296,7 +296,7 @@ class LocalGlobalRegistration(nn.Module):
         
         return ref_corr_points, src_corr_points, corr_scores, estimated_transform
 
-    def forward(self, ref_points, src_points, score_mat, confidence, k):
+    def forward(self, ref_points, src_points, score_mat, k=128, confidence=None):
         r"""Point Matching Module forward propagation with Local-to-Global registration.
 
         Args:
@@ -313,10 +313,11 @@ class LocalGlobalRegistration(nn.Module):
             corr_scores: torch.Tensor (C,)
             estimated_transform: torch.Tensor (4, 4)
         """
-        score_mat = torch.exp(score_mat)
-        score_mat = score_mat * confidence
-        
-        top_k_scores, top_k_indices = torch.topk(score_mat.view(-1), k, largest=True)
+
+        if confidence != None:
+            score_mat = score_mat * confidence
+
+        top_k_scores, top_k_indices = torch.topk(score_mat.contiguous().view(-1), k, largest=True)
         top_k_row_indices = top_k_indices // src_points.size(1)
         top_k_col_indices = top_k_indices % src_points.size(1)
         pred_corr = torch.stack([top_k_row_indices, top_k_col_indices],dim=1)
@@ -330,6 +331,7 @@ class LocalGlobalRegistration(nn.Module):
         # # Count the number of common correspondences
         # num_common = len(common_corr)
         # print(num_common, gt_corr.size(0))
+        
         ref_corr_points, src_corr_points, corr_scores, estimated_transform = self.local_to_global_registration(ref_points, src_points, pred_corr, score_mat)
 
         return ref_corr_points, src_corr_points, corr_scores, estimated_transform, pred_corr

@@ -6,6 +6,56 @@ import numpy as np
 from scipy.spatial.transform import Rotation as R
 
 
+def save_pc(filename:str, pcd_tensors:list):
+    pcds = []
+    for tensor_ in pcd_tensors:
+        if tensor_.size()[0] == 1:
+            tensor_ = tensor_.squeeze(0)
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = o3d.utility.Vector3dVector(tensor_.cpu().numpy())
+        pcd.paint_uniform_color([random.uniform(0, 1) for _ in range(3)])
+        pcds.append(pcd)
+    combined_cloud = o3d.geometry.PointCloud()
+    for pcd in pcds:
+        combined_cloud += pcd
+    o3d.io.write_point_cloud(filename, combined_cloud)
+    
+def knn(x, k):
+    inner = -2*torch.matmul(x.transpose(2, 1), x)
+    xx = torch.sum(x**2, dim=1, keepdim=True)
+    pairwise_distance = -xx - inner - xx.transpose(2, 1)
+ 
+    idx = pairwise_distance.topk(k=k, dim=-1)[1]   # (batch_size, num_points, k)
+    return idx
+
+def get_graph_feature(x, k=20, idx=None, dim9=False):
+    batch_size = x.size(0)
+    num_points = x.size(2)
+    x = x.view(batch_size, -1, num_points)
+    if idx is None:
+        if dim9 == False:
+            idx = knn(x, k=k)   # (batch_size, num_points, k)
+        else:
+            idx = knn(x[:, 6:], k=k)
+    device = torch.device('cuda')
+
+    idx_base = torch.arange(0, batch_size, device=device).view(-1, 1, 1)*num_points
+
+    idx = idx + idx_base
+
+    idx = idx.view(-1)
+ 
+    _, num_dims, _ = x.size()
+
+    x = x.transpose(2, 1).contiguous()   # (batch_size, num_points, num_dims)  -> (batch_size*num_points, num_dims) #   batch_size * num_points * k + range(0, batch_size*num_points)
+    feature = x.view(batch_size*num_points, -1)[idx, :]
+    feature = feature.view(batch_size, num_points, k, num_dims) 
+    x = x.view(batch_size, num_points, 1, num_dims).repeat(1, 1, k, 1)
+    
+    feature = torch.cat((feature-x, x), dim=3).permute(0, 3, 1, 2).contiguous()
+  
+    return feature      # (batch_size, 2*num_dims, num_points, k)
+
 def fix_randseed(seed):
     r""" Set random seeds for reproducibility """
     if seed is None:
