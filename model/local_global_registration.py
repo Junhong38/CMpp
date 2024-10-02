@@ -296,7 +296,7 @@ class LocalGlobalRegistration(nn.Module):
         
         return ref_corr_points, src_corr_points, corr_scores, estimated_transform
 
-    def forward(self, ref_points, src_points, score_mat, k=128, confidence=None):
+    def forward(self, ref_points, src_points, score_mat, k=64, confidence=None):
         r"""Point Matching Module forward propagation with Local-to-Global registration.
 
         Args:
