@@ -313,9 +313,10 @@ class LocalGlobalRegistration(nn.Module):
             corr_scores: torch.Tensor (C,)
             estimated_transform: torch.Tensor (4, 4)
         """
-
+        score_mat = torch.exp(score_mat)
         # if confidence != None:
         #     score_mat = score_mat * confidence
+        
 
         top_k_scores, top_k_indices = torch.topk(score_mat.contiguous().view(-1), k, largest=True)
         top_k_row_indices = top_k_indices // src_points.size(1)
