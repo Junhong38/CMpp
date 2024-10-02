@@ -12,3 +12,5 @@ vis/
 *.sh
 *.ipynb
 *.pcd
+/outputs
+*.sh~
