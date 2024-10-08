@@ -21,6 +21,8 @@ from data.dataset import GADataset
 from common import utils
 import open3d as o3d
 
+from model.equiassem import EquiAssem
+
 import warnings
 warnings.filterwarnings("ignore", message="divide by zero encountered in double_scalars", category=RuntimeWarning)
 
@@ -31,7 +33,7 @@ def main(args):
     
     # Model initialization
     model = EquiAssem(lr=args.lr, 
-                      shape=args.local, 
+                      shape=args.shape, 
                       occ=args.occ, 
                       shape_loss=args.shape_loss, 
                       occ_loss=args.occ_loss, 
