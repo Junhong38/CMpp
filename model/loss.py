@@ -142,24 +142,6 @@ class PointMatchingLoss(nn.Module):
 
         return loss, pos_loss, neg_loss
 
-class CosineDistanceInverse(nn.Module):
-    def __init__(self):
-        super(CosineDistanceInverse, self).__init__()
-
-    def forward(self, src_occ, trg_occ, correspondence):
-        if len(correspondence) == 0:
-            return torch.tensor(0.).to(src_occ.device)
-
-        # L2 betwwen correspondences
-        src_occ_corr = src_occ[:, :, correspondence[:, 0]]
-        trg_occ_corr = trg_occ[:, :, correspondence[:, 1]]
-        
-        # Compute cosine similarity and then convert to cosine distance
-        cos_sim_corr = F.cosine_similarity(src_occ_corr, trg_occ_corr, dim=1)
-        loss_corr = ((1 + cos_sim_corr) / 2).mean()
-
-        return loss_corr
-
 class OrientationLoss(nn.Module):
     def __init__(self):
         super(OrientationLoss, self).__init__()

@@ -4,20 +4,29 @@ import random
 import torch
 import numpy as np
 from scipy.spatial.transform import Rotation as R
+import open3d as o3d
 
-
-def save_pc(filename:str, pcd_tensors:list):
+def save_pc(filename: str, pcd_tensors: list):
+    colors = [
+        [1, 0.996, 0.804],
+        [0.804, 0.98, 1],
+        [1, 0.376, 0],
+        [0, 0.055, 1]
+    ]
+    
     pcds = []
-    for tensor_ in pcd_tensors:
+    for i, tensor_ in enumerate(pcd_tensors):
         if tensor_.size()[0] == 1:
             tensor_ = tensor_.squeeze(0)
         pcd = o3d.geometry.PointCloud()
         pcd.points = o3d.utility.Vector3dVector(tensor_.cpu().numpy())
-        pcd.paint_uniform_color([random.uniform(0, 1) for _ in range(3)])
+        pcd.paint_uniform_color(colors[i % len(colors)])  # Assign color based on index
         pcds.append(pcd)
+    
     combined_cloud = o3d.geometry.PointCloud()
     for pcd in pcds:
         combined_cloud += pcd
+    
     o3d.io.write_point_cloud(filename, combined_cloud)
     
 def knn(x, k):

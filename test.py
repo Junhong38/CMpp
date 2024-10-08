@@ -31,28 +31,15 @@ torch.backends.cudnn.allow_tf32 = False
 
 @torch.no_grad()
 def test(args):
+    
     # Model initialization
-    if args.model == 'unet_v1': 
-        from model.equiassem_unet_v1 import EquiAssem_unet_v1
-        model = EquiAssem_unet_v1(lr=args.lr, local=args.local, positive=args.positive)
-    elif args.model == 'unet_v2': 
-        from model.equiassem_unet_v2 import EquiAssem_unet_v2
-        model = EquiAssem_unet_v2(lr=args.lr, local=args.local, positive=args.positive)
-    elif args.model == 'unet_v3': 
-        from model.equiassem_unet_v3 import EquiAssem_unet_v3
-        model = EquiAssem_unet_v3(lr=args.lr, local=args.local, positive=args.positive)
-    elif args.model == 'unet_v4': 
-        from model.equiassem_unet_v4 import EquiAssem_unet_v4
-        model = EquiAssem_unet_v4(lr=args.lr, local=args.local, positive=args.positive)
-    elif args.model == 'unet_v5': 
-        from model.equiassem_unet_v5 import EquiAssem_unet_v5
-        model = EquiAssem_unet_v5(lr=args.lr, local=args.local, positive=args.positive)
-    elif args.model == 'unet_v6': 
-        from model.equiassem_unet_v6 import EquiAssem_unet_v6
-        model = EquiAssem_unet_v6(lr=args.lr, local=args.local, positive=args.positive)
-    elif args.model == 'unet_v7': 
-        from model.equiassem_unet_v7 import EquiAssem_unet_v7
-        model = EquiAssem_unet_v7(lr=args.lr, local=args.local, positive=args.positive)
+    model = EquiAssem(lr=args.lr, 
+                      shape=args.local, 
+                      occ=args.occ, 
+                      shape_loss=args.shape_loss, 
+                      occ_loss=args.occ_loss, 
+                      no_ori=args.no_ori,
+                      visualize=False)
     print(model)
 
     model.to(torch.device('cuda:0'))
@@ -78,29 +65,20 @@ if __name__ == '__main__':
     parser.add_argument('--logpath', type=str, default='')
     parser.add_argument('--batch_size', type=int, default=1)
     parser.add_argument('--lr', type=float, default=1e-2)
-    parser.add_argument('--epochs', type=int, default=500)
     parser.add_argument('--n_worker', type=int, default=8)
     parser.add_argument('--load', type=str, default='')
-    parser.add_argument('--resume', action='store_true')
 
-    parser.add_argument('--backbone', type=str, default='eqcnn', choices=['eqcnn', 'dgcnn'])
-    parser.add_argument('--model', type=str)
-    parser.add_argument('--scale', type=str, default='small')
-    parser.add_argument('--local', action='store_true')
-    parser.add_argument('--positive', action='store_true')
+    parser.add_argument('--scale', type=str, default='full', choices=['full', 'small', 'overfitting'])
+
+    # Ablation studies
+    parser.add_argument('--shape', type=str, default='local', choices=['local', 'global'])
+    parser.add_argument('--occ', type=str, default='global', choices=['local', 'global'])
+    parser.add_argument('--shape_loss', type=str, default='positive', choices=['positive', 'negative'])
+    parser.add_argument('--occ_loss', type=str, default='negative', choices=['positive', 'negative'])
+    parser.add_argument('--no_ori', action='store_false')
 
     parser.add_argument('--visualize', action='store_true')
 
-    # DDP argument
-    parser.add_argument('--gpus', nargs='+', default=[0], type=int)
-
     args = parser.parse_args()
 
-    if len(args.gpus) > 1: 
-        from pytorch_lightning.strategies import DDPStrategy
-        args.parallel_strategy = DDPStrategy(find_unused_parameters=False)
-        args.lr = len(args.gpus) * args.lr
-        args.n_worker = len(args.gpus) * 4
-    else: args.parallel_strategy = 'auto'
-    
     test(args)

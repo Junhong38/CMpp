@@ -100,7 +100,7 @@ class DatasetBreakingBad(Dataset):
 
     def __getitem__(self, idx):
         # Fix randomness
-        if self.split in ['train', 'val', 'test']: np.random.seed(idx)
+        if self.split in ['val', 'test']: np.random.seed(idx)
 
         # Read mesh, point cloud of a fractured object
         logger = logging.getLogger("trimesh")

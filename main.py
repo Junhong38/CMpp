@@ -28,35 +28,16 @@ torch.backends.cuda.matmul.allow_tf32 = False
 torch.backends.cudnn.allow_tf32 = False
 
 def main(args):
+    
     # Model initialization
-    if args.model == 'unet_v1': 
-        from model.equiassem_unet_v1 import EquiAssem_unet_v1
-        model = EquiAssem_unet_v1(lr=args.lr, local=args.local, positive=args.positive)
-    elif args.model == 'unet_v2': 
-        from model.equiassem_unet_v2 import EquiAssem_unet_v2
-        model = EquiAssem_unet_v2(lr=args.lr, local=args.local, positive=args.positive)
-    elif args.model == 'unet_v3': 
-        from model.equiassem_unet_v3 import EquiAssem_unet_v3
-        model = EquiAssem_unet_v3(lr=args.lr, local=args.local, positive=args.positive)
-    elif args.model == 'unet_v4': 
-        from model.equiassem_unet_v4 import EquiAssem_unet_v4
-        model = EquiAssem_unet_v4(lr=args.lr, local=args.local, positive=args.positive)
-    elif args.model == 'unet_v5': 
-        from model.equiassem_unet_v5 import EquiAssem_unet_v5
-        model = EquiAssem_unet_v5(lr=args.lr, local=args.local, positive=args.positive)
-    elif args.model == 'unet_v6': 
-        from model.equiassem_unet_v6 import EquiAssem_unet_v6
-        model = EquiAssem_unet_v6(lr=args.lr, local=args.local, positive=args.positive)
-    elif args.model == 'unet_v7': 
-        from model.equiassem_unet_v7 import EquiAssem_unet_v7
-        model = EquiAssem_unet_v7(lr=args.lr, local=args.local, positive=args.positive)
+    model = EquiAssem(lr=args.lr, 
+                      shape=args.local, 
+                      occ=args.occ, 
+                      shape_loss=args.shape_loss, 
+                      occ_loss=args.occ_loss, 
+                      no_ori=args.no_ori,
+                      visualize=False)
     print(model)
-
-    def _count_model_param(model):
-        n_param = 0
-        for k in model.state_dict().keys():
-            n_param += model.state_dict()[k].reshape(-1).contiguous().size(0)
-        return n_param
 
     # Dataset initialization
     GADataset.initialize(args.datapath, args.data_category, args.sub_category, args.n_pts, args.scale)
@@ -96,34 +77,11 @@ def main(args):
         logger_id = None
     
     # configure callbacks
-    checkpoint_callback_crd = ModelCheckpoint(
-        dirpath=ckp_dir,
-        filename='model-crd-{epoch:03d}',
-        monitor='val/crd',
-        save_top_k=1,
-        mode='min',
-    )
-    checkpoint_callback_cd = ModelCheckpoint(
-        dirpath=ckp_dir,
-        filename='model-cd-{epoch:03d}',
-        monitor='val/cd',
-        save_top_k=1,
-        mode='min',
-    )
-    checkpoint_callback_rrmse = ModelCheckpoint(
-        dirpath=ckp_dir,
-        filename='model-rrmse-{epoch:03d}',
-        monitor='val/rrmse',
-        save_top_k=1,
-        mode='min',
-    )
-    checkpoint_callback_trmse = ModelCheckpoint(
-        dirpath=ckp_dir,
-        filename='model-trmse-{epoch:03d}',
-        monitor='val/trmse',
-        save_top_k=1,
-        mode='min',
-    )
+    checkpoint_callback_crd = ModelCheckpoint(dirpath=ckp_dir, filename='model-crd-{epoch:03d}', monitor='val/crd', save_top_k=1, mode='min')
+    checkpoint_callback_cd = ModelCheckpoint(dirpath=ckp_dir, filename='model-cd-{epoch:03d}', monitor='val/cd', save_top_k=1, mode='min')
+    checkpoint_callback_rrmse = ModelCheckpoint(dirpath=ckp_dir, filename='model-rrmse-{epoch:03d}', monitor='val/rrmse', save_top_k=1, mode='min')
+    checkpoint_callback_trmse = ModelCheckpoint(dirpath=ckp_dir, filename='model-trmse-{epoch:03d}', monitor='val/trmse', save_top_k=1, mode='min')
+    latest_checkpoint_callback = ModelCheckpoint(dirpath=ckp_dir, filename='model-latest', save_last=True)
 
     callbacks = [
         LearningRateMonitor('epoch'),
@@ -131,6 +89,7 @@ def main(args):
         checkpoint_callback_cd,
         checkpoint_callback_rrmse,
         checkpoint_callback_trmse,
+        latest_checkpoint_callback,
     ]
 
     logger = WandbLogger(
@@ -194,16 +153,19 @@ if __name__ == '__main__':
     parser.add_argument('--logpath', type=str, default='')
     parser.add_argument('--batch_size', type=int, default=1)
     parser.add_argument('--lr', type=float, default=1e-2)
-    parser.add_argument('--epochs', type=int, default=250)
-    parser.add_argument('--n_worker', type=int, default=8)
+    parser.add_argument('--epochs', type=int, default=50)
+    parser.add_argument('--n_worker', type=int, default=4)
     parser.add_argument('--load', type=str, default='')
     parser.add_argument('--resume', action='store_true')
 
-    parser.add_argument('--backbone', type=str, default='eqcnn', choices=['eqcnn', 'dgcnn'])
-    parser.add_argument('--model', type=str)
-    parser.add_argument('--scale', type=str, default='small')
-    parser.add_argument('--local', action='store_true')
-    parser.add_argument('--positive', action='store_true')
+    parser.add_argument('--scale', type=str, default='full', choices=['full', 'small', 'overfitting'])
+
+    # Ablation studies
+    parser.add_argument('--shape', type=str, default='local', choices=['local', 'global'])
+    parser.add_argument('--occ', type=str, default='global', choices=['local', 'global'])
+    parser.add_argument('--shape_loss', type=str, default='positive', choices=['positive', 'negative'])
+    parser.add_argument('--occ_loss', type=str, default='negative', choices=['positive', 'negative'])
+    parser.add_argument('--no_ori', action='store_false')
 
     # DDP argument
     parser.add_argument('--gpus', nargs='+', default=[0], type=int)

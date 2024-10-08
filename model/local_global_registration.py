@@ -54,7 +54,9 @@ def weighted_procrustes(
 
     H = src_points_centered.permute(0, 2, 1) @ (weights * ref_points_centered)
     try: U, _, V = svd(H)
-    except: U, _, V = torch.svd(H.cpu())
+    except: 
+        print('use torch svd!')
+        U, _, V = torch.svd(H.cpu())
     Ut, V = U.transpose(1, 2).cuda(), V.cuda()
     eye = torch.eye(3).unsqueeze(0).repeat(batch_size, 1, 1).cuda()
     eye[:, -1, -1] = torch.sign(torch.det(V @ Ut))
@@ -296,7 +298,7 @@ class LocalGlobalRegistration(nn.Module):
         
         return ref_corr_points, src_corr_points, corr_scores, estimated_transform
 
-    def forward(self, ref_points, src_points, score_mat, k=64, confidence=None):
+    def forward(self, ref_points, src_points, score_mat, k=64):
         r"""Point Matching Module forward propagation with Local-to-Global registration.
 
         Args:
@@ -314,9 +316,6 @@ class LocalGlobalRegistration(nn.Module):
             estimated_transform: torch.Tensor (4, 4)
         """
         score_mat = torch.exp(score_mat)
-        # if confidence != None:
-        #     score_mat = score_mat * confidence
-        
 
         top_k_scores, top_k_indices = torch.topk(score_mat.contiguous().view(-1), k, largest=True)
         top_k_row_indices = top_k_indices // src_points.size(1)
