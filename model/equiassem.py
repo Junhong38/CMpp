@@ -252,34 +252,34 @@ class EquiAssem(pl.LightningModule):
             trg_shape_feats = self.shape_mlp(trg_inv_feats)
         else:
             src_shape_feats = get_graph_feature(src_inv_feats, k=20)
-            src_shape_feats = self.occ_conv1(src_shape_feats)
+            src_shape_feats = self.shape_conv1(src_shape_feats)
             src_shape_feats_1 = src_shape_feats.max(dim=-1)[0]
 
             src_shape_feats = get_graph_feature(src_shape_feats_1, k=20)
-            src_shape_feats = self.occ_conv2(src_shape_feats)
+            src_shape_feats = self.shape_conv2(src_shape_feats)
             src_shape_feats_2 = src_shape_feats.max(dim=-1)[0] 
 
             src_shape_feats = get_graph_feature(src_shape_feats_2, k=20) 
-            src_shape_feats = self.occ_conv3(src_shape_feats)
+            src_shape_feats = self.shape_conv3(src_shape_feats)
             src_shape_feats_3 = src_shape_feats.max(dim=-1)[0]
 
             src_shape_feats = torch.cat((src_shape_feats_1, src_shape_feats_2, src_shape_feats_3), dim=1)
-            src_shape_feats = self.occ_conv4(src_shape_feats)
+            src_shape_feats = self.shape_conv4(src_shape_feats)
 
             trg_shape_feats = get_graph_feature(trg_inv_feats, k=20)
-            trg_shape_feats = self.occ_conv1(trg_shape_feats)
+            trg_shape_feats = self.shape_conv1(trg_shape_feats)
             trg_shape_feats_1 = trg_shape_feats.max(dim=-1)[0]
 
             trg_shape_feats = get_graph_feature(trg_shape_feats_1, k=20)
-            trg_shape_feats = self.occ_conv2(trg_shape_feats)
+            trg_shape_feats = self.shape_conv2(trg_shape_feats)
             trg_shape_feats_2 = trg_shape_feats.max(dim=-1)[0] 
 
             trg_shape_feats = get_graph_feature(trg_shape_feats_2, k=20) 
-            trg_shape_feats = self.occ_conv3(trg_shape_feats)
+            trg_shape_feats = self.shape_conv3(trg_shape_feats)
             trg_shape_feats_3 = trg_shape_feats.max(dim=-1)[0]
 
             trg_shape_feats = torch.cat((trg_shape_feats_1, trg_shape_feats_2, trg_shape_feats_3), dim=1)
-            trg_shape_feats = self.occ_conv4(trg_shape_feats)
+            trg_shape_feats = self.shape_conv4(trg_shape_feats)
         #### SHAPE - MLP ####
 
         # 7. Combine Shape and Occupancy Descriptors
