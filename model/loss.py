@@ -53,30 +53,29 @@ class CircleLoss(nn.Module):
 
         return circle_loss
 
-    def get_recall(self, coords_dist, feats_dist):
-        """
-        Get feature match recall, divided by number of true inliers
-        """
-        pos_mask = coords_dist < self.pos_radius
-        n_gt_pos = (pos_mask.sum(-1)>0).float().sum()+1e-12
-        try:
-            _, sel_idx = torch.min(feats_dist, -1)
-        except:
-            return torch.tensor(0.).to(feats_dist.device)
-        sel_dist = torch.gather(coords_dist,dim=-1,index=sel_idx[:,None])[pos_mask.sum(-1)>0]
-        n_pred_pos = (sel_dist < self.pos_radius).float().sum()
-        recall = n_pred_pos / n_gt_pos
-        return recall
+    # def get_recall(self, coords_dist, feats_dist):
+    #     """
+    #     Get feature match recall, divided by number of true inliers
+    #     """
+    #     pos_mask = coords_dist < self.pos_radius
+    #     n_gt_pos = (pos_mask.sum(-1)>0).float().sum()+1e-12
+    #     try:
+    #         _, sel_idx = torch.min(feats_dist, -1)
+    #     except:
+    #         return torch.tensor(0.).to(feats_dist.device)
+    #     sel_dist = torch.gather(coords_dist,dim=-1,index=sel_idx[:,None])[pos_mask.sum(-1)>0]
+    #     n_pred_pos = (sel_dist < self.pos_radius).float().sum()
+    #     recall = n_pred_pos / n_gt_pos
+    #     return recall
 
     def forward(self, src_pcd, tgt_pcd, src_feats, tgt_feats, correspondence):
         if len(correspondence) == 0:
-            print("circle_loss: No correspondence !!")
-            return torch.tensor(0.).to(src_feats.device), torch.tensor(0.).to(src_feats.device)
+            print('[circle loss] No correspondence!')
+            return torch.tensor(0.).to(src_feats.device)
 
         c_dist = torch.norm(src_pcd[correspondence[:,0]] - tgt_pcd[correspondence[:,1]], dim = 1)
         c_select = c_dist < self.pos_radius - 0.001
-        try: correspondence = correspondence[c_select]
-        except: torch.tensor(0.).to(src_feats.device), torch.tensor(0.).to(src_feats.device)
+        correspondence = correspondence[c_select]
         
         if correspondence.size(0) > self.max_points:
             choice = np.random.permutation(correspondence.size(0))[:self.max_points]
@@ -98,13 +97,12 @@ class CircleLoss(nn.Module):
         
         # Calculate circle loss and feature matching recall (FMR)
         circle_loss = self.get_circle_loss(coords_dist, feats_dist)
-        recall = self.get_recall(coords_dist, feats_dist)
         
         if circle_loss != circle_loss:
-            print("circle_loss: NaN detected !!")
+            print('[circle loss] NaN detected!')
             circle_loss = torch.tensor(0.).to(src_feats.device)
             
-        return circle_loss, recall
+        return circle_loss
 
 class PointMatchingLoss(nn.Module):
     def __init__(self):
@@ -129,18 +127,7 @@ class PointMatchingLoss(nn.Module):
         # Calculate the loss
         loss = -matching_scores[labels].mean()
 
-        with torch.no_grad():
-            pos_labels = torch.zeros_like(matching_scores, dtype=torch.bool)
-            neg_labels = torch.zeros_like(matching_scores, dtype=torch.bool)
-
-            pos_labels[:, :-1, :-1] = gt_corr_map
-            neg_labels[:, :-1, -1] = slack_row_labels
-            neg_labels[:, -1, :-1] = slack_col_labels
-
-            pos_loss = -matching_scores[pos_labels].mean()
-            neg_loss = -matching_scores[neg_labels].mean()
-
-        return loss, pos_loss, neg_loss
+        return loss
 
 class OrientationLoss(nn.Module):
     def __init__(self):

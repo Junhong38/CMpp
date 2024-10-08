@@ -5,6 +5,8 @@ import torch
 import torch.nn as nn
 from torch_batch_svd import svd
 
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning, message=".*__floordiv__.*")
 
 def weighted_procrustes(
     src_points,

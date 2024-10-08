@@ -14,20 +14,6 @@ from einops import rearrange, repeat
 import open3d as o3d
 from data.utils import to_o3d_pcd, to_array, get_correspondences
 
-def save_pc(filename:str, pcd_tensors:list):
-    pcds = []
-    for tensor_ in pcd_tensors:
-        if tensor_.size()[0] == 1:
-            tensor_ = tensor_.squeeze(0)
-        pcd = o3d.geometry.PointCloud()
-        pcd.points = o3d.utility.Vector3dVector(tensor_.cpu().numpy())
-        pcd.paint_uniform_color([random.uniform(0, 1) for _ in range(3)])
-        pcds.append(pcd)
-    combined_cloud = o3d.geometry.PointCloud()
-    for pcd in pcds:
-        combined_cloud += pcd
-    o3d.io.write_point_cloud(filename, combined_cloud)
-
 class DatasetBreakingBad(Dataset):
     def __init__(self, datapath, data_category, sub_category, n_pts, split, scale, visualize=False):
         self.datapath = datapath

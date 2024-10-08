@@ -95,7 +95,7 @@ def main(args):
     ]
 
     logger = WandbLogger(
-        project='equiassem_new',
+        project='cvpr25-equiassem',
         name=logger_name,
         id=logger_id,
         save_dir=ckp_dir,

@@ -297,13 +297,14 @@ class EquiAssem(pl.LightningModule):
         matching_scores = self.optimal_transport(matching_scores) # (1, N, M) -> (1, N+1, M+1)
         matching_scores_drop = matching_scores[:,:-1,:-1] # (1, N+1, M+1) -> (1, N, M)
         
-        # 9. Weighted SVD with top-k correspondence selections
-        with torch.no_grad():
-            src_corr_pts, trg_corr_pts, corr_scores, estimated_transform, pred_corr = self.fine_matching(
-                src_pcd, trg_pcd, matching_scores_drop, k=128)
+        if mode in ['val', 'test']:
+            # 9. Weighted SVD with top-k correspondence selections
+            with torch.no_grad():
+                src_corr_pts, trg_corr_pts, corr_scores, estimated_transform, pred_corr = self.fine_matching(
+                    src_pcd, trg_pcd, matching_scores_drop, k=128)
 
-        out_dict['estimated_rotat'] = estimated_transform[:3, :3].T
-        out_dict['estimated_trans'] = -(estimated_transform[:3, :3].inverse() @ -estimated_transform[:3, 3])
+            out_dict['estimated_rotat'] = estimated_transform[:3, :3].T
+            out_dict['estimated_trans'] = -(estimated_transform[:3, :3].inverse() @ -estimated_transform[:3, 3])
 
         if self.debug:
             out_dict['src_shape_feats'] = src_shape_feats.squeeze(0)
@@ -329,24 +330,25 @@ class EquiAssem(pl.LightningModule):
         gt_corr = in_dict['gt_correspondence'].squeeze(0)
         
         # 9-1. circle loss
-        loss['c_loss'], loss['FMR'] = self.circle_loss(src_pcd_raw, trg_pcd_raw, src_shape_feats.transpose(-2,-1), trg_shape_feats.transpose(-2,-1), gt_corr)
+        loss['c_loss'] = self.circle_loss(src_pcd_raw, trg_pcd_raw, src_shape_feats.transpose(-2,-1), trg_shape_feats.transpose(-2,-1), gt_corr)
 
         # 9-2 point matching loss
-        loss['p_loss'], loss['pos_p_loss'], loss['neg_p_loss'] = self.matching_loss(matching_scores, gt_corr, src_pcd_raw, trg_pcd_raw)
+        loss['p_loss'] = self.matching_loss(matching_scores, gt_corr, src_pcd_raw, trg_pcd_raw)
 
         # 9-3. orientation loss
         loss['o_loss'] = self.orientation_loss(src_ori, trg_ori, gt_corr, in_dict['gt_rotat'])
         
         # 9-4. occupancy loss
-        loss['occ_loss'], loss['occ_FMR']  = self.occupancy_loss(src_pcd_raw, trg_pcd_raw, src_occ_feats.transpose(-2,-1), trg_occ_feats.transpose(-2,-1), gt_corr)
+        loss['occ_loss'] = self.occupancy_loss(src_pcd_raw, trg_pcd_raw, src_occ_feats.transpose(-2,-1), trg_occ_feats.transpose(-2,-1), gt_corr)
 
         # 9-4. final loss
         loss['loss'] = self.c_loss_weight * loss['c_loss'] + self.p_loss_weight * loss['p_loss'] + self.o_loss_weight * loss['o_loss'] +  self.occ_loss_weight * loss['occ_loss']
         out_dict.update(loss)
 
         # 10. Evaluation
-        eval_dict = self.evaluate_prediction(in_dict, out_dict, gt_corr)
-        loss.update(eval_dict)
+        if mode in ['val', 'test']:
+            eval_dict = self.evaluate_prediction(in_dict, out_dict, gt_corr)
+            loss.update(eval_dict)
         
         # in training we log for every step
         if mode == 'train':
