@@ -167,7 +167,7 @@ if __name__ == '__main__':
     parser.add_argument('--occ', type=str, default='global', choices=['local', 'global'])
     parser.add_argument('--shape_loss', type=str, default='positive', choices=['positive', 'negative'])
     parser.add_argument('--occ_loss', type=str, default='negative', choices=['positive', 'negative'])
-    parser.add_argument('--no_ori', action='store_false')
+    parser.add_argument('--no_ori', action='store_true')
 
     # DDP argument
     parser.add_argument('--gpus', nargs='+', default=[0], type=int)
