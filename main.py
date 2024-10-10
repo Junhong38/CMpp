@@ -28,21 +28,21 @@ from model.equiassem_occ import EquiAssem_occ
 import warnings
 warnings.filterwarnings("ignore", message="divide by zero encountered in double_scalars", category=RuntimeWarning)
 
-torch.backends.cuda.matmul.allow_tf32 = False
-torch.backends.cudnn.allow_tf32 = False
+# torch.backends.cuda.matmul.allow_tf32 = False
+# torch.backends.cudnn.allow_tf32 = False
 
 def main(args):
     
     # Model initialization
-    model = EquiAssem(lr=args.lr,
-                      backbone=args.backbone,
-                      shape=args.shape, 
-                      occ=args.occ, 
-                      shape_loss=args.shape_loss, 
-                      occ_loss=args.occ_loss, 
-                      no_ori=args.no_ori,
-                      visualize=args.visualize,
-                      debug=args.debug)
+    # model = EquiAssem(lr=args.lr,
+    #                   backbone=args.backbone,
+    #                   shape=args.shape, 
+    #                   occ=args.occ, 
+    #                   shape_loss=args.shape_loss, 
+    #                   occ_loss=args.occ_loss, 
+    #                   no_ori=args.no_ori,
+    #                   visualize=args.visualize,
+    #                   debug=args.debug)
 
     # model = EquiAssem_shape(lr=args.lr,
     #                   backbone=args.backbone,
@@ -52,13 +52,13 @@ def main(args):
     #                   visualize=args.visualize,
     #                   debug=args.debug)
 
-    # model = EquiAssem_occ(lr=args.lr,
-    #                   backbone=args.backbone,
-    #                   occ=args.occ, 
-    #                   occ_loss=args.occ_loss, 
-    #                   no_ori=args.no_ori,
-    #                   visualize=args.visualize,
-    #                   debug=args.debug)
+    model = EquiAssem_occ(lr=args.lr,
+                      backbone=args.backbone,
+                      occ=args.occ, 
+                      occ_loss=args.occ_loss, 
+                      no_ori=args.no_ori,
+                      visualize=args.visualize,
+                      debug=args.debug)
 
 
     print(model)
@@ -190,7 +190,7 @@ if __name__ == '__main__':
     # Ablation studies
     parser.add_argument('--backbone', type=str, default='unet', choices=['dgcnn', 'unet'])
     parser.add_argument('--shape', type=str, default='local', choices=['local', 'global'])
-    parser.add_argument('--occ', type=str, default='global', choices=['local', 'global'])
+    parser.add_argument('--occ', type=str, default='local', choices=['local', 'global'])
     parser.add_argument('--shape_loss', type=str, default='positive', choices=['positive', 'negative'])
     parser.add_argument('--occ_loss', type=str, default='negative', choices=['positive', 'negative'])
     parser.add_argument('--no_ori', action='store_true')
@@ -206,7 +206,7 @@ if __name__ == '__main__':
 
     if len(args.gpus) > 1: 
         from pytorch_lightning.strategies import DDPStrategy
-        args.parallel_strategy = DDPStrategy(find_unused_parameters=False) #
+        args.parallel_strategy = DDPStrategy(find_unused_parameters=False)
         args.lr = len(args.gpus) * args.lr
         args.n_worker = len(args.gpus) * 4
     else: args.parallel_strategy = None
