@@ -33,38 +33,12 @@ import random
 import pickle
 from common.utils import save_pc, knn, get_graph_feature
 
-class ChannelAttentionModule(nn.Module):
-    """ this function is used to achieve the channel attention module in CBAM paper"""
-    def __init__(self, C, ratio=16):
-        super(ChannelAttentionModule, self).__init__()
-
-        self.mlp = nn.Sequential(
-            nn.Conv1d(in_channels=C, out_channels=C // ratio, kernel_size=1, bias=False),
-            nn.ReLU(),
-            nn.Conv1d(in_channels= C // ratio, out_channels=C, kernel_size=1, bias=False)
-        )
-
-        self.sigmoid = nn.Sigmoid()
-
-    def forward(self,x):
-
-        out1 = torch.mean(x, dim=-1, keepdim=True)  # b, c, 1
-        out1 = self.mlp(out1) # b, c, 1
-
-        out2 = nn.AdaptiveMaxPool1d(1)(x) # b, c, 1
-        out2 = self.mlp(out2) # b, c, 1
-
-        out = self.sigmoid(out1 + out2)
-
-        return out * x, out
-
-class EquiAssem(pl.LightningModule):
-    def __init__(self, lr, backbone='unet', shape='local', occ='global', shape_loss='positive', occ_loss='negative', no_ori=False, visualize=False, debug=False):
-        super(EquiAssem, self).__init__()
+class EquiAssem_shape(pl.LightningModule):
+    def __init__(self, lr, backbone='unet', shape='local', shape_loss='positive', no_ori=False, visualize=False, debug=False):
+        super(EquiAssem_shape, self).__init__()
 
         self.lr = lr
         self.shape, self.shape_loss = shape, shape_loss
-        self.occ, self.occ_loss = occ, occ_loss
         self.no_ori = no_ori
 
         # Output feature dimension of Feature Extractor
@@ -81,57 +55,29 @@ class EquiAssem(pl.LightningModule):
 
         # Shape Descriptor
         if shape=='local':
-            self.shape_mlp = nn.Sequential(nn.Conv1d(1023, 512, kernel_size=1, bias=False),
-                                    nn.InstanceNorm1d(512),
+            self.shape_mlp = nn.Sequential(nn.Conv1d(1023, 1024, kernel_size=1, bias=False),
+                                    nn.InstanceNorm1d(1024),
                                     nn.LeakyReLU(negative_slope=0.2), # mlp 1
-                                    nn.Conv1d(512, 512, kernel_size=1, bias=False),
-                                    nn.InstanceNorm1d(512),
+                                    nn.Conv1d(1024, 1024, kernel_size=1, bias=False),
+                                    nn.InstanceNorm1d(1024),
                                     nn.LeakyReLU(negative_slope=0.2), # mlp 2
-                                    nn.Conv1d(512, 512, kernel_size=1, bias=False),
-                                    nn.InstanceNorm1d(512),
+                                    nn.Conv1d(1024, 1024, kernel_size=1, bias=False),
+                                    nn.InstanceNorm1d(1024),
                                     nn.LeakyReLU(negative_slope=0.2), # mlp 3
                                     )
         else:
-            self.shape_conv1 = nn.Sequential(nn.Conv2d(2*1023, 512, kernel_size=1, bias=False),
+            self.shape_conv1 = nn.Sequential(nn.Conv2d(2*1023, 1024, kernel_size=1, bias=False),
                                     nn.InstanceNorm2d(512),
                                     nn.LeakyReLU(negative_slope=0.2))
-            self.shape_conv2 = nn.Sequential(nn.Conv2d(2*512, 512, kernel_size=1, bias=False),
-                                    nn.InstanceNorm2d(512),
+            self.shape_conv2 = nn.Sequential(nn.Conv2d(2*1024, 1024, kernel_size=1, bias=False),
+                                    nn.InstanceNorm2d(1024),
                                     nn.LeakyReLU(negative_slope=0.2))
-            self.shape_conv3 = nn.Sequential(nn.Conv2d(2*512, 512, kernel_size=1, bias=False),
-                                    nn.InstanceNorm2d(512),
+            self.shape_conv3 = nn.Sequential(nn.Conv2d(2*1024, 1024, kernel_size=1, bias=False),
+                                    nn.InstanceNorm2d(1024),
                                     nn.LeakyReLU(negative_slope=0.2))
-            self.shape_conv4 = nn.Sequential(nn.Conv1d(3*512, 512, kernel_size=1, bias=False),
-                                    nn.InstanceNorm1d(512),
+            self.shape_conv4 = nn.Sequential(nn.Conv1d(3*1024, 1024, kernel_size=1, bias=False),
+                                    nn.InstanceNorm1d(1024),
                                     nn.LeakyReLU(negative_slope=0.2))
-
-        # Occupancy Descriptor
-        if occ=='local':
-            self.occ_mlp = nn.Sequential(nn.Conv1d(1023, 512, kernel_size=1, bias=False),
-                                    nn.InstanceNorm1d(512),
-                                    nn.LeakyReLU(negative_slope=0.2), # mlp 1
-                                    nn.Conv1d(512, 512, kernel_size=1, bias=False),
-                                    nn.InstanceNorm1d(512),
-                                    nn.LeakyReLU(negative_slope=0.2), # mlp 2
-                                    nn.Conv1d(512, 512, kernel_size=1, bias=False),
-                                    nn.InstanceNorm1d(512),
-                                    nn.LeakyReLU(negative_slope=0.2), # mlp 3
-                                    )
-        else:
-            self.occ_conv1 = nn.Sequential(nn.Conv2d(2*1023, 512, kernel_size=1, bias=False),
-                                    nn.InstanceNorm2d(512),
-                                    nn.LeakyReLU(negative_slope=0.2))
-            self.occ_conv2 = nn.Sequential(nn.Conv2d(2*512, 512, kernel_size=1, bias=False),
-                                    nn.InstanceNorm2d(512),
-                                    nn.LeakyReLU(negative_slope=0.2))
-            self.occ_conv3 = nn.Sequential(nn.Conv2d(2*512, 512, kernel_size=1, bias=False),
-                                    nn.InstanceNorm2d(512),
-                                    nn.LeakyReLU(negative_slope=0.2))
-            self.occ_conv4 = nn.Sequential(nn.Conv1d(3*512, 512, kernel_size=1, bias=False),
-                                    nn.InstanceNorm1d(512),
-                                    nn.LeakyReLU(negative_slope=0.2))
-
-        # self.attention = ChannelAttentionModule(1024)
 
         # Matching Feature
         self.matching_mlp = nn.Sequential(nn.Conv1d(1024, 1024, kernel_size=1),
@@ -158,11 +104,9 @@ class EquiAssem(pl.LightningModule):
         self.circle_loss = CircleLoss()
         self.matching_loss = PointMatchingLoss()
         self.orientation_loss = OrientationLoss()
-        self.occupancy_loss = CircleLoss()
 
         # Weights for losses
-        self.c_loss_weight = 0.5 
-        self.occ_loss_weight = 0.5
+        self.c_loss_weight = 1.0
         self.p_loss_weight = 1.0
         self.o_loss_weight = 0 if no_ori else 0.1
 
@@ -243,42 +187,6 @@ class EquiAssem(pl.LightningModule):
         src_inv_feats = rearrange(src_inv_feats, 'b n c r -> b (c r) n') # (1, N, C//3, 3) -> (1, C, N)
         trg_inv_feats = rearrange(trg_inv_feats, 'b n c r -> b (c r) n') # (1, M, C//3, 3) -> (1, C, M)
         
-        #### OCCUPANCY DESCRIPTOR ####
-        if self.occ == 'local':
-            src_occ_feats = self.occ_mlp(src_inv_feats)
-            trg_occ_feats = self.occ_mlp(trg_inv_feats)
-        else:
-            src_occ_feats = get_graph_feature(src_inv_feats, k=20)
-            src_occ_feats = self.occ_conv1(src_occ_feats)
-            src_occ_feats_1 = src_occ_feats.max(dim=-1)[0]
-
-            src_occ_feats = get_graph_feature(src_occ_feats_1, k=20)
-            src_occ_feats = self.occ_conv2(src_occ_feats)
-            src_occ_feats_2 = src_occ_feats.max(dim=-1)[0] 
-
-            src_occ_feats = get_graph_feature(src_occ_feats_2, k=20) 
-            src_occ_feats = self.occ_conv3(src_occ_feats)
-            src_occ_feats_3 = src_occ_feats.max(dim=-1)[0]
-
-            src_occ_feats = torch.cat((src_occ_feats_1, src_occ_feats_2, src_occ_feats_3), dim=1)
-            src_occ_feats = self.occ_conv4(src_occ_feats)
-
-            trg_occ_feats = get_graph_feature(trg_inv_feats, k=20)
-            trg_occ_feats = self.occ_conv1(trg_occ_feats)
-            trg_occ_feats_1 = trg_occ_feats.max(dim=-1)[0]
-
-            trg_occ_feats = get_graph_feature(trg_occ_feats_1, k=20)
-            trg_occ_feats = self.occ_conv2(trg_occ_feats)
-            trg_occ_feats_2 = trg_occ_feats.max(dim=-1)[0] 
-
-            trg_occ_feats = get_graph_feature(trg_occ_feats_2, k=20) 
-            trg_occ_feats = self.occ_conv3(trg_occ_feats)
-            trg_occ_feats_3 = trg_occ_feats.max(dim=-1)[0]
-
-            trg_occ_feats = torch.cat((trg_occ_feats_1, trg_occ_feats_2, trg_occ_feats_3), dim=1)
-            trg_occ_feats = self.occ_conv4(trg_occ_feats)
-        #### OCCUPANCY DESCRIPTOR ####
-
         #### SHAPE - MLP ####
         if self.shape == 'local':
             src_shape_feats = self.shape_mlp(src_inv_feats)
@@ -318,17 +226,9 @@ class EquiAssem(pl.LightningModule):
         # 7. Combine Shape and Occupancy Descriptors
         if self.shape_loss == 'negative':
             trg_shape_feats = -trg_shape_feats
-        if self.occ_loss == 'negative':
-            trg_occ_feats = -trg_occ_feats
 
-        src_matching_feature = torch.cat([src_shape_feats, src_occ_feats], dim=1)
-        trg_matching_feature = torch.cat([trg_shape_feats, trg_occ_feats], dim=1)
-
-        # src_matching_feature, src_attention = self.attention(src_matching_feature)
-        # trg_matching_feature, trg_attention = self.attention(trg_matching_feature)
-
-        src_matching_feature = self.matching_mlp(src_matching_feature)
-        trg_matching_feature = self.matching_mlp(trg_matching_feature)
+        src_matching_feature = self.matching_mlp(src_shape_feats)
+        trg_matching_feature = self.matching_mlp(trg_shape_feats)
         
         # 8. Optimal Transport
         matching_scores = torch.einsum('b c n , b c m -> b n m', src_matching_feature, trg_matching_feature) # (1, N, M)
@@ -346,13 +246,10 @@ class EquiAssem(pl.LightningModule):
             out_dict['estimated_trans'] = -(estimated_transform[:3, :3].inverse() @ -estimated_transform[:3, 3])
 
         if self.debug:
-            # out_dict['src_attention'] = src_attention.squeeze(0)
-            # out_dict['trg_attention'] = trg_attention.squeeze(0)
+            out_dict['conv_weight'] = self.matching_mlp[0].weight.data
             out_dict['src_shape_feats'] = src_shape_feats.squeeze(0)
-            out_dict['src_occ_feats'] = src_occ_feats.squeeze(0)
             out_dict['src_matching_feats'] = src_matching_feature.squeeze(0)
             out_dict['trg_shape_feats'] = trg_shape_feats.squeeze(0)
-            out_dict['trg_occ_feats'] = trg_occ_feats.squeeze(0)
             out_dict['trg_matching_feats'] = trg_matching_feature.squeeze(0)
             out_dict['src_ori'] = src_ori.squeeze(0)
             out_dict['trg_ori'] = trg_ori.squeeze(0)
@@ -379,11 +276,8 @@ class EquiAssem(pl.LightningModule):
         # 9-3. orientation loss
         loss['o_loss'] = self.orientation_loss(src_ori, trg_ori, gt_corr, in_dict['gt_rotat'])
         
-        # 9-4. occupancy loss
-        loss['occ_loss'] = self.occupancy_loss(src_pcd_raw, trg_pcd_raw, src_occ_feats.transpose(-2,-1), trg_occ_feats.transpose(-2,-1), gt_corr)
-
         # 9-4. final loss
-        loss['loss'] = self.c_loss_weight * loss['c_loss'] + self.p_loss_weight * loss['p_loss'] + self.o_loss_weight * loss['o_loss'] +  self.occ_loss_weight * loss['occ_loss']
+        loss['loss'] = self.c_loss_weight * loss['c_loss'] + self.p_loss_weight * loss['p_loss'] + self.o_loss_weight * loss['o_loss']
         out_dict.update(loss)
 
         # 10. Evaluation

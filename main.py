@@ -22,6 +22,8 @@ from common import utils
 import open3d as o3d
 
 from model.equiassem import EquiAssem
+from model.equiassem_shape import EquiAssem_shape
+from model.equiassem_occ import EquiAssem_occ
 
 import warnings
 warnings.filterwarnings("ignore", message="divide by zero encountered in double_scalars", category=RuntimeWarning)
@@ -32,17 +34,37 @@ torch.backends.cudnn.allow_tf32 = False
 def main(args):
     
     # Model initialization
-    model = EquiAssem(lr=args.lr, 
+    model = EquiAssem(lr=args.lr,
+                      backbone=args.backbone,
                       shape=args.shape, 
                       occ=args.occ, 
                       shape_loss=args.shape_loss, 
                       occ_loss=args.occ_loss, 
                       no_ori=args.no_ori,
-                      visualize=False)
+                      visualize=args.visualize,
+                      debug=args.debug)
+
+    # model = EquiAssem_shape(lr=args.lr,
+    #                   backbone=args.backbone,
+    #                   shape=args.shape, 
+    #                   shape_loss=args.shape_loss, 
+    #                   no_ori=args.no_ori,
+    #                   visualize=args.visualize,
+    #                   debug=args.debug)
+
+    # model = EquiAssem_occ(lr=args.lr,
+    #                   backbone=args.backbone,
+    #                   occ=args.occ, 
+    #                   occ_loss=args.occ_loss, 
+    #                   no_ori=args.no_ori,
+    #                   visualize=args.visualize,
+    #                   debug=args.debug)
+
+
     print(model)
 
     # Dataset initialization
-    GADataset.initialize(args.datapath, args.data_category, args.sub_category, args.n_pts, args.scale)
+    GADataset.initialize(args.datapath, args.data_category, args.sub_category, args.min_part, args.max_part, args.n_pts, args.scale)
     dataloader_trn = GADataset.build_dataloader(args.batch_size, args.n_worker, 'train')
     dataloader_val = GADataset.build_dataloader(args.batch_size, args.n_worker, 'val')
 
@@ -149,9 +171,12 @@ if __name__ == '__main__':
     # Arguments parsing
     parser = argparse.ArgumentParser(description='Equivariant Assembly Pytorch Implementation')
     parser.add_argument('--datapath', type=str, default='../../data/bbad_v2')
-    parser.add_argument('--data_category', type=str, default='everyday', choices=['everyday', 'artifact'])
+    parser.add_argument('--data_category', type=str, default='everyday', choices=['everyday', 'artifact', 'synthetic'])
     parser.add_argument('--sub_category', type=str, default='all')
     parser.add_argument('--n_pts', type=int, default=5000)
+    parser.add_argument('--min_part', type=int, default=2)
+    parser.add_argument('--max_part', type=int, default=2)
+
     parser.add_argument('--logpath', type=str, default='')
     parser.add_argument('--batch_size', type=int, default=1)
     parser.add_argument('--lr', type=float, default=1e-2)
@@ -163,12 +188,17 @@ if __name__ == '__main__':
     parser.add_argument('--scale', type=str, default='full', choices=['full', 'small', 'overfitting'])
 
     # Ablation studies
+    parser.add_argument('--backbone', type=str, default='unet', choices=['dgcnn', 'unet'])
     parser.add_argument('--shape', type=str, default='local', choices=['local', 'global'])
     parser.add_argument('--occ', type=str, default='global', choices=['local', 'global'])
     parser.add_argument('--shape_loss', type=str, default='positive', choices=['positive', 'negative'])
     parser.add_argument('--occ_loss', type=str, default='negative', choices=['positive', 'negative'])
     parser.add_argument('--no_ori', action='store_true')
+    
 
+    parser.add_argument('--visualize', action='store_true')
+    parser.add_argument('--debug', action='store_true')
+        
     # DDP argument
     parser.add_argument('--gpus', nargs='+', default=[0], type=int)
 

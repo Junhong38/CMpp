@@ -15,7 +15,7 @@ import open3d as o3d
 from data.utils import to_o3d_pcd, to_array, get_correspondences
 
 class DatasetBreakingBad(Dataset):
-    def __init__(self, datapath, data_category, sub_category, n_pts, split, scale, visualize=False):
+    def __init__(self, datapath, data_category, sub_category, min_part, max_part, n_pts, split, scale, visualize=False):
         self.datapath = datapath
         self.data_category = data_category # ['everyday', 'artifact']
         self.split = split
@@ -24,9 +24,9 @@ class DatasetBreakingBad(Dataset):
         self.visualize = visualize
 
         self.min_n_pts = 256
-        self.min_part = 2
-        self.max_part = 2
-
+        self.min_part = min_part
+        self.max_part = max_part
+        self.mpa = True if self.max_part > 2 else False
         self.anchor_idx = 0
 
         # Read fracture path list
@@ -152,9 +152,25 @@ class DatasetBreakingBad(Dataset):
             
             pcds.append(sampled_pts)
 
+        if self.mpa and len(pcds)>2:
+            # Randomly select one point cloud
+            src_idx = random.randint(0, n_frac-1)
+            src_pcd, src_mesh = pcds[src_idx], meshes[src_idx]
+            
+            # Set target to be mostly mated with source pcd
+            other_pcd = pcds[:src_idx] + pcds[src_idx+1:]
+            other_mesh = meshes[:src_idx] + meshes[src_idx+1:]
+            # n_fracture_points = [self._extract_fracture_points(src_pcd, x).size(0) for x in other_pcd]
+            n_fracture_points = [get_correspondences(to_o3d_pcd(src_pcd), to_o3d_pcd(x), self.overlap_radius).size(0) for x in other_pcd]
+            trg_idx = n_fracture_points.index(max(n_fracture_points))
+
+            # Return 2-part pc, mesh
+            pcds = [src_pcd, other_pcd[trg_idx]]
+            meshes = [src_mesh, other_mesh[trg_idx]]
+        
         # Augment train dataset
         if self.split == 'train' and random.random() > 0.5:
             meshes.reverse()
             pcds.reverse()
-            
+        
         return meshes, pcds
