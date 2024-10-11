@@ -34,31 +34,32 @@ warnings.filterwarnings("ignore", message="divide by zero encountered in double_
 def main(args):
     
     # Model initialization
-    model = EquiAssem(lr=args.lr,
-                      backbone=args.backbone,
-                      shape=args.shape, 
-                      occ=args.occ, 
-                      shape_loss=args.shape_loss, 
-                      occ_loss=args.occ_loss, 
-                      no_ori=args.no_ori,
-                      visualize=args.visualize,
-                      debug=args.debug)
-
-    # model = EquiAssem_shape(lr=args.lr,
-    #                   backbone=args.backbone,
-    #                   shape=args.shape, 
-    #                   shape_loss=args.shape_loss, 
-    #                   no_ori=args.no_ori,
-    #                   visualize=args.visualize,
-    #                   debug=args.debug)
-
-    # model = EquiAssem_occ(lr=args.lr,
-    #                   backbone=args.backbone,
-    #                   occ=args.occ, 
-    #                   occ_loss=args.occ_loss, 
-    #                   no_ori=args.no_ori,
-    #                   visualize=args.visualize,
-    #                   debug=args.debug)
+    if args.model == 'both':
+        model = EquiAssem(lr=args.lr,
+                        backbone=args.backbone,
+                        shape=args.shape, 
+                        occ=args.occ, 
+                        shape_loss=args.shape_loss, 
+                        occ_loss=args.occ_loss, 
+                        no_ori=args.no_ori,
+                        visualize=args.visualize,
+                        debug=args.debug)
+    elif args.model == 'shape_only':
+        model = EquiAssem_shape(lr=args.lr,
+                        backbone=args.backbone,
+                        shape=args.shape, 
+                        shape_loss=args.shape_loss, 
+                        no_ori=args.no_ori,
+                        visualize=args.visualize,
+                        debug=args.debug)
+    elif args.model == 'occ_only':
+        model = EquiAssem_occ(lr=args.lr,
+                        backbone=args.backbone,
+                        occ=args.occ, 
+                        occ_loss=args.occ_loss, 
+                        no_ori=args.no_ori,
+                        visualize=args.visualize,
+                        debug=args.debug)
 
 
     print(model)
@@ -188,6 +189,7 @@ if __name__ == '__main__':
     parser.add_argument('--scale', type=str, default='full', choices=['full', 'small', 'overfitting'])
 
     # Ablation studies
+    parser.add_argument('--model', type=str, default='both', choices=['both', 'shape_only', 'occ_only'])
     parser.add_argument('--backbone', type=str, default='unet', choices=['dgcnn', 'unet'])
     parser.add_argument('--shape', type=str, default='local', choices=['local', 'global'])
     parser.add_argument('--occ', type=str, default='local', choices=['local', 'global'])
