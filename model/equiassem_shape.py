@@ -67,7 +67,7 @@ class EquiAssem_shape(pl.LightningModule):
                                     )
         else:
             self.shape_conv1 = nn.Sequential(nn.Conv2d(2*1023, 1024, kernel_size=1, bias=False),
-                                    nn.InstanceNorm2d(512),
+                                    nn.InstanceNorm2d(1024),
                                     nn.LeakyReLU(negative_slope=0.2))
             self.shape_conv2 = nn.Sequential(nn.Conv2d(2*1024, 1024, kernel_size=1, bias=False),
                                     nn.InstanceNorm2d(1024),

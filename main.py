@@ -34,15 +34,15 @@ warnings.filterwarnings("ignore", message="divide by zero encountered in double_
 def main(args):
     
     # Model initialization
-    # model = EquiAssem(lr=args.lr,
-    #                   backbone=args.backbone,
-    #                   shape=args.shape, 
-    #                   occ=args.occ, 
-    #                   shape_loss=args.shape_loss, 
-    #                   occ_loss=args.occ_loss, 
-    #                   no_ori=args.no_ori,
-    #                   visualize=args.visualize,
-    #                   debug=args.debug)
+    model = EquiAssem(lr=args.lr,
+                      backbone=args.backbone,
+                      shape=args.shape, 
+                      occ=args.occ, 
+                      shape_loss=args.shape_loss, 
+                      occ_loss=args.occ_loss, 
+                      no_ori=args.no_ori,
+                      visualize=args.visualize,
+                      debug=args.debug)
 
     # model = EquiAssem_shape(lr=args.lr,
     #                   backbone=args.backbone,
@@ -52,13 +52,13 @@ def main(args):
     #                   visualize=args.visualize,
     #                   debug=args.debug)
 
-    model = EquiAssem_occ(lr=args.lr,
-                      backbone=args.backbone,
-                      occ=args.occ, 
-                      occ_loss=args.occ_loss, 
-                      no_ori=args.no_ori,
-                      visualize=args.visualize,
-                      debug=args.debug)
+    # model = EquiAssem_occ(lr=args.lr,
+    #                   backbone=args.backbone,
+    #                   occ=args.occ, 
+    #                   occ_loss=args.occ_loss, 
+    #                   no_ori=args.no_ori,
+    #                   visualize=args.visualize,
+    #                   debug=args.debug)
 
 
     print(model)
@@ -180,7 +180,7 @@ if __name__ == '__main__':
     parser.add_argument('--logpath', type=str, default='')
     parser.add_argument('--batch_size', type=int, default=1)
     parser.add_argument('--lr', type=float, default=1e-2)
-    parser.add_argument('--epochs', type=int, default=50)
+    parser.add_argument('--epochs', type=int, default=500)
     parser.add_argument('--n_worker', type=int, default=4)
     parser.add_argument('--load', type=str, default='')
     parser.add_argument('--resume', action='store_true')

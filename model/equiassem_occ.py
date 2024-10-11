@@ -70,10 +70,10 @@ class EquiAssem_occ(pl.LightningModule):
                                     nn.InstanceNorm2d(1024),
                                     nn.LeakyReLU(negative_slope=0.2))
             self.occ_conv2 = nn.Sequential(nn.Conv2d(2*1024, 1024, kernel_size=1, bias=False),
-                                    nn.InstanceNorm2d(512),
+                                    nn.InstanceNorm2d(1024),
                                     nn.LeakyReLU(negative_slope=0.2))
             self.occ_conv3 = nn.Sequential(nn.Conv2d(2*1024, 1024, kernel_size=1, bias=False),
-                                    nn.InstanceNorm2d(512),
+                                    nn.InstanceNorm2d(1024),
                                     nn.LeakyReLU(negative_slope=0.2))
             self.occ_conv4 = nn.Sequential(nn.Conv1d(3*1024, 1024, kernel_size=1, bias=False),
                                     nn.InstanceNorm1d(1024),
