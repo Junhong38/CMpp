@@ -5,14 +5,14 @@ import torch.nn.functional as F
 
 class CircleLoss(nn.Module):
 
-    def __init__(self, log_scale=16, pos_optimal=0.1, neg_optimal=2.0):
+    def __init__(self, log_scale=16, pos_optimal=0.1, neg_optimal=1.4):
         super(CircleLoss,self).__init__()
         self.log_scale = 24
         self.pos_optimal = pos_optimal
         self.neg_optimal = neg_optimal
 
         self.pos_margin = 0.1
-        self.neg_margin = 2.0
+        self.neg_margin = 1.4
         
         self.pos_radius = 0.018
         self.safe_radius = 0.03
