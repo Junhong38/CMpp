@@ -119,8 +119,14 @@ class EquiAssem_shape(pl.LightningModule):
     def configure_optimizers(self):
         """Build optimizer and lr scheduler."""
         lr = self.lr
-        optimizer = optim.Adam(self.parameters(), lr=lr, weight_decay=0.)
-        return optimizer
+        optimizer = optim.AdamW(self.parameters(), lr=lr, weight_decay=0.)
+        
+        scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=16919, eta_min=1e-3)
+        
+        return {
+            'optimizer': optimizer,
+            'lr_scheduler': scheduler
+        }
 
     def training_step(self, in_dict, batch_idx):
         _, loss_dict = self.forward_pass(
