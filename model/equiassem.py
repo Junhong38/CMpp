@@ -200,7 +200,7 @@ class EquiAssem(pl.LightningModule):
         trg_pcd_raw = in_dict['pcd'][1].squeeze(0)
         src_pcd = in_dict['pcd_t'][0] # (1, N ,3)
         trg_pcd = in_dict['pcd_t'][1] # (1, M ,3)
-        breakpoint()
+        
         # 1. SO(3)-Equivariant Feature Extractor
         src_equi_feats = self.backbone(src_pcd) # (1, 341, 3, N)
         trg_equi_feats = self.backbone(trg_pcd) # (1, 341, 3, M)
