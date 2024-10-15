@@ -99,7 +99,7 @@ class CircleLoss(nn.Module):
         circle_loss = self.get_circle_loss(coords_dist, feats_dist)
         
         if circle_loss != circle_loss:
-            print('[circle loss] NaN detected!')
+            # print('[circle loss] NaN detected!')
             circle_loss = torch.tensor(0.).to(src_feats.device)
             
         return circle_loss

@@ -14,6 +14,9 @@ from einops import rearrange, repeat
 import open3d as o3d
 from data.utils import to_o3d_pcd, to_array, get_correspondences
 
+import warnings
+warnings.filterwarnings("ignore", category=RuntimeWarning, message="divide by zero encountered in scalar divide")
+
 class DatasetBreakingBad(Dataset):
     def __init__(self, datapath, data_category, sub_category, min_part, max_part, n_pts, split, scale, visualize=False):
         self.datapath = datapath
@@ -29,13 +32,16 @@ class DatasetBreakingBad(Dataset):
         self.mpa = True if self.max_part > 2 else False
         self.anchor_idx = 0
 
-        # Read fracture path list
-        if scale == 'overfitting':
-            filepaths = join('./data/data_list', f"{data_category}_{split}_one.txt")
-        elif scale == 'full':
-            filepaths = join('./data/data_list', f"{data_category}_{split}.txt")
+        if self.mpa:
+            filepaths = join('./data/data_list', f"mpa_{data_category}_{split}.txt")
         else:
-            filepaths = join('./data/data_list', f"{data_category}_{split}_small.txt")
+            # Read fracture path list
+            if scale == 'overfitting':
+                filepaths = join('./data/data_list', f"{data_category}_{split}_one.txt")
+            elif scale == 'full':
+                filepaths = join('./data/data_list', f"{data_category}_{split}.txt")
+            else:
+                filepaths = join('./data/data_list', f"{data_category}_{split}_small.txt")
         print(filepaths)
         
         with open(filepaths, 'r') as f:
@@ -44,9 +50,13 @@ class DatasetBreakingBad(Dataset):
         self.filepaths = [x for x in self.filepaths if self.min_part <= int(x.split()[0]) <= self.max_part]
         if self.sub_category != 'all': self.filepaths = [x for x in self.filepaths if x.split()[1].split('/')[1] == self.sub_category]
 
+        if self.mpa:
+            self.frac0 = [x.split()[2] for x in self.filepaths]
+            self.frac1 = [x.split()[3] for x in self.filepaths]
+
         self.n_frac = [int(x.split()[0]) for x in self.filepaths]
         self.filepaths = [x.split()[1] for x in self.filepaths]
-
+        
         self.overlap_radius = 0.018
         
     def __len__(self):
@@ -131,7 +141,9 @@ class DatasetBreakingBad(Dataset):
 
         # Load N-part meshes and calculate each area
         base_path = join(self.datapath, filepath)
-        obj_paths = [join(base_path, x) for x in os.listdir(base_path)]
+        if self.mpa: obj_paths = [join(base_path, x) for x in [self.frac0[idx], self.frac1[idx]]]
+        else: obj_paths = [join(base_path, x) for x in os.listdir(base_path)]
+
         meshes = [trimesh.load_mesh(x) for x in obj_paths]
         mesh_areas = [mesh_.area for mesh_ in meshes]
 
@@ -152,21 +164,21 @@ class DatasetBreakingBad(Dataset):
             
             pcds.append(sampled_pts)
 
-        if self.mpa and len(pcds)>2:
-            # Randomly select one point cloud
-            src_idx = random.randint(0, n_frac-1)
-            src_pcd, src_mesh = pcds[src_idx], meshes[src_idx]
+        # if self.mpa and len(pcds)>2:
+        #     # Randomly select one point cloud
+        #     src_idx = random.randint(0, n_frac-1)
+        #     src_pcd, src_mesh = pcds[src_idx], meshes[src_idx]
             
-            # Set target to be mostly mated with source pcd
-            other_pcd = pcds[:src_idx] + pcds[src_idx+1:]
-            other_mesh = meshes[:src_idx] + meshes[src_idx+1:]
-            # n_fracture_points = [self._extract_fracture_points(src_pcd, x).size(0) for x in other_pcd]
-            n_fracture_points = [get_correspondences(to_o3d_pcd(src_pcd), to_o3d_pcd(x), self.overlap_radius).size(0) for x in other_pcd]
-            trg_idx = n_fracture_points.index(max(n_fracture_points))
+        #     # Set target to be mostly mated with source pcd
+        #     other_pcd = pcds[:src_idx] + pcds[src_idx+1:]
+        #     other_mesh = meshes[:src_idx] + meshes[src_idx+1:]
+        #     # n_fracture_points = [self._extract_fracture_points(src_pcd, x).size(0) for x in other_pcd]
+        #     n_fracture_points = [get_correspondences(to_o3d_pcd(src_pcd), to_o3d_pcd(x), self.overlap_radius).size(0) for x in other_pcd]
+        #     trg_idx = n_fracture_points.index(max(n_fracture_points))
 
-            # Return 2-part pc, mesh
-            pcds = [src_pcd, other_pcd[trg_idx]]
-            meshes = [src_mesh, other_mesh[trg_idx]]
+        #     # Return 2-part pc, mesh
+        #     pcds = [src_pcd, other_pcd[trg_idx]]
+        #     meshes = [src_mesh, other_mesh[trg_idx]]
         
         # Augment train dataset
         if self.split == 'train' and random.random() > 0.5:
