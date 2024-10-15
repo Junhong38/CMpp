@@ -200,7 +200,7 @@ class EquiAssem(pl.LightningModule):
         trg_pcd_raw = in_dict['pcd'][1].squeeze(0)
         src_pcd = in_dict['pcd_t'][0] # (1, N ,3)
         trg_pcd = in_dict['pcd_t'][1] # (1, M ,3)
-        
+
         # 1. SO(3)-Equivariant Feature Extractor
         src_equi_feats = self.backbone(src_pcd) # (1, 341, 3, N)
         trg_equi_feats = self.backbone(trg_pcd) # (1, 341, 3, M)
@@ -304,7 +304,7 @@ class EquiAssem(pl.LightningModule):
         # in training we log for every step
         if mode == 'train':
             log_dict = {f'{mode}/{k}': v.item() for k, v in loss.items()}
-            self.log_dict(log_dict, logger=True, sync_dist=True, rank_zero_only=True, on_step=True, on_epoch=True, batch_size=1)
+            self.log_dict(log_dict, logger=True, sync_dist=True, rank_zero_only=True, on_step=False, on_epoch=True, batch_size=1)
 
         return out_dict, loss
 
