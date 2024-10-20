@@ -13,4 +13,4 @@ vis/
 *.ipynb
 *.pcd
 /outputs
-*.sh~
+*.sh
