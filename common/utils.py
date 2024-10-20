@@ -97,6 +97,7 @@ def to_cuda(batch):
 
     if batch.get('n_frac') is not None: batch['n_frac'] = batch['n_frac'][0]
     if batch.get('order') is not None: batch['order'] = batch['order'][0]
+    if batch.get('anchor_idx') is not None: batch['anchor_idx'] = batch['anchor_idx'][0]
 
     return batch
 
