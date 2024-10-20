@@ -34,7 +34,7 @@ import pickle
 from common.utils import save_pc, knn, get_graph_feature
 
 class EquiAssem(pl.LightningModule):
-    def __init__(self, lr, backbone='unet', shape='local', occ='global', shape_loss='positive', occ_loss='negative', no_ori=False, visualize=False, debug=False):
+    def __init__(self, lr, backbone='unet', shape_loss='positive', occ_loss='negative', no_ori=False, visualize=False, debug=False):
         super(EquiAssem, self).__init__()
 
         self.lr = lr
@@ -55,57 +55,28 @@ class EquiAssem(pl.LightningModule):
         self.proj = VNLinear(self.feat_dim//3, 2)
 
         # Shape Descriptor
-        if shape=='local':
-            self.shape_mlp = nn.Sequential(nn.Conv1d(1023, 512, kernel_size=1, bias=False),
-                                    nn.InstanceNorm1d(512),
-                                    nn.LeakyReLU(negative_slope=0.2),
-                                    nn.Conv1d(512, 512, kernel_size=1, bias=False),
-                                    nn.InstanceNorm1d(512),
-                                    nn.LeakyReLU(negative_slope=0.2),
-                                    nn.Conv1d(512, 512, kernel_size=1, bias=False),
-                                    nn.InstanceNorm1d(512),
-                                    nn.LeakyReLU(negative_slope=0.2),
-                                    )
-        else:
-            self.shape_conv1 = nn.Sequential(nn.Conv2d(2*1023, 512, kernel_size=1, bias=False),
-                                    nn.InstanceNorm2d(512),
-                                    nn.LeakyReLU(negative_slope=0.2))
-            self.shape_conv2 = nn.Sequential(nn.Conv2d(2*512, 512, kernel_size=1, bias=False),
-                                    nn.InstanceNorm2d(512),
-                                    nn.LeakyReLU(negative_slope=0.2))
-            self.shape_conv3 = nn.Sequential(nn.Conv2d(2*512, 512, kernel_size=1, bias=False),
-                                    nn.InstanceNorm2d(512),
-                                    nn.LeakyReLU(negative_slope=0.2))
-            self.shape_conv4 = nn.Sequential(nn.Conv1d(3*512, 512, kernel_size=1, bias=False),
-                                    nn.InstanceNorm1d(512),
-                                    nn.LeakyReLU(negative_slope=0.2))
-
+        self.shape_mlp = nn.Sequential(nn.Conv1d(1023, 512, kernel_size=1, bias=False),
+                                nn.InstanceNorm1d(512),
+                                nn.LeakyReLU(negative_slope=0.2),
+                                nn.Conv1d(512, 512, kernel_size=1, bias=False),
+                                nn.InstanceNorm1d(512),
+                                nn.LeakyReLU(negative_slope=0.2),
+                                nn.Conv1d(512, 512, kernel_size=1, bias=False),
+                                nn.InstanceNorm1d(512),
+                                nn.LeakyReLU(negative_slope=0.2),
+                                )
         # Occupancy Descriptor
-        if occ=='local':
-            self.occ_mlp = nn.Sequential(nn.Conv1d(1023, 512, kernel_size=1, bias=False),
-                                    nn.InstanceNorm1d(512),
-                                    nn.LeakyReLU(negative_slope=0.2), # mlp 1
-                                    nn.Conv1d(512, 512, kernel_size=1, bias=False),
-                                    nn.InstanceNorm1d(512),
-                                    nn.LeakyReLU(negative_slope=0.2), # mlp 2
-                                    nn.Conv1d(512, 512, kernel_size=1, bias=False),
-                                    nn.InstanceNorm1d(512),
-                                    nn.LeakyReLU(negative_slope=0.2), # mlp 3
-                                    )
-        else:
-            self.occ_conv1 = nn.Sequential(nn.Conv2d(2*1023, 512, kernel_size=1, bias=False),
-                                    nn.InstanceNorm2d(512),
-                                    nn.LeakyReLU(negative_slope=0.2))
-            self.occ_conv2 = nn.Sequential(nn.Conv2d(2*512, 512, kernel_size=1, bias=False),
-                                    nn.InstanceNorm2d(512),
-                                    nn.LeakyReLU(negative_slope=0.2))
-            self.occ_conv3 = nn.Sequential(nn.Conv2d(2*512, 512, kernel_size=1, bias=False),
-                                    nn.InstanceNorm2d(512),
-                                    nn.LeakyReLU(negative_slope=0.2))
-            self.occ_conv4 = nn.Sequential(nn.Conv1d(3*512, 512, kernel_size=1, bias=False),
-                                    nn.InstanceNorm1d(512),
-                                    nn.LeakyReLU(negative_slope=0.2))
-
+        self.occ_mlp = nn.Sequential(nn.Conv1d(1023, 512, kernel_size=1, bias=False),
+                                nn.InstanceNorm1d(512),
+                                nn.LeakyReLU(negative_slope=0.2), # mlp 1
+                                nn.Conv1d(512, 512, kernel_size=1, bias=False),
+                                nn.InstanceNorm1d(512),
+                                nn.LeakyReLU(negative_slope=0.2), # mlp 2
+                                nn.Conv1d(512, 512, kernel_size=1, bias=False),
+                                nn.InstanceNorm1d(512),
+                                nn.LeakyReLU(negative_slope=0.2), # mlp 3
+                                )
+        
         # Matching Feature
         self.matching_mlp = nn.Sequential(nn.Conv1d(1024, 1024, kernel_size=1),
                                 nn.InstanceNorm1d(1024),
@@ -274,7 +245,6 @@ class EquiAssem(pl.LightningModule):
             out_dict['trg_gt_rot'] = in_dict['gt_rotat'][1].squeeze(0)
             out_dict['gt_correspondence'] = in_dict['gt_correspondence'].squeeze(0)
             out_dict['pred_corr'] = pred_corr
-            with open('debug.pickle', 'wb') as f: pickle.dump(out_dict, f, pickle.HIGHEST_PROTOCOL)
             breakpoint()
 
         # 10. Calculate Loss
@@ -309,6 +279,71 @@ class EquiAssem(pl.LightningModule):
         return out_dict, loss
 
     @torch.no_grad()
+    def forward_mpa(self, in_dict):
+
+        out_dict, loss = {}, {}
+        src_pcd_raw = in_dict['pcd'][0].squeeze(0)
+        trg_pcd_raw = in_dict['pcd'][1].squeeze(0)
+        src_pcd = in_dict['pcd_t'][0] # (1, N ,3)
+        trg_pcd = in_dict['pcd_t'][1] # (1, M ,3)
+
+        # 1. SO(3)-Equivariant Feature Extractor
+        src_equi_feats = self.backbone(src_pcd) # (1, 341, 3, N)
+        trg_equi_feats = self.backbone(trg_pcd) # (1, 341, 3, M)
+
+        # 2. Basis Vector Projection 
+        src_vecs = self.proj(src_equi_feats).permute(0, 3, 1, 2) # (1, 341, 3, N) -> (1, 2, 3, N) -> (1, N, 2, 3)
+        trg_vecs = self.proj(trg_equi_feats).permute(0, 3, 1, 2) # (1, 341, 3, M) -> (1, 2, 3, M) -> (1, M, 2, 3)
+
+        # 3. Gram Schmidt & Cross-product
+        src_ori = ortho2rotation(src_vecs) # (1, N, 2, 3) -> (1, N, 3, 3)
+        trg_ori = ortho2rotation(trg_vecs) # (1, M, 2, 3) -> (1, M, 3, 3)
+
+        # 4. Invariant Features
+        src_inv_feats = torch.matmul(src_equi_feats.permute(0, 3, 1, 2), src_ori.transpose(-2,-1)) # (1, N, 341, 3) x (1, N, 3, 3) -> (1, N, 341, 3)
+        trg_inv_feats = torch.matmul(trg_equi_feats.permute(0, 3, 1, 2), trg_ori.transpose(-2,-1)) # (1, M, 341, 3) x (1, M, 3, 3) -> (1, M, 341, 3)
+        src_inv_feats = rearrange(src_inv_feats, 'b n c r -> b (c r) n') # (1, N, 341, 3) -> (1, 1023, N)
+        trg_inv_feats = rearrange(trg_inv_feats, 'b n c r -> b (c r) n') # (1, M, 341, 3) -> (1, 1023, M)
+        
+        #### 5. OCCUPANCY DESCRIPTOR ####
+        src_occ_feats = self.occ_mlp(src_inv_feats) # (1, 1023, N) -> (1, 512, N)
+        trg_occ_feats = self.occ_mlp(trg_inv_feats) # (1, 1023, M) -> (1, 512, M)
+        #### 5. OCCUPANCY DESCRIPTOR ####
+
+        #### 6. SHAPE DESCRIPTOR ####
+        src_shape_feats = self.shape_mlp(src_inv_feats) # (1, 1023, M) -> (1, 512, M)
+        trg_shape_feats = self.shape_mlp(trg_inv_feats) # (1, 1023, M) -> (1, 512, M)
+        #### 6. SHAPE DESCRIPTOR ####
+
+        # 7. If negative, multiply -1
+        if self.shape_loss == 'negative':
+            trg_shape_feats = -trg_shape_feats
+        if self.occ_loss == 'negative':
+            trg_occ_feats = -trg_occ_feats
+
+        # 8. Matching Features
+        src_matching_feature = torch.cat([src_shape_feats, src_occ_feats], dim=1) # (1, 1024, N)
+        trg_matching_feature = torch.cat([trg_shape_feats, trg_occ_feats], dim=1) # (1, 1024, M)
+
+        src_matching_feature = self.matching_mlp(src_matching_feature) # (1, 1024, N) -> (1, 1024, N)
+        trg_matching_feature = self.matching_mlp(trg_matching_feature) # (1, 1024, M) -> (1, 1024, M)
+        
+        # 8. Optimal Transport
+        matching_scores = torch.einsum('b c n , b c m -> b n m', src_matching_feature, trg_matching_feature) # (1, N, M)
+        matching_scores = matching_scores / src_matching_feature.shape[1] ** 0.5 # (1, N, M)
+        matching_scores = self.optimal_transport(matching_scores) # (1, N, M) -> (1, N+1, M+1)
+        matching_scores_drop = matching_scores[:,:-1,:-1] # (1, N+1, M+1) -> (1, N, M)
+        
+        with torch.no_grad():
+            src_corr_pts, trg_corr_pts, corr_scores, estimated_transform, pred_corr = self.fine_matching(
+                src_pcd, trg_pcd, matching_scores_drop, k=128)
+        
+        out_dict['estimated_rotat'] = estimated_transform[:3, :3].T
+        out_dict['estimated_trans'] = -(estimated_transform[:3, :3].inverse() @ -estimated_transform[:3, 3])
+        out_dict['corr_scores'] = corr_scores
+        return out_dict
+
+    @torch.no_grad()
     def evaluate_prediction(self, in_dict, out_dict, gt_corr, multi_part=False):
 
         # Init return buffer
@@ -337,8 +372,8 @@ class EquiAssem(pl.LightningModule):
             pcds_pred.append(pcds_pred[1][gt_corr[:,1]])
             pcds_grtr.append(pcds_grtr[0][gt_corr[:,0]])
             pcds_grtr.append(pcds_grtr[1][gt_corr[:,1]])
-            save_pc(f"./vis_dgcnn_occ_local/cd{round(eval_result['cd'].item(),2)}_crd{round(eval_result['crd'].item(),2)}_c_loss{round(out_dict['c_loss'].item(),2)}_occ_loss{round(out_dict['occ_loss'].item(),2)}_rrmse{round(eval_result['rrmse'].item(),1)}_pred.pcd", pcds_pred)
-            save_pc(f"./vis_dgcnn_occ_local/cd{round(eval_result['cd'].item(),2)}_crd{round(eval_result['crd'].item(),2)}_c_loss{round(out_dict['c_loss'].item(),2)}_occ_loss{round(out_dict['occ_loss'].item(),2)}_rrmse{round(eval_result['rrmse'].item(),1)}_grtr.pcd", pcds_grtr)
+            save_pc(f"./vis_everyday_final/o_loss{round(out_dict['o_loss'].item(),2)}_cd{round(eval_result['cd'].item(),2)}_crd{round(eval_result['crd'].item(),2)}_c_loss{round(out_dict['c_loss'].item(),2)}_occ_loss{round(out_dict['occ_loss'].item(),2)}_rrmse{round(eval_result['rrmse'].item(),1)}_pred.pcd", pcds_pred)
+            save_pc(f"./vis_everyday_final/o_loss{round(out_dict['o_loss'].item(),2)}_cd{round(eval_result['cd'].item(),2)}_crd{round(eval_result['crd'].item(),2)}_c_loss{round(out_dict['c_loss'].item(),2)}_occ_loss{round(out_dict['occ_loss'].item(),2)}_rrmse{round(eval_result['rrmse'].item(),1)}_grtr.pcd", pcds_grtr)
 
         return eval_result
     

@@ -34,7 +34,7 @@ import pickle
 from common.utils import save_pc, knn, get_graph_feature
 
 class EquiAssem_occ(pl.LightningModule):
-    def __init__(self, lr, backbone='unet', occ='global', occ_loss='negative', no_ori=False, visualize=False, debug=False):
+    def __init__(self, lr, backbone='unet', occ_loss='negative', no_ori=False, visualize=False, debug=False):
         super(EquiAssem_occ, self).__init__()
 
         self.lr = lr
@@ -54,31 +54,17 @@ class EquiAssem_occ(pl.LightningModule):
         self.proj = VNLinear(self.feat_dim//3, 2)
 
         # Occupancy Descriptor
-        if occ=='local':
-            self.occ_mlp = nn.Sequential(nn.Conv1d(1023, 1024, kernel_size=1, bias=False),
-                                    nn.InstanceNorm1d(1024),
-                                    nn.LeakyReLU(negative_slope=0.2), # mlp 1
-                                    nn.Conv1d(1024, 1024, kernel_size=1, bias=False),
-                                    nn.InstanceNorm1d(1024),
-                                    nn.LeakyReLU(negative_slope=0.2), # mlp 2
-                                    nn.Conv1d(1024, 1024, kernel_size=1, bias=False),
-                                    nn.InstanceNorm1d(1024),
-                                    nn.LeakyReLU(negative_slope=0.2), # mlp 3
-                                    )
-        else:
-            self.occ_conv1 = nn.Sequential(nn.Conv2d(2*1023, 1024, kernel_size=1, bias=False),
-                                    nn.InstanceNorm2d(1024),
-                                    nn.LeakyReLU(negative_slope=0.2))
-            self.occ_conv2 = nn.Sequential(nn.Conv2d(2*1024, 1024, kernel_size=1, bias=False),
-                                    nn.InstanceNorm2d(1024),
-                                    nn.LeakyReLU(negative_slope=0.2))
-            self.occ_conv3 = nn.Sequential(nn.Conv2d(2*1024, 1024, kernel_size=1, bias=False),
-                                    nn.InstanceNorm2d(1024),
-                                    nn.LeakyReLU(negative_slope=0.2))
-            self.occ_conv4 = nn.Sequential(nn.Conv1d(3*1024, 1024, kernel_size=1, bias=False),
-                                    nn.InstanceNorm1d(1024),
-                                    nn.LeakyReLU(negative_slope=0.2))
-
+        self.occ_mlp = nn.Sequential(nn.Conv1d(1023, 1024, kernel_size=1, bias=False),
+                                nn.InstanceNorm1d(1024),
+                                nn.LeakyReLU(negative_slope=0.2), # mlp 1
+                                nn.Conv1d(1024, 1024, kernel_size=1, bias=False),
+                                nn.InstanceNorm1d(1024),
+                                nn.LeakyReLU(negative_slope=0.2), # mlp 2
+                                nn.Conv1d(1024, 1024, kernel_size=1, bias=False),
+                                nn.InstanceNorm1d(1024),
+                                nn.LeakyReLU(negative_slope=0.2), # mlp 3
+                                )
+        
         # Matching Feature
         self.matching_mlp = nn.Sequential(nn.Conv1d(1024, 1024, kernel_size=1),
                                 nn.InstanceNorm1d(1024),
