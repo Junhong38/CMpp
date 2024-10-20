@@ -32,9 +32,10 @@ class DatasetBreakingBad(Dataset):
         self.mpa = True if self.max_part > 2 else False
         self.anchor_idx = 0
 
-        if self.mpa:
+        if self.mpa and self.split in ['train', 'val']:
             filepaths = join('./data/data_list', f"mpa_{data_category}_{split}.txt")
         else:
+            if self.split == 'test': split = 'val'
             # Read fracture path list
             if scale == 'overfitting':
                 filepaths = join('./data/data_list', f"{data_category}_{split}_one.txt")
@@ -50,7 +51,7 @@ class DatasetBreakingBad(Dataset):
         self.filepaths = [x for x in self.filepaths if self.min_part <= int(x.split()[0]) <= self.max_part]
         if self.sub_category != 'all': self.filepaths = [x for x in self.filepaths if x.split()[1].split('/')[1] == self.sub_category]
 
-        if self.mpa:
+        if self.mpa and self.split in ['train', 'val']:
             self.frac0 = [x.split()[2] for x in self.filepaths]
             self.frac1 = [x.split()[3] for x in self.filepaths]
 
@@ -141,7 +142,8 @@ class DatasetBreakingBad(Dataset):
 
         # Load N-part meshes and calculate each area
         base_path = join(self.datapath, filepath)
-        if self.mpa: obj_paths = [join(base_path, x) for x in [self.frac0[idx], self.frac1[idx]]]
+        if self.mpa and self.split in ['train', 'val']:
+            obj_paths = [join(base_path, x) for x in [self.frac0[idx], self.frac1[idx]]]
         else: obj_paths = [join(base_path, x) for x in os.listdir(base_path)]
 
         meshes = [trimesh.load_mesh(x) for x in obj_paths]
