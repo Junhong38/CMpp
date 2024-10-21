@@ -46,8 +46,8 @@ class ChannelAttentionModule(nn.Module):
 
         self.sigmoid = nn.Sigmoid()
 
-    def forward(self,x):
-
+    def forward(self, x):
+        
         out1 = torch.mean(x, dim=-1, keepdim=True)  # b, c, 1
         out1 = self.mlp(out1) # b, c, 1
 
@@ -56,7 +56,7 @@ class ChannelAttentionModule(nn.Module):
 
         out = self.sigmoid(out1 + out2)
 
-        return out * x, out
+        return out * x
 
 class EquiAssem(pl.LightningModule):
     def __init__(self, lr, backbone='unet', shape_loss='positive', occ_loss='negative', no_ori=False, attention='channel', visualize=False, debug=False):
@@ -149,7 +149,7 @@ class EquiAssem(pl.LightningModule):
         """Build optimizer and lr scheduler."""
         lr = self.lr
         optimizer = optim.AdamW(self.parameters(), lr=lr, weight_decay=0.)
-        scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=16919, eta_min=1e-3)
+        scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=16919, eta_min=1e-3) # 16919, 6671
         
         return {'optimizer': optimizer,
                 'lr_scheduler': scheduler}
