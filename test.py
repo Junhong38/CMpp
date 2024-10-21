@@ -39,11 +39,10 @@ def test(args):
     if args.model == 'both':
         model = EquiAssem(lr=args.lr,
                         backbone=args.backbone,
-                        shape=args.shape, 
-                        occ=args.occ, 
                         shape_loss=args.shape_loss, 
                         occ_loss=args.occ_loss, 
                         no_ori=args.no_ori,
+                        attention=args.attention,
                         visualize=args.visualize,
                         debug=args.debug)
     elif args.model == 'shape_only':
@@ -82,7 +81,7 @@ def test(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Equivariant Assembly Pytorch Implementation')
     parser.add_argument('--datapath', type=str, default='../../data/bbad_v2')
-    parser.add_argument('--data_category', type=str, default='everyday', choices=['everyday', 'artifact', 'synthetic'])
+    parser.add_argument('--data_category', type=str, default='everyday', choices=['everyday', 'artifact', 'synthetic', 'fantastic'])
     parser.add_argument('--sub_category', type=str, default='all')
     parser.add_argument('--n_pts', type=int, default=5000)
     parser.add_argument('--min_part', type=int, default=2)
@@ -99,11 +98,10 @@ if __name__ == '__main__':
     # Ablation studies
     parser.add_argument('--model', type=str, default='both', choices=['both', 'shape_only', 'occ_only'])
     parser.add_argument('--backbone', type=str, default='unet', choices=['dgcnn', 'unet'])
-    parser.add_argument('--shape', type=str, default='local', choices=['local', 'global'])
-    parser.add_argument('--occ', type=str, default='local', choices=['local', 'global'])
     parser.add_argument('--shape_loss', type=str, default='positive', choices=['positive', 'negative'])
     parser.add_argument('--occ_loss', type=str, default='negative', choices=['positive', 'negative'])
     parser.add_argument('--no_ori', action='store_false')
+    parser.add_argument('--attention', type=str, default='channel', choices=['channel', 'none'])
 
     parser.add_argument('--visualize', action='store_true')
     parser.add_argument('--debug', action='store_true')
