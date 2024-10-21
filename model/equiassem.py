@@ -149,7 +149,7 @@ class EquiAssem(pl.LightningModule):
         """Build optimizer and lr scheduler."""
         lr = self.lr
         optimizer = optim.AdamW(self.parameters(), lr=lr, weight_decay=0.)
-        scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=16919, eta_min=1e-3) # 16919, 6671
+        scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=6671, eta_min=1e-3) # 16919, 6671
         
         return {'optimizer': optimizer,
                 'lr_scheduler': scheduler}
@@ -248,6 +248,7 @@ class EquiAssem(pl.LightningModule):
         
         # 8. Optimal Transport
         matching_scores = torch.einsum('b c n , b c m -> b n m', src_matching_feature, trg_matching_feature) # (1, N, M)
+        matching_scores = matching_scores / src_matching_feature.shape[1] ** 0.5
         matching_scores = self.optimal_transport(matching_scores) # (1, N, M) -> (1, N+1, M+1)
         matching_scores_drop = matching_scores[:,:-1,:-1] # (1, N+1, M+1) -> (1, N, M)
         
@@ -307,7 +308,7 @@ class EquiAssem(pl.LightningModule):
         if mode == 'train':
             log_dict = {f'{mode}/{k}': v.item() for k, v in loss.items()}
             self.log_dict(log_dict, logger=True, sync_dist=True, rank_zero_only=True, on_step=False, on_epoch=True, batch_size=1)
-
+        
         return out_dict, loss
 
     @torch.no_grad()
@@ -404,9 +405,9 @@ class EquiAssem(pl.LightningModule):
             pcds_pred.append(pcds_pred[1][gt_corr[:,1]])
             pcds_grtr.append(pcds_grtr[0][gt_corr[:,0]])
             pcds_grtr.append(pcds_grtr[1][gt_corr[:,1]])
-            save_pc(f"./vis_everyday_final/o_loss{round(out_dict['o_loss'].item(),2)}_cd{round(eval_result['cd'].item(),2)}_crd{round(eval_result['crd'].item(),2)}_c_loss{round(out_dict['c_loss'].item(),2)}_occ_loss{round(out_dict['occ_loss'].item(),2)}_rrmse{round(eval_result['rrmse'].item(),1)}_pred.pcd", pcds_pred)
-            save_pc(f"./vis_everyday_final/o_loss{round(out_dict['o_loss'].item(),2)}_cd{round(eval_result['cd'].item(),2)}_crd{round(eval_result['crd'].item(),2)}_c_loss{round(out_dict['c_loss'].item(),2)}_occ_loss{round(out_dict['occ_loss'].item(),2)}_rrmse{round(eval_result['rrmse'].item(),1)}_grtr.pcd", pcds_grtr)
-
+            save_pc(f"./vis_fantastic/o_loss{round(out_dict['o_loss'].item(),2)}_cd{round(eval_result['cd'].item(),2)}_crd{round(eval_result['crd'].item(),2)}_c_loss{round(out_dict['c_loss'].item(),2)}_occ_loss{round(out_dict['occ_loss'].item(),2)}_rrmse{round(eval_result['rrmse'].item(),1)}_pred.pcd", pcds_pred)
+            save_pc(f"./vis_fantastic/o_loss{round(out_dict['o_loss'].item(),2)}_cd{round(eval_result['cd'].item(),2)}_crd{round(eval_result['crd'].item(),2)}_c_loss{round(out_dict['c_loss'].item(),2)}_occ_loss{round(out_dict['occ_loss'].item(),2)}_rrmse{round(eval_result['rrmse'].item(),1)}_grtr.pcd", pcds_grtr)
+        
         return eval_result
     
     def _is_trg_larger(self, src_pcd, trg_pcd):
