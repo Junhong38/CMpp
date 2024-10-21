@@ -40,6 +40,7 @@ def main(args):
                         shape_loss=args.shape_loss, 
                         occ_loss=args.occ_loss, 
                         no_ori=args.no_ori,
+                        attention=args.attention,
                         visualize=args.visualize,
                         debug=args.debug)
     elif args.model == 'shape_only':
@@ -190,8 +191,8 @@ if __name__ == '__main__':
     parser.add_argument('--shape_loss', type=str, default='positive', choices=['positive', 'negative'])
     parser.add_argument('--occ_loss', type=str, default='negative', choices=['positive', 'negative'])
     parser.add_argument('--no_ori', action='store_true')
+    parser.add_argument('--attention', type=str, default='channel', choices=['channel', 'none'])
     
-
     parser.add_argument('--visualize', action='store_true')
     parser.add_argument('--debug', action='store_true')
         

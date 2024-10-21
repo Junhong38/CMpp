@@ -33,14 +33,40 @@ import random
 import pickle
 from common.utils import save_pc, knn, get_graph_feature
 
+class ChannelAttentionModule(nn.Module):
+    """ this function is used to achieve the channel attention module in CBAM paper"""
+    def __init__(self, C, ratio=16):
+        super(ChannelAttentionModule, self).__init__()
+
+        self.mlp = nn.Sequential(
+            nn.Conv1d(in_channels=C, out_channels=C // ratio, kernel_size=1, bias=False),
+            nn.ReLU(),
+            nn.Conv1d(in_channels= C // ratio, out_channels=C, kernel_size=1, bias=False)
+        )
+
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self,x):
+
+        out1 = torch.mean(x, dim=-1, keepdim=True)  # b, c, 1
+        out1 = self.mlp(out1) # b, c, 1
+
+        out2 = nn.AdaptiveMaxPool1d(1)(x) # b, c, 1
+        out2 = self.mlp(out2) # b, c, 1
+
+        out = self.sigmoid(out1 + out2)
+
+        return out * x, out
+
 class EquiAssem(pl.LightningModule):
-    def __init__(self, lr, backbone='unet', shape_loss='positive', occ_loss='negative', no_ori=False, visualize=False, debug=False):
+    def __init__(self, lr, backbone='unet', shape_loss='positive', occ_loss='negative', no_ori=False, attention='channel', visualize=False, debug=False):
         super(EquiAssem, self).__init__()
 
         self.lr = lr
-        self.shape, self.shape_loss = shape, shape_loss
-        self.occ, self.occ_loss = occ, occ_loss
+        self.shape_loss = shape_loss
+        self.occ_loss = occ_loss
         self.no_ori = no_ori
+        self.attention = attention
 
         # Output feature dimension of Feature Extractor
         self.feat_dim = 1024
@@ -77,6 +103,9 @@ class EquiAssem(pl.LightningModule):
                                 nn.LeakyReLU(negative_slope=0.2), # mlp 3
                                 )
         
+        if self.attention == 'channel':
+            self.scaler = ChannelAttentionModule(1024)
+
         # Matching Feature
         self.matching_mlp = nn.Sequential(nn.Conv1d(1024, 1024, kernel_size=1),
                                 nn.InstanceNorm1d(1024),
@@ -210,12 +239,15 @@ class EquiAssem(pl.LightningModule):
         src_matching_feature = torch.cat([src_shape_feats, src_occ_feats], dim=1) # (1, 1024, N)
         trg_matching_feature = torch.cat([trg_shape_feats, trg_occ_feats], dim=1) # (1, 1024, M)
 
+        if self.attention == 'channel':
+            src_matching_feature = self.scaler(src_matching_feature) # (1, 1024, N) -> (1, 1024, N)
+            trg_matching_feature = self.scaler(trg_matching_feature) # (1, 1024, M) -> (1, 1024, M)
+
         src_matching_feature = self.matching_mlp(src_matching_feature) # (1, 1024, N) -> (1, 1024, N)
         trg_matching_feature = self.matching_mlp(trg_matching_feature) # (1, 1024, M) -> (1, 1024, M)
         
         # 8. Optimal Transport
         matching_scores = torch.einsum('b c n , b c m -> b n m', src_matching_feature, trg_matching_feature) # (1, N, M)
-        matching_scores = matching_scores / src_matching_feature.shape[1] ** 0.5 # (1, N, M)
         matching_scores = self.optimal_transport(matching_scores) # (1, N, M) -> (1, N+1, M+1)
         matching_scores_drop = matching_scores[:,:-1,:-1] # (1, N+1, M+1) -> (1, N, M)
         
