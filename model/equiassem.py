@@ -35,12 +35,12 @@ from common.utils import save_pc, knn, get_graph_feature
 
 class ChannelAttentionModule(nn.Module):
     """ this function is used to achieve the channel attention module in CBAM paper"""
-    def __init__(self, C, ratio=16):
+    def __init__(self, C, ratio=4):
         super(ChannelAttentionModule, self).__init__()
 
         self.mlp = nn.Sequential(
             nn.Conv1d(in_channels=C, out_channels=C // ratio, kernel_size=1, bias=False),
-            nn.ReLU(),
+            nn.LeakyReLU(negative_slope=0.2),
             nn.Conv1d(in_channels= C // ratio, out_channels=C, kernel_size=1, bias=False)
         )
 
@@ -149,7 +149,7 @@ class EquiAssem(pl.LightningModule):
         """Build optimizer and lr scheduler."""
         lr = self.lr
         optimizer = optim.AdamW(self.parameters(), lr=lr, weight_decay=0.)
-        scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=6671, eta_min=1e-3) # 16919, 6671
+        scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=16919, eta_min=1e-3) # 16919, 6671
         
         return {'optimizer': optimizer,
                 'lr_scheduler': scheduler}
