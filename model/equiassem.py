@@ -35,7 +35,7 @@ from common.utils import save_pc, knn, get_graph_feature
 
 class ChannelAttentionModule(nn.Module):
     """ this function is used to achieve the channel attention module in CBAM paper"""
-    def __init__(self, C, ratio=4):
+    def __init__(self, C, ratio=8):
         super(ChannelAttentionModule, self).__init__()
 
         self.mlp = nn.Sequential(
@@ -56,7 +56,7 @@ class ChannelAttentionModule(nn.Module):
 
         out = self.sigmoid(out1 + out2)
 
-        return out * x
+        return out*x + x
 
 class EquiAssem(pl.LightningModule):
     def __init__(self, lr, backbone='unet', shape_loss='positive', occ_loss='negative', no_ori=False, attention='channel', visualize=False, debug=False):
@@ -240,8 +240,8 @@ class EquiAssem(pl.LightningModule):
         trg_matching_feature = torch.cat([trg_shape_feats, trg_occ_feats], dim=1) # (1, 1024, M)
 
         if self.attention == 'channel':
-            src_matching_feature = self.scaler(src_matching_feature) # (1, 1024, N) -> (1, 1024, N)
-            trg_matching_feature = self.scaler(trg_matching_feature) # (1, 1024, M) -> (1, 1024, M)
+            src_matching_feature_scaled = self.scaler(src_matching_feature) # (1, 1024, N) -> (1, 1024, N)
+            trg_matching_feature_scaled = self.scaler(trg_matching_feature) # (1, 1024, M) -> (1, 1024, M)
 
         src_matching_feature = self.matching_mlp(src_matching_feature) # (1, 1024, N) -> (1, 1024, N)
         trg_matching_feature = self.matching_mlp(trg_matching_feature) # (1, 1024, M) -> (1, 1024, M)
