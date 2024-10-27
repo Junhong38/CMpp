@@ -35,28 +35,29 @@ from common.utils import save_pc, knn, get_graph_feature
 
 class ChannelAttentionModule(nn.Module):
     """ this function is used to achieve the channel attention module in CBAM paper"""
-    def __init__(self, C, ratio=4):
+    def __init__(self, in_dim=1023, out_dim=1024, ratio=4):
         super(ChannelAttentionModule, self).__init__()
 
         self.mlp = nn.Sequential(
-            nn.Conv1d(in_channels=C, out_channels=C // ratio, kernel_size=1, bias=False),
+            nn.Conv1d(in_channels=in_dim, out_channels=out_dim // ratio, kernel_size=1, bias=False),
             nn.LeakyReLU(negative_slope=0.2),
-            nn.Conv1d(in_channels= C // ratio, out_channels=C, kernel_size=1, bias=False)
+            nn.Conv1d(in_channels= out_dim // ratio, out_channels=out_dim, kernel_size=1, bias=False),
         )
 
         self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
         
-        out1 = torch.mean(x, dim=-1, keepdim=True)  # b, c, 1
-        out1 = self.mlp(out1) # b, c, 1
+        out1 = torch.mean(x, dim=-1, keepdim=True)  # 1, c, 1
+        out1 = self.mlp(out1) # 1, c, 1
 
-        out2 = nn.AdaptiveMaxPool1d(1)(x) # b, c, 1
-        out2 = self.mlp(out2) # b, c, 1
-
-        out = self.sigmoid(out1 + out2)
-
-        return out*x + x
+        out2 = nn.AdaptiveMaxPool1d(1)(x) # 1, c, 1
+        out2 = self.mlp(out2) # 1, c, 1
+        
+        out = F.normalize(out1+out2, p=2, dim=1)
+        attention = self.sigmoid(out)
+        
+        return attention
 
 class EquiAssem_new_v2(pl.LightningModule):
     def __init__(self, lr, backbone='unet', shape_loss='positive', occ_loss='negative', no_ori=False, attention='channel', visualize=False, debug=False):
@@ -80,6 +81,9 @@ class EquiAssem_new_v2(pl.LightningModule):
         # Basis Vector
         self.proj = VNLinear(self.feat_dim//3, 2)
 
+        if attention == 'channel':
+            self.c_attn = ChannelAttentionModule(1023, 1024, ratio=4)
+        
         # Shape Descriptor
         self.shape_mlp = nn.Sequential(nn.Conv1d(1023, 512, kernel_size=1, bias=False),
                                 nn.InstanceNorm1d(512),
@@ -211,20 +215,32 @@ class EquiAssem_new_v2(pl.LightningModule):
         src_inv_feats = rearrange(src_inv_feats, 'b n c r -> b (c r) n') # (1, N, 341, 3) -> (1, 1023, N)
         trg_inv_feats = rearrange(trg_inv_feats, 'b n c r -> b (c r) n') # (1, M, 341, 3) -> (1, 1023, M)
         
-        #### 5. OCCUPANCY DESCRIPTOR ####
-        src_occ_feats = self.occ_mlp(src_inv_feats) # (1, 1023, N) -> (1, 512, N)
-        trg_occ_feats = self.occ_mlp(trg_inv_feats) # (1, 1023, M) -> (1, 512, M)
-        #### 5. OCCUPANCY DESCRIPTOR ####
-
+        # 5. Chaneel Attention Map
+        inv_feats = torch.cat([src_inv_feats, trg_inv_feats], dim=-1)  # (1, 1023, N+M)
+        attention = self.c_attn(inv_feats) # (1, 1023, N+M) -> (1, 1023, N+M)
+        
+        shape_attention, occ_attention = attention[:, :512], attention[:, 512:]
+        loss['shape_attn_ratio'] = shape_attention.sum() / (shape_attention.sum()+occ_attention.sum())
+        loss['occ_attn_ratio'] = occ_attention.sum() / (shape_attention.sum()+occ_attention.sum())
+        
         #### 6. SHAPE DESCRIPTOR ####
         src_shape_feats = self.shape_mlp(src_inv_feats) # (1, 1023, M) -> (1, 512, M)
+        src_shape_feats = src_shape_feats * shape_attention # + src_shape_feats
         trg_shape_feats = self.shape_mlp(trg_inv_feats) # (1, 1023, M) -> (1, 512, M)
+        trg_shape_feats = trg_shape_feats * shape_attention # + trg_shape_feats
         #### 6. SHAPE DESCRIPTOR ####
+
+        #### 7. OCCUPANCY DESCRIPTOR ####
+        src_occ_feats = self.occ_mlp(src_inv_feats) # (1, 1023, N) -> (1, 512, N)
+        src_occ_feats = src_occ_feats * occ_attention # + src_occ_feats
+        trg_occ_feats = self.occ_mlp(trg_inv_feats) # (1, 1023, M) -> (1, 512, M)
+        trg_occ_feats = trg_occ_feats * occ_attention # + trg_occ_feats
+        #### 7. OCCUPANCY DESCRIPTOR ####
 
         # 8. Optimal Transport
         shape_matching_scores = torch.einsum('b c n , b c m -> b n m', src_shape_feats, trg_shape_feats) # (1, N, M)
         shape_matching_scores = shape_matching_scores / src_shape_feats.shape[1] ** 0.5
-        
+
         occ_matching_scores = -torch.einsum('b c n , b c m -> b n m', src_occ_feats, trg_occ_feats) # (1, N, M)
         occ_matching_scores = occ_matching_scores / src_occ_feats.shape[1] ** 0.5
 
@@ -277,7 +293,7 @@ class EquiAssem_new_v2(pl.LightningModule):
         # 9-4. final loss
         loss['loss'] = self.c_loss_weight * loss['c_loss'] + self.p_loss_weight * loss['p_loss'] + self.o_loss_weight * loss['o_loss'] +  self.occ_loss_weight * loss['occ_loss']
         out_dict.update(loss)
-
+        
         # 10. Evaluation
         if mode in ['val', 'test']:
             eval_dict = self.evaluate_prediction(in_dict, out_dict, gt_corr)

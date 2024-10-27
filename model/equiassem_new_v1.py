@@ -104,8 +104,7 @@ class EquiAssem_new_v1(pl.LightningModule):
                                 )
         
         # Optimal Transport
-        self.shape_optimal_transport = LearnableLogOptimalTransport(num_iterations=100)
-        self.occ_optimal_transport = LearnableLogOptimalTransport(num_iterations=100)
+        self.optimal_transport = LearnableLogOptimalTransport(num_iterations=100)
 
         # LGR
         self.fine_matching = LocalGlobalRegistration(
@@ -225,15 +224,11 @@ class EquiAssem_new_v1(pl.LightningModule):
         # 8. Optimal Transport
         shape_matching_scores = torch.einsum('b c n , b c m -> b n m', src_shape_feats, trg_shape_feats) # (1, N, M)
         shape_matching_scores = shape_matching_scores / src_shape_feats.shape[1] ** 0.5
-        shape_matching_scores = self.shape_optimal_transport(shape_matching_scores) # (1, N, M) -> (1, N+1, M+1)
-        # shape_matching_scores_drop = shape_matching_scores[:,:-1,:-1] # (1, N+1, M+1) -> (1, N, M)
         
         occ_matching_scores = -torch.einsum('b c n , b c m -> b n m', src_occ_feats, trg_occ_feats) # (1, N, M)
         occ_matching_scores = occ_matching_scores / src_occ_feats.shape[1] ** 0.5
-        occ_matching_scores = self.occ_optimal_transport(occ_matching_scores) # (1, N, M) -> (1, N+1, M+1)
-        # occ_matching_scores_drop = occ_matching_scores[:,:-1,:-1] # (1, N+1, M+1) -> (1, N, M)
 
-        matching_scores = (shape_matching_scores + occ_matching_scores)/2
+        matching_scores = self.optimal_transport(shape_matching_scores + occ_matching_scores) # (1, N, M) -> (1, N+1, M+1)
         matching_scores_drop = matching_scores[:,:-1,:-1]
 
         # 9. Weighted SVD with top-k correspondence selections
