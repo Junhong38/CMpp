@@ -33,43 +33,44 @@ import random
 import pickle
 from common.utils import save_pc, knn, get_graph_feature
 
+
 class EquiAssem_occ(pl.LightningModule):
-    def __init__(self, lr, backbone='unet', occ_loss='negative', no_ori=False, visualize=False, debug=False):
+    def __init__(self, lr, backbone='vn_unet', shape_loss='positive', occ_loss='negative', no_ori=False, attention='channel', visualize=False, debug=False):
         super(EquiAssem_occ, self).__init__()
 
         self.lr = lr
-        self.occ, self.occ_loss = occ, occ_loss
+        self.occ_loss = occ_loss
         self.no_ori = no_ori
+        self.attention = attention
 
         # Output feature dimension of Feature Extractor
         self.feat_dim = 1024
 
         # Feature Extractor
-        if backbone == 'unet':
+        if backbone == 'vn_unet':
             self.backbone = EQCNN_equi_unet(feat_dim=self.feat_dim, pooling="mean")
-        elif backbone == 'dgcnn':
+        elif backbone == 'vn_dgcnn':
             self.backbone = EQCNN_equi(feat_dim=self.feat_dim, pooling="mean")
+        elif backbone == 'unet':
+            raise NotImplementedError("DGCNN_Unet backbone not implemented")
+        elif backbone == 'dgcnn':
+            raise NotImplementedError("DGCNN backbone not implemented")
         
         # Basis Vector
         self.proj = VNLinear(self.feat_dim//3, 2)
 
         # Occupancy Descriptor
-        self.occ_mlp = nn.Sequential(nn.Conv1d(1023, 1024, kernel_size=1, bias=False),
-                                nn.InstanceNorm1d(1024),
-                                nn.LeakyReLU(negative_slope=0.2), # mlp 1
-                                nn.Conv1d(1024, 1024, kernel_size=1, bias=False),
-                                nn.InstanceNorm1d(1024),
-                                nn.LeakyReLU(negative_slope=0.2), # mlp 2
-                                nn.Conv1d(1024, 1024, kernel_size=1, bias=False),
-                                nn.InstanceNorm1d(1024),
-                                nn.LeakyReLU(negative_slope=0.2), # mlp 3
+        self.occ_mlp = nn.Sequential(nn.Conv1d(1023, 512, kernel_size=1, bias=False),
+                                nn.InstanceNorm1d(512),
+                                nn.LeakyReLU(negative_slope=0.2),
+                                nn.Conv1d(512, 512, kernel_size=1, bias=False),
+                                nn.InstanceNorm1d(512),
+                                nn.LeakyReLU(negative_slope=0.2),
+                                nn.Conv1d(512, 512, kernel_size=1, bias=False),
+                                nn.InstanceNorm1d(512),
+                                nn.Tanh()
                                 )
         
-        # Matching Feature
-        self.matching_mlp = nn.Sequential(nn.Conv1d(1024, 1024, kernel_size=1),
-                                nn.InstanceNorm1d(1024),
-                                nn.LeakyReLU())
-
         # Optimal Transport
         self.optimal_transport = LearnableLogOptimalTransport(num_iterations=100)
 
@@ -106,7 +107,7 @@ class EquiAssem_occ(pl.LightningModule):
         """Build optimizer and lr scheduler."""
         lr = self.lr
         optimizer = optim.AdamW(self.parameters(), lr=lr, weight_decay=0.)
-        scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=16919, eta_min=1e-3)
+        scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=16919, eta_min=1e-3) # 16919, 6671
         
         return {'optimizer': optimizer,
                 'lr_scheduler': scheduler}
@@ -159,75 +160,39 @@ class EquiAssem_occ(pl.LightningModule):
         trg_pcd = in_dict['pcd_t'][1] # (1, M ,3)
 
         # 1. SO(3)-Equivariant Feature Extractor
-        src_equi_feats = self.backbone(src_pcd)
-        trg_equi_feats = self.backbone(trg_pcd)
+        src_equi_feats = self.backbone(src_pcd) # (1, 341, 3, N)
+        trg_equi_feats = self.backbone(trg_pcd) # (1, 341, 3, M)
 
         # 2. Basis Vector Projection 
-        src_vecs = self.proj(src_equi_feats).permute(0, 3, 1, 2) # (1, C//3, 3, N) -> (1, 2, 3, N) -> (1, N, 2, 3)
-        trg_vecs = self.proj(trg_equi_feats).permute(0, 3, 1, 2) # (1, C//3, 3, M) -> (1, 2, 3, M) -> (1, M, 2, 3)
+        src_vecs = self.proj(src_equi_feats).permute(0, 3, 1, 2) # (1, 341, 3, N) -> (1, 2, 3, N) -> (1, N, 2, 3)
+        trg_vecs = self.proj(trg_equi_feats).permute(0, 3, 1, 2) # (1, 341, 3, M) -> (1, 2, 3, M) -> (1, M, 2, 3)
 
         # 3. Gram Schmidt & Cross-product
         src_ori = ortho2rotation(src_vecs) # (1, N, 2, 3) -> (1, N, 3, 3)
         trg_ori = ortho2rotation(trg_vecs) # (1, M, 2, 3) -> (1, M, 3, 3)
 
         # 4. Invariant Features
-        src_inv_feats = torch.matmul(src_equi_feats.permute(0, 3, 1, 2), src_ori.transpose(-2,-1)) # (1, N, C//3, 3) x (1, N, 3, 3) -> (1, N, C//3, 3)
-        trg_inv_feats = torch.matmul(trg_equi_feats.permute(0, 3, 1, 2), trg_ori.transpose(-2,-1)) # (1, M, C//3, 3) x (1, M, 3, 3) -> (1, M, C//3, 3)
-        src_inv_feats = rearrange(src_inv_feats, 'b n c r -> b (c r) n') # (1, N, C//3, 3) -> (1, C, N)
-        trg_inv_feats = rearrange(trg_inv_feats, 'b n c r -> b (c r) n') # (1, M, C//3, 3) -> (1, C, M)
+        src_inv_feats = torch.matmul(src_equi_feats.permute(0, 3, 1, 2), src_ori.transpose(-2,-1)) # (1, N, 341, 3) x (1, N, 3, 3) -> (1, N, 341, 3)
+        trg_inv_feats = torch.matmul(trg_equi_feats.permute(0, 3, 1, 2), trg_ori.transpose(-2,-1)) # (1, M, 341, 3) x (1, M, 3, 3) -> (1, M, 341, 3)
+        src_inv_feats = rearrange(src_inv_feats, 'b n c r -> b (c r) n') # (1, N, 341, 3) -> (1, 1023, N)
+        trg_inv_feats = rearrange(trg_inv_feats, 'b n c r -> b (c r) n') # (1, M, 341, 3) -> (1, 1023, M)
         
-        #### OCCUPANCY DESCRIPTOR ####
-        if self.occ == 'local':
-            src_occ_feats = self.occ_mlp(src_inv_feats)
-            trg_occ_feats = self.occ_mlp(trg_inv_feats)
-        else:
-            src_occ_feats = get_graph_feature(src_inv_feats, k=20)
-            src_occ_feats = self.occ_conv1(src_occ_feats)
-            src_occ_feats_1 = src_occ_feats.max(dim=-1)[0]
+        #### 7. OCCUPANCY DESCRIPTOR ####
+        src_occ_feats = self.occ_mlp(src_inv_feats) # (1, 1023, N) -> (1, 512, N)
+        src_occ_feats = src_occ_feats * occ_attention
+        trg_occ_feats = self.occ_mlp(trg_inv_feats) # (1, 1023, M) -> (1, 512, M)
+        trg_occ_feats = trg_occ_feats * occ_attention
+        #### 7. OCCUPANCY DESCRIPTOR ####
 
-            src_occ_feats = get_graph_feature(src_occ_feats_1, k=20)
-            src_occ_feats = self.occ_conv2(src_occ_feats)
-            src_occ_feats_2 = src_occ_feats.max(dim=-1)[0] 
-
-            src_occ_feats = get_graph_feature(src_occ_feats_2, k=20) 
-            src_occ_feats = self.occ_conv3(src_occ_feats)
-            src_occ_feats_3 = src_occ_feats.max(dim=-1)[0]
-
-            src_occ_feats = torch.cat((src_occ_feats_1, src_occ_feats_2, src_occ_feats_3), dim=1)
-            src_occ_feats = self.occ_conv4(src_occ_feats)
-
-            trg_occ_feats = get_graph_feature(trg_inv_feats, k=20)
-            trg_occ_feats = self.occ_conv1(trg_occ_feats)
-            trg_occ_feats_1 = trg_occ_feats.max(dim=-1)[0]
-
-            trg_occ_feats = get_graph_feature(trg_occ_feats_1, k=20)
-            trg_occ_feats = self.occ_conv2(trg_occ_feats)
-            trg_occ_feats_2 = trg_occ_feats.max(dim=-1)[0] 
-
-            trg_occ_feats = get_graph_feature(trg_occ_feats_2, k=20) 
-            trg_occ_feats = self.occ_conv3(trg_occ_feats)
-            trg_occ_feats_3 = trg_occ_feats.max(dim=-1)[0]
-
-            trg_occ_feats = torch.cat((trg_occ_feats_1, trg_occ_feats_2, trg_occ_feats_3), dim=1)
-            trg_occ_feats = self.occ_conv4(trg_occ_feats)
-        #### OCCUPANCY DESCRIPTOR ####
-
-
-        # 7. Combine Shape and Occupancy Descriptors
-        if self.occ_loss == 'negative':
-            trg_occ_feats = -trg_occ_feats
-
-        src_matching_feature = self.matching_mlp(src_occ_feats)
-        trg_matching_feature = self.matching_mlp(trg_occ_feats)
-        
         # 8. Optimal Transport
-        matching_scores = torch.einsum('b c n , b c m -> b n m', src_matching_feature, trg_matching_feature) # (1, N, M)
-        matching_scores = matching_scores / src_matching_feature.shape[1] ** 0.5 # (1, N, M)
-        matching_scores = self.optimal_transport(matching_scores) # (1, N, M) -> (1, N+1, M+1)
-        matching_scores_drop = matching_scores[:,:-1,:-1] # (1, N+1, M+1) -> (1, N, M)
-        
+        occ_matching_scores = -torch.einsum('b c n , b c m -> b n m', src_occ_feats, trg_occ_feats) # (1, N, M)
+        occ_matching_scores = occ_matching_scores / src_occ_feats.shape[1] ** 0.5
+
+        matching_scores = self.optimal_transport(occ_matching_scores) # (1, N, M) -> (1, N+1, M+1)
+        matching_scores_drop = matching_scores[:,:-1,:-1]
+
+        # 9. Weighted SVD with top-k correspondence selections
         if mode in ['val', 'test']:
-            # 9. Weighted SVD with top-k correspondence selections
             with torch.no_grad():
                 src_corr_pts, trg_corr_pts, corr_scores, estimated_transform, pred_corr = self.fine_matching(
                     src_pcd, trg_pcd, matching_scores_drop, k=128)
@@ -236,11 +201,10 @@ class EquiAssem_occ(pl.LightningModule):
             out_dict['estimated_trans'] = -(estimated_transform[:3, :3].inverse() @ -estimated_transform[:3, 3])
 
         if self.debug:
-            out_dict['conv_weight'] = self.matching_mlp[0].weight.data
+            out_dict['src_shape_feats'] = src_shape_feats.squeeze(0)
             out_dict['src_occ_feats'] = src_occ_feats.squeeze(0)
-            out_dict['src_matching_feats'] = src_matching_feature.squeeze(0)
+            out_dict['trg_shape_feats'] = trg_shape_feats.squeeze(0)
             out_dict['trg_occ_feats'] = trg_occ_feats.squeeze(0)
-            out_dict['trg_matching_feats'] = trg_matching_feature.squeeze(0)
             out_dict['src_ori'] = src_ori.squeeze(0)
             out_dict['trg_ori'] = trg_ori.squeeze(0)
             out_dict['src_pcd'] = src_pcd.squeeze(0)
@@ -251,7 +215,8 @@ class EquiAssem_occ(pl.LightningModule):
             out_dict['trg_gt_rot'] = in_dict['gt_rotat'][1].squeeze(0)
             out_dict['gt_correspondence'] = in_dict['gt_correspondence'].squeeze(0)
             out_dict['pred_corr'] = pred_corr
-            with open('debug.pickle', 'wb') as f: pickle.dump(out_dict, f, pickle.HIGHEST_PROTOCOL)
+            with open('debug.pickle', 'wb') as f:
+                pickle.dump(out_dict, f)
             breakpoint()
 
         # 10. Calculate Loss
@@ -264,12 +229,12 @@ class EquiAssem_occ(pl.LightningModule):
         loss['o_loss'] = self.orientation_loss(src_ori, trg_ori, gt_corr, in_dict['gt_rotat'])
         
         # 9-4. occupancy loss
-        loss['occ_loss'] = self.occupancy_loss(src_pcd_raw, trg_pcd_raw, src_occ_feats.transpose(-2,-1), trg_occ_feats.transpose(-2,-1), gt_corr)
+        loss['occ_loss'] = self.occupancy_loss(src_pcd_raw, trg_pcd_raw, src_occ_feats.transpose(-2,-1), -trg_occ_feats.transpose(-2,-1), gt_corr)
 
         # 9-4. final loss
         loss['loss'] = self.p_loss_weight * loss['p_loss'] + self.o_loss_weight * loss['o_loss'] +  self.occ_loss_weight * loss['occ_loss']
         out_dict.update(loss)
-
+        
         # 10. Evaluation
         if mode in ['val', 'test']:
             eval_dict = self.evaluate_prediction(in_dict, out_dict, gt_corr)
@@ -279,7 +244,7 @@ class EquiAssem_occ(pl.LightningModule):
         if mode == 'train':
             log_dict = {f'{mode}/{k}': v.item() for k, v in loss.items()}
             self.log_dict(log_dict, logger=True, sync_dist=True, rank_zero_only=True, on_step=False, on_epoch=True, batch_size=1)
-
+        
         return out_dict, loss
 
     @torch.no_grad()
@@ -311,9 +276,9 @@ class EquiAssem_occ(pl.LightningModule):
             pcds_pred.append(pcds_pred[1][gt_corr[:,1]])
             pcds_grtr.append(pcds_grtr[0][gt_corr[:,0]])
             pcds_grtr.append(pcds_grtr[1][gt_corr[:,1]])
-            save_pc(f"./vis_dgcnn_occ_local/cd{round(eval_result['cd'].item(),2)}_crd{round(eval_result['crd'].item(),2)}_c_loss{round(out_dict['c_loss'].item(),2)}_occ_loss{round(out_dict['occ_loss'].item(),2)}_rrmse{round(eval_result['rrmse'].item(),1)}_pred.pcd", pcds_pred)
-            save_pc(f"./vis_dgcnn_occ_local/cd{round(eval_result['cd'].item(),2)}_crd{round(eval_result['crd'].item(),2)}_c_loss{round(out_dict['c_loss'].item(),2)}_occ_loss{round(out_dict['occ_loss'].item(),2)}_rrmse{round(eval_result['rrmse'].item(),1)}_grtr.pcd", pcds_grtr)
-
+            save_pc(f"./vis_fantastic/o_loss{round(out_dict['o_loss'].item(),2)}_cd{round(eval_result['cd'].item(),2)}_crd{round(eval_result['crd'].item(),2)}_c_loss{round(out_dict['c_loss'].item(),2)}_occ_loss{round(out_dict['occ_loss'].item(),2)}_rrmse{round(eval_result['rrmse'].item(),1)}_pred.pcd", pcds_pred)
+            save_pc(f"./vis_fantastic/o_loss{round(out_dict['o_loss'].item(),2)}_cd{round(eval_result['cd'].item(),2)}_crd{round(eval_result['crd'].item(),2)}_c_loss{round(out_dict['c_loss'].item(),2)}_occ_loss{round(out_dict['occ_loss'].item(),2)}_rrmse{round(eval_result['rrmse'].item(),1)}_grtr.pcd", pcds_grtr)
+        
         return eval_result
     
     def _is_trg_larger(self, src_pcd, trg_pcd):

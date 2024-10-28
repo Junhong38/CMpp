@@ -24,8 +24,7 @@ import open3d as o3d
 from model.equiassem import EquiAssem
 from model.equiassem_shape import EquiAssem_shape
 from model.equiassem_occ import EquiAssem_occ
-from model.equiassem_new_v1 import EquiAssem_new_v1
-from model.equiassem_new_v2 import EquiAssem_new_v2
+
 import warnings
 warnings.filterwarnings("ignore", message="divide by zero encountered in double_scalars", category=RuntimeWarning)
 
@@ -58,21 +57,6 @@ def main(args):
                         no_ori=args.no_ori,
                         visualize=args.visualize,
                         debug=args.debug)
-    elif args.model == 'new_v1':
-        model = EquiAssem_new_v1(lr=args.lr,
-                        backbone=args.backbone,
-                        occ_loss=args.occ_loss, 
-                        no_ori=args.no_ori,
-                        visualize=args.visualize,
-                        debug=args.debug)
-    elif args.model == 'new_v2':
-        model = EquiAssem_new_v2(lr=args.lr,
-                        backbone=args.backbone,
-                        occ_loss=args.occ_loss, 
-                        no_ori=args.no_ori,
-                        visualize=args.visualize,
-                        debug=args.debug)
-    print(model)
 
     # Dataset initialization
     GADataset.initialize(args.datapath, args.data_category, args.sub_category, args.min_part, args.max_part, args.n_pts, args.scale)
@@ -199,8 +183,8 @@ if __name__ == '__main__':
     parser.add_argument('--scale', type=str, default='full', choices=['full', 'small', 'overfitting'])
 
     # Ablation studies
-    parser.add_argument('--model', type=str, default='both', choices=['both', 'shape_only', 'occ_only', 'new_v1', 'new_v2'])
-    parser.add_argument('--backbone', type=str, default='unet', choices=['dgcnn', 'unet'])
+    parser.add_argument('--model', type=str, default='both', choices=['both', 'shape_only', 'occ_only'])
+    parser.add_argument('--backbone', type=str, default='vn_unet', choices=['vn_unet', 'vn_dgcnn', 'unet', 'dgcnn'])
     parser.add_argument('--shape_loss', type=str, default='positive', choices=['positive', 'negative'])
     parser.add_argument('--occ_loss', type=str, default='negative', choices=['positive', 'negative'])
     parser.add_argument('--no_ori', action='store_true')
