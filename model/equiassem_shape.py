@@ -179,9 +179,7 @@ class EquiAssem_shape(pl.LightningModule):
         
         #### 6. SHAPE DESCRIPTOR ####
         src_shape_feats = self.shape_mlp(src_inv_feats) # (1, 1023, M) -> (1, 512, M)
-        src_shape_feats = src_shape_feats * shape_attention
         trg_shape_feats = self.shape_mlp(trg_inv_feats) # (1, 1023, M) -> (1, 512, M)
-        trg_shape_feats = trg_shape_feats * shape_attention
         #### 6. SHAPE DESCRIPTOR ####
 
         # 8. Optimal Transport
@@ -202,9 +200,7 @@ class EquiAssem_shape(pl.LightningModule):
 
         if self.debug:
             out_dict['src_shape_feats'] = src_shape_feats.squeeze(0)
-            out_dict['src_occ_feats'] = src_occ_feats.squeeze(0)
             out_dict['trg_shape_feats'] = trg_shape_feats.squeeze(0)
-            out_dict['trg_occ_feats'] = trg_occ_feats.squeeze(0)
             out_dict['src_ori'] = src_ori.squeeze(0)
             out_dict['trg_ori'] = trg_ori.squeeze(0)
             out_dict['src_pcd'] = src_pcd.squeeze(0)
@@ -215,10 +211,9 @@ class EquiAssem_shape(pl.LightningModule):
             out_dict['trg_gt_rot'] = in_dict['gt_rotat'][1].squeeze(0)
             out_dict['gt_correspondence'] = in_dict['gt_correspondence'].squeeze(0)
             out_dict['pred_corr'] = pred_corr
-            with open('debug.pickle', 'wb') as f:
+            with open(f'./pickle/shape/{in_dict["eval_idx"].item()}_debug.pickle', 'wb') as f:
                 pickle.dump(out_dict, f)
-            breakpoint()
-
+        
         # 10. Calculate Loss
         gt_corr = in_dict['gt_correspondence'].squeeze(0)
         

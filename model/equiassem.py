@@ -151,7 +151,7 @@ class EquiAssem(pl.LightningModule):
         """Build optimizer and lr scheduler."""
         lr = self.lr
         optimizer = optim.AdamW(self.parameters(), lr=lr, weight_decay=0.)
-        scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=16919, eta_min=1e-3) # 16919, 6671
+        scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=14603, eta_min=8e-3) # 16919, 6671
         
         return {'optimizer': optimizer,
                 'lr_scheduler': scheduler}
@@ -222,25 +222,26 @@ class EquiAssem(pl.LightningModule):
         trg_inv_feats = rearrange(trg_inv_feats, 'b n c r -> b (c r) n') # (1, M, 341, 3) -> (1, 1023, M)
         
         # 5. Chaneel Attention Map
-        inv_feats = torch.cat([src_inv_feats, trg_inv_feats], dim=-1)  # (1, 1023, N+M)
-        attention = self.c_attn(inv_feats) # (1, 1023, N+M) -> (1, 1023, N+M)
-        
-        shape_attention, occ_attention = attention[:, :512], attention[:, 512:]
-        loss['shape_attn_ratio'] = shape_attention.sum() / (shape_attention.sum()+occ_attention.sum())
-        loss['occ_attn_ratio'] = occ_attention.sum() / (shape_attention.sum()+occ_attention.sum())
+        if self.attention == 'channel':
+            inv_feats = torch.cat([src_inv_feats, trg_inv_feats], dim=-1)  # (1, 1023, N+M)
+            attention = self.c_attn(inv_feats) # (1, 1023, N+M) -> (1, 1023, N+M)
+            
+            shape_attention, occ_attention = attention[:, :512], attention[:, 512:]
+            loss['shape_attn_ratio'] = shape_attention.sum() / (shape_attention.sum()+occ_attention.sum())
+            loss['occ_attn_ratio'] = occ_attention.sum() / (shape_attention.sum()+occ_attention.sum())
         
         #### 6. SHAPE DESCRIPTOR ####
         src_shape_feats = self.shape_mlp(src_inv_feats) # (1, 1023, M) -> (1, 512, M)
-        src_shape_feats = src_shape_feats * shape_attention
+        if self.attention == 'channel': src_shape_feats = src_shape_feats * shape_attention
         trg_shape_feats = self.shape_mlp(trg_inv_feats) # (1, 1023, M) -> (1, 512, M)
-        trg_shape_feats = trg_shape_feats * shape_attention
+        if self.attention == 'channel': trg_shape_feats = trg_shape_feats * shape_attention
         #### 6. SHAPE DESCRIPTOR ####
 
         #### 7. OCCUPANCY DESCRIPTOR ####
         src_occ_feats = self.occ_mlp(src_inv_feats) # (1, 1023, N) -> (1, 512, N)
-        src_occ_feats = src_occ_feats * occ_attention
+        if self.attention == 'channel': src_occ_feats = src_occ_feats * occ_attention
         trg_occ_feats = self.occ_mlp(trg_inv_feats) # (1, 1023, M) -> (1, 512, M)
-        trg_occ_feats = trg_occ_feats * occ_attention
+        if self.attention == 'channel': trg_occ_feats = trg_occ_feats * occ_attention
         #### 7. OCCUPANCY DESCRIPTOR ####
 
         # 8. Optimal Transport
@@ -277,9 +278,8 @@ class EquiAssem(pl.LightningModule):
             out_dict['trg_gt_rot'] = in_dict['gt_rotat'][1].squeeze(0)
             out_dict['gt_correspondence'] = in_dict['gt_correspondence'].squeeze(0)
             out_dict['pred_corr'] = pred_corr
-            with open('debug.pickle', 'wb') as f:
+            with open(f'./pickle/ours/{in_dict["eval_idx"].item()}_debug.pickle', 'wb') as f:
                 pickle.dump(out_dict, f)
-            breakpoint()
 
         # 10. Calculate Loss
         gt_corr = in_dict['gt_correspondence'].squeeze(0)
@@ -309,7 +309,8 @@ class EquiAssem(pl.LightningModule):
         if mode == 'train':
             log_dict = {f'{mode}/{k}': v.item() for k, v in loss.items()}
             self.log_dict(log_dict, logger=True, sync_dist=True, rank_zero_only=True, on_step=False, on_epoch=True, batch_size=1)
-        
+            lr = self.trainer.optimizers[0].param_groups[0]['lr']
+            self.log('learning_rate', lr, prog_bar=True, logger=True)
         return out_dict, loss
 
     @torch.no_grad()

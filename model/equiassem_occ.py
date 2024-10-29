@@ -60,14 +60,14 @@ class EquiAssem_occ(pl.LightningModule):
         self.proj = VNLinear(self.feat_dim//3, 2)
 
         # Occupancy Descriptor
-        self.occ_mlp = nn.Sequential(nn.Conv1d(1023, 512, kernel_size=1, bias=False),
-                                nn.InstanceNorm1d(512),
+        self.occ_mlp = nn.Sequential(nn.Conv1d(1023, 1024, kernel_size=1, bias=False),
+                                nn.InstanceNorm1d(1024),
                                 nn.LeakyReLU(negative_slope=0.2),
-                                nn.Conv1d(512, 512, kernel_size=1, bias=False),
-                                nn.InstanceNorm1d(512),
+                                nn.Conv1d(1024, 1024, kernel_size=1, bias=False),
+                                nn.InstanceNorm1d(1024),
                                 nn.LeakyReLU(negative_slope=0.2),
-                                nn.Conv1d(512, 512, kernel_size=1, bias=False),
-                                nn.InstanceNorm1d(512),
+                                nn.Conv1d(1024, 1024, kernel_size=1, bias=False),
+                                nn.InstanceNorm1d(1024),
                                 nn.Tanh()
                                 )
         
@@ -179,9 +179,7 @@ class EquiAssem_occ(pl.LightningModule):
         
         #### 7. OCCUPANCY DESCRIPTOR ####
         src_occ_feats = self.occ_mlp(src_inv_feats) # (1, 1023, N) -> (1, 512, N)
-        src_occ_feats = src_occ_feats * occ_attention
         trg_occ_feats = self.occ_mlp(trg_inv_feats) # (1, 1023, M) -> (1, 512, M)
-        trg_occ_feats = trg_occ_feats * occ_attention
         #### 7. OCCUPANCY DESCRIPTOR ####
 
         # 8. Optimal Transport
@@ -201,9 +199,7 @@ class EquiAssem_occ(pl.LightningModule):
             out_dict['estimated_trans'] = -(estimated_transform[:3, :3].inverse() @ -estimated_transform[:3, 3])
 
         if self.debug:
-            out_dict['src_shape_feats'] = src_shape_feats.squeeze(0)
             out_dict['src_occ_feats'] = src_occ_feats.squeeze(0)
-            out_dict['trg_shape_feats'] = trg_shape_feats.squeeze(0)
             out_dict['trg_occ_feats'] = trg_occ_feats.squeeze(0)
             out_dict['src_ori'] = src_ori.squeeze(0)
             out_dict['trg_ori'] = trg_ori.squeeze(0)
@@ -215,9 +211,8 @@ class EquiAssem_occ(pl.LightningModule):
             out_dict['trg_gt_rot'] = in_dict['gt_rotat'][1].squeeze(0)
             out_dict['gt_correspondence'] = in_dict['gt_correspondence'].squeeze(0)
             out_dict['pred_corr'] = pred_corr
-            with open('debug.pickle', 'wb') as f:
+            with open(f'./pickle/occ/{in_dict["eval_idx"].item()}_debug.pickle', 'wb') as f:
                 pickle.dump(out_dict, f)
-            breakpoint()
 
         # 10. Calculate Loss
         gt_corr = in_dict['gt_correspondence'].squeeze(0)
