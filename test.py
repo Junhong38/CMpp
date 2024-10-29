@@ -48,7 +48,6 @@ def test(args):
     elif args.model == 'shape_only':
         model = EquiAssem_shape(lr=args.lr,
                         backbone=args.backbone,
-                        shape=args.shape, 
                         shape_loss=args.shape_loss, 
                         no_ori=args.no_ori,
                         visualize=args.visualize,
@@ -56,7 +55,6 @@ def test(args):
     elif args.model == 'occ_only':
         model = EquiAssem_occ(lr=args.lr,
                         backbone=args.backbone,
-                        occ=args.occ, 
                         occ_loss=args.occ_loss, 
                         no_ori=args.no_ori,
                         visualize=args.visualize,
@@ -103,7 +101,7 @@ if __name__ == '__main__':
 
     parser.add_argument('--visualize', action='store_true')
     parser.add_argument('--debug', action='store_true')
-      
+    
     args = parser.parse_args()
 
     test(args)

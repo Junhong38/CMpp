@@ -198,6 +198,9 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
+    args.epochs = 90 if args.data_category == 'everyday' else 120
+    args.epochs = 300 if args.max_part > 2 else args.epochs
+    
     if len(args.gpus) > 1: 
         from pytorch_lightning.strategies import DDPStrategy
         args.parallel_strategy = DDPStrategy(find_unused_parameters=False)
