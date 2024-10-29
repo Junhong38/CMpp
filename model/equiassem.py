@@ -248,7 +248,10 @@ class EquiAssem(pl.LightningModule):
         shape_matching_scores = torch.einsum('b c n , b c m -> b n m', src_shape_feats, trg_shape_feats) # (1, N, M)
         shape_matching_scores = shape_matching_scores / src_shape_feats.shape[1] ** 0.5
 
-        occ_matching_scores = -torch.einsum('b c n , b c m -> b n m', src_occ_feats, trg_occ_feats) # (1, N, M)
+        if self.occ_loss=='positive': 
+            occ_matching_scores = torch.einsum('b c n , b c m -> b n m', src_occ_feats, trg_occ_feats) # (1, N, M)
+        else: 
+            occ_matching_scores = -torch.einsum('b c n , b c m -> b n m', src_occ_feats, trg_occ_feats) # (1, N, M)
         occ_matching_scores = occ_matching_scores / src_occ_feats.shape[1] ** 0.5
 
         matching_scores = self.optimal_transport(shape_matching_scores + occ_matching_scores) # (1, N, M) -> (1, N+1, M+1)
@@ -294,7 +297,10 @@ class EquiAssem(pl.LightningModule):
         loss['o_loss'] = self.orientation_loss(src_ori, trg_ori, gt_corr, in_dict['gt_rotat'])
         
         # 9-4. occupancy loss
-        loss['occ_loss'] = self.occupancy_loss(src_pcd_raw, trg_pcd_raw, src_occ_feats.transpose(-2,-1), -trg_occ_feats.transpose(-2,-1), gt_corr)
+        if self.occ_loss=='positive': 
+            loss['occ_loss'] = self.occupancy_loss(src_pcd_raw, trg_pcd_raw, src_occ_feats.transpose(-2,-1), trg_occ_feats.transpose(-2,-1), gt_corr)
+        else:
+            loss['occ_loss'] = self.occupancy_loss(src_pcd_raw, trg_pcd_raw, src_occ_feats.transpose(-2,-1), -trg_occ_feats.transpose(-2,-1), gt_corr)
 
         # 9-4. final loss
         loss['loss'] = self.c_loss_weight * loss['c_loss'] + self.p_loss_weight * loss['p_loss'] + self.o_loss_weight * loss['o_loss'] +  self.occ_loss_weight * loss['occ_loss']
