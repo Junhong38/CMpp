@@ -33,6 +33,8 @@ import random
 import pickle
 from common.utils import save_pc, knn, get_graph_feature
 
+import os, trimesh
+
 class ChannelAttentionModule(nn.Module):
     """ this function is used to achieve the channel attention module in CBAM paper"""
     def __init__(self, in_dim=1023, out_dim=1024, ratio=4):
@@ -344,13 +346,37 @@ class EquiAssem(pl.LightningModule):
         eval_result['crd'] = self._correspondence_distance(assm_pred, assm_grtr, is_trg_larger)
 
         if self.visualize:
-            pcds_pred.append(pcds_pred[0][gt_corr[:,0]])
-            pcds_pred.append(pcds_pred[1][gt_corr[:,1]])
-            pcds_grtr.append(pcds_grtr[0][gt_corr[:,0]])
-            pcds_grtr.append(pcds_grtr[1][gt_corr[:,1]])
-            save_pc(f"./vis_fantastic/o_loss{round(out_dict['o_loss'].item(),2)}_cd{round(eval_result['cd'].item(),2)}_crd{round(eval_result['crd'].item(),2)}_c_loss{round(out_dict['c_loss'].item(),2)}_occ_loss{round(out_dict['occ_loss'].item(),2)}_rrmse{round(eval_result['rrmse'].item(),1)}_pred.pcd", pcds_pred)
-            save_pc(f"./vis_fantastic/o_loss{round(out_dict['o_loss'].item(),2)}_cd{round(eval_result['cd'].item(),2)}_crd{round(eval_result['crd'].item(),2)}_c_loss{round(out_dict['c_loss'].item(),2)}_occ_loss{round(out_dict['occ_loss'].item(),2)}_rrmse{round(eval_result['rrmse'].item(),1)}_grtr.pcd", pcds_grtr)
-        
+            # pcds_pred.append(pcds_pred[0][gt_corr[:,0]])
+            # pcds_pred.append(pcds_pred[1][gt_corr[:,1]])
+            # pcds_grtr.append(pcds_grtr[0][gt_corr[:,0]])
+            # pcds_grtr.append(pcds_grtr[1][gt_corr[:,1]])
+            # save_pc(f"./vis_fantastic/o_loss{round(out_dict['o_loss'].item(),2)}_cd{round(eval_result['cd'].item(),2)}_crd{round(eval_result['crd'].item(),2)}_c_loss{round(out_dict['c_loss'].item(),2)}_occ_loss{round(out_dict['occ_loss'].item(),2)}_rrmse{round(eval_result['rrmse'].item(),1)}_pred.pcd", pcds_pred)
+            # save_pc(f"./vis_fantastic/o_loss{round(out_dict['o_loss'].item(),2)}_cd{round(eval_result['cd'].item(),2)}_crd{round(eval_result['crd'].item(),2)}_c_loss{round(out_dict['c_loss'].item(),2)}_occ_loss{round(out_dict['occ_loss'].item(),2)}_rrmse{round(eval_result['rrmse'].item(),1)}_grtr.pcd", pcds_grtr)
+            
+            base_path = '../../data/bbad_v2/'
+            obj_paths = [os.path.join(base_path + in_dict['filepath'][0], x) for x in os.listdir(base_path + in_dict['filepath'][0])]
+
+            mesh = [trimesh.load_mesh(x) for x in obj_paths]
+            
+            for idx in range(len(mesh)):
+                mesh[idx].vertices = in_dict['mesh_t'][idx].squeeze(0).cpu().detach().numpy()
+
+            assm_pred, mesh_pred = self._pairwise_mating_mesh(mesh[0], mesh[1], pred_relative_trsfm[0], pred_relative_trsfm[1], is_trg_larger)
+            assm_grtr, mesh_grtr = self._pairwise_mating_mesh(mesh[0], mesh[1], grtr_relative_trsfm[0], grtr_relative_trsfm[1], is_trg_larger)
+            
+            base_name = f"{len(mesh_pred)}_part_crd{round(eval_result['crd'].item(), 2)}_cd{round(eval_result['cd'].item(), 1)}_rrmse{round(eval_result['rrmse'].item(), 2)}_{in_dict['filepath'][0].split('/')[2]}_{in_dict['filepath'][0].split('/')[3]}"
+            if not os.path.exists(os.path.join('./vis_mesh_pred', base_name)):
+                os.makedirs(os.path.join('./vis_mesh_pred', base_name))
+            for idx, _mesh in enumerate(mesh_pred):
+                _mesh.export(os.path.join('./vis_mesh_pred', base_name, f'{idx}_fracture.obj'), file_type='obj')
+            assm_pred.export(os.path.join('./vis_mesh_pred', base_name ,f'assemble.obj'), file_type='obj')
+            
+            if not os.path.exists(os.path.join('./vis_mesh_grtr', base_name)):
+                os.makedirs(os.path.join('./vis_mesh_grtr', base_name))
+            for idx, _mesh in enumerate(mesh_grtr):
+                _mesh.export(os.path.join('./vis_mesh_grtr', base_name, f'{idx}_fracture.obj'), file_type='obj')
+            assm_grtr.export(os.path.join('./vis_mesh_grtr', base_name, f'assemble.obj'), file_type='obj')
+            
         return eval_result
     
     def _is_trg_larger(self, src_pcd, trg_pcd):
@@ -380,6 +406,18 @@ class EquiAssem(pl.LightningModule):
             return torch.einsum('x y, n y -> n x', rotat, pcd) + trans
         else:
             return torch.einsum('x y, n y -> n x', rotat, pcd + trans)
+
+    def _pairwise_mating_mesh(self, src_mesh, trg_mesh, rotat, trans, is_trg_larger):
+        mesh_t = []
+        src_mesh_t, trg_mesh_t = src_mesh.copy(), trg_mesh.copy()
+        if is_trg_larger:
+            src_mesh_t.vertices = self._transform(torch.tensor(src_mesh_t.vertices).float(), rotat, -trans, True).numpy()
+            mesh_t = [src_mesh_t, trg_mesh]
+        else:
+            trg_mesh_t.vertices = self._transform(torch.tensor(trg_mesh_t.vertices).float(), rotat.T, trans, False).numpy()
+            mesh_t = [src_mesh, trg_mesh_t]
+        return sum(mesh_t), mesh_t
+    
     
     def _correspondence_distance(self, assm1, assm2, is_trg_larger, scaling=100):
         corr_dist = (assm1 - assm2).norm(dim=-1).mean(dim=-1) * scaling

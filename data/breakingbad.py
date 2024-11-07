@@ -68,7 +68,7 @@ class DatasetBreakingBad(Dataset):
         pcd_t, mesh_t = [], [m.copy() for m in mesh]
         for idx, trans in enumerate(gt_trans):
             pcd_t.append(pcd[idx] - trans)
-            if self.visualize: mesh_t[idx].vertices -= trans.numpy()
+            mesh_t[idx].vertices -= trans.numpy()
         return pcd_t, mesh_t, gt_trans
 
     def _rotate(self, mesh, pcd):
@@ -76,7 +76,7 @@ class DatasetBreakingBad(Dataset):
         pcd_t, mesh_t = [], [m.copy() for m in mesh]
         for idx, rotat in enumerate(gt_rotat):
             pcd_t.append(torch.einsum('x y, n y -> n x', rotat, pcd[idx]))
-            if self.visualize: mesh_t[idx].vertices = torch.einsum('x y, n y -> n x', rotat, torch.tensor(mesh_t[idx].vertices).float()).numpy()
+            mesh_t[idx].vertices = torch.einsum('x y, n y -> n x', rotat, torch.tensor(mesh_t[idx].vertices).float()).numpy()
         return pcd_t, mesh_t, gt_rotat
 
     def _compute_relative_transform(self, trans, rotat):
@@ -111,12 +111,14 @@ class DatasetBreakingBad(Dataset):
         pcd_t, mesh_t, gt_trans = self._translate(mesh, pcd)
         pcd_t, mesh_t, gt_rotat = self._rotate(mesh_t, pcd_t)
         gt_relative_trsfm = self._compute_relative_transform(gt_trans, gt_rotat)
-
+        
         batch = {
                 'eval_idx': idx,
                 'filepath': self.filepaths[idx],
                 'obj_class': self.filepaths[idx].split('/')[1],
 
+                'mesh': [torch.tensor(_mesh.vertices).float() for _mesh in mesh],
+                'mesh_t': [torch.tensor(_mesh.vertices).float() for _mesh in mesh_t],
                 'pcd_t': pcd_t,
                 'pcd': pcd,
                 'n_frac': self.n_frac[idx],
