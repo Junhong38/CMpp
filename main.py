@@ -190,6 +190,7 @@ if __name__ == '__main__':
     parser.add_argument('--no_ori', action='store_true')
     parser.add_argument('--attention', type=str, default='channel', choices=['channel', 'none'])
     
+    # Additional experiments
     parser.add_argument('--visualize', action='store_true')
     parser.add_argument('--debug', action='store_true')
         
