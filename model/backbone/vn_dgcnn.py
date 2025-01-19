@@ -165,7 +165,7 @@ class EQCNN_equi_unet(nn.Module):
         p2, x2, o2 = self.downsample1(p1, x1.squeeze(0))
         x2 = get_graph_feature(x2, k=self.k)
         x2 = self.conv2(x2)
-        x2 = self.pool2(x2) # (1, 21, 3, N/2)
+        x2 = self.pool2(x2) # (1, 42, 3, N/2)
 
         ### CHECK EQUIVARIANCE ###
         # p2_R = torch.matmul(p2, R.squeeze(0))
@@ -180,7 +180,7 @@ class EQCNN_equi_unet(nn.Module):
         p3, x3, o3 = self.downsample2(p2, x2.squeeze(0))
         x3 = get_graph_feature(x3, k=self.k)
         x3 = self.conv3(x3)
-        x3 = self.pool3(x3) # (1, 42, 3, N/4)
+        x3 = self.pool3(x3) # (1, 85, 3, N/4)
         ### ENCODER 3
         
         ### CHECK EQUIVARIANCE ###
@@ -196,7 +196,7 @@ class EQCNN_equi_unet(nn.Module):
         p4, x4, o4 = self.downsample3(p3, x3.squeeze(0))
         x4 = get_graph_feature(x4, k=self.k)
         x4 = self.conv4(x4)
-        x4 = self.pool4(x4) # (1, 85, 3, N/8)
+        x4 = self.pool4(x4) # (1, 170, 3, N/8)
         # print(p4.size(), x4.size())
 
         ### CHECK EQUIVARIANCE ###
@@ -211,7 +211,7 @@ class EQCNN_equi_unet(nn.Module):
         ### MID
         x4 = get_graph_feature(x4, k=self.k)
         x4 = self.conv5(x4)
-        x4 = self.pool5(x4) # (1, 85, 3, N/8)
+        x4 = self.pool5(x4) # (1, 170, 3, N/8)
         # print(p4.size(), x4.size())
 
         ### CHECK EQUIVARIANCE ###
@@ -225,7 +225,7 @@ class EQCNN_equi_unet(nn.Module):
         x5 = self.upsample1((p3, x3, o3), (p4, x4, o4)) 
         x5 = get_graph_feature(x5.contiguous(), k=self.k)
         x5 = self.conv6(x5)
-        x5 = self.pool6(x5) # (1, 42, 3, N/4)
+        x5 = self.pool6(x5) # (1, 85, 3, N/4)
         # print(x5.size())
 
         ### CHECK EQUIVARIANCE ###
@@ -240,7 +240,7 @@ class EQCNN_equi_unet(nn.Module):
         x6 = self.upsample2((p2, x2, o2), (p3, x5, o3))
         x6 = get_graph_feature(x6.contiguous(), k=self.k)
         x6 = self.conv7(x6)
-        x6 = self.pool7(x6) # (1, 42, 3, N/4)
+        x6 = self.pool7(x6) # (1, 42, 3, N/2)
         # print(x6.size())
 
         ### CHECK EQUIVARIANCE ###
@@ -255,7 +255,7 @@ class EQCNN_equi_unet(nn.Module):
         x7 = self.upsample3((p1, x1, o1), (p2, x6, o2))
         x7 = get_graph_feature(x7.contiguous(), k=self.k)
         x7 = self.conv8(x7)
-        x7 = self.pool8(x7) # (1, 42, 3, N/4)
+        x7 = self.pool8(x7) # (1, 21, 3, N)
         # print(x7.size())
 
         ### CHECK EQUIVARIANCE ###
