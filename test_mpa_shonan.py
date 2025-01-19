@@ -49,7 +49,7 @@ def save_pc(filename:str, pcd_tensors:list):
         combined_cloud += pcd
     o3d.io.write_point_cloud(filename, combined_cloud)
 
-def save_mesh(in_dict, out_dict, crd, cd, rrmse):
+def save_mesh(in_dict, out_dict, crd, cd, pa_crd, pa_cd):
     base_path = '../../data/bbad_v2/'
     obj_paths = [os.path.join(base_path+in_dict['filepath'], x) for x in os.listdir(base_path+in_dict['filepath'])]
     mesh = [trimesh.load_mesh(x) for x in obj_paths]
@@ -64,7 +64,11 @@ def save_mesh(in_dict, out_dict, crd, cd, rrmse):
         mesh[idx].vertices = (rotat.inverse().cpu() @ (torch.tensor(mesh[idx].vertices).float() + trans.cpu()).T).T
         idx+=1
     
-    save_path = os.path.join('vis','everyday_gt',f'{len(in_dict["gt_rotat"])}part_crd{round(crd,2)}_cd{round(cd,2)}_rrmse{round(rrmse,2)}_'+in_dict['filepath'].replace('/','_'))
+    # Create directories if they don't exist
+    save_dir = os.path.join('vis', 'artifact_pred')
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
+    save_path = os.path.join(save_dir, f'{in_dict["eval_idx"][0].item()}_{len(in_dict["gt_rotat"])}part_crd{round(crd,2)}_cd{round(cd,2)}_pacrd{round(pa_crd,2)}_pacd{round(pa_cd,2)}_'+in_dict['filepath'].replace('/','_'))
     # save_path = os.path.join('vis','artifact_gt',f'{len(in_dict["gt_rotat"])}part_'+in_dict['filepath'].replace('/','_'))
 
     os.mkdir(save_path)
@@ -132,9 +136,6 @@ def test(args):
     utils.fix_randseed(0)
     model = EquiAssem(lr=args.lr,
                         backbone=args.backbone,
-                        shape=args.shape, 
-                        occ=args.occ, 
-                        shape_loss=args.shape_loss, 
                         occ_loss=args.occ_loss, 
                         no_ori=args.no_ori,
                         visualize=args.visualize,
@@ -157,11 +158,27 @@ def test(args):
     dataloader_test = GADataset.build_dataloader(args.batch_size, args.n_worker, 'test')
     total = len(dataloader_test)
     crd_list, cd_list, rrmse_list, trsme_list, pa_list, pa_crd_list = [], [], [], [], [], []
+
     for idx, in_dict in enumerate(dataloader_test):
         # 1. Network forward pass: Pairwise matching & assembly
         in_dict = utils.to_cuda(in_dict)
+
+        # if args.visualize:
+        #     if len(in_dict["pcd_t"]) > 5: 
+        #         result_str = f'{in_dict["eval_idx"][0].item()}/{total} | #-Part: {len(in_dict["pcd_t"])} | CRD: nan | CD: nan | RRMSE: nan | TRMSE: nan | PA(cd): nan | PA(crd): nan'
+        #         print(result_str)
+
+        #         # Write results in 'w' mode first to clear previous results
+        #         if idx == 0:
+        #             with open('mpa_artifact_results.txt', 'w') as f:
+        #                 f.write(result_str + '\n')
+        #         else: 
+        #             with open('mpa_artifact_results.txt', 'a') as f:
+        #                 f.write(result_str + '\n')
+        #         continue
+
         pair_indices = list(itertools.permutations([i for i in range(in_dict['n_frac'])], 2))
-        out_dict, corr_scores = {}, {}
+        out_dict = {}
         for pair_idx in pair_indices:
             # Initialize pairwise input
             pair_idx0, pair_idx1 = pair_idx
@@ -184,17 +201,27 @@ def test(args):
         params = gtsam.ShonanAveragingParameters3(gtsam.LevenbergMarquardtParams.CeresDefaults())
         factors = gtsam.BetweenFactorPose3s()
 
-        # 2-1. Add factors(relative transformations)
-        for pair_idx in pair_indices:
-            pair_idx0, pair_idx1 = pair_idx
-            relative_rotat = Rotation.from_matrix(out_dict[f'{pair_idx0}-{pair_idx1}']['estimated_rotat'].cpu().numpy()).as_quat()
-            relative_trans = -out_dict[f'{pair_idx0}-{pair_idx1}']['estimated_trans'].cpu().numpy()
-            pose = gtsam.Pose3(gtsam.Rot3.Quaternion(relative_rotat[3], relative_rotat[0], relative_rotat[1], relative_rotat[2]), gtsam.Point3(relative_trans))
-            # Load matching score
-            score = (torch.pow(out_dict[f'{pair_idx0}-{pair_idx1}']['corr_scores'], 2)).detach().cpu().mean()
-            factors.append(gtsam.BetweenFactorPose3(pair_idx0, pair_idx1, pose, gtsam.noiseModel.Diagonal.Information((1/score) * np.eye(6))))
+        # # 2-1. Add factors(relative transformations)
+        uncertainty = []
+        for i in range(in_dict['n_frac'].item()):
+            # search highest score
+            max_score = 0
+            for j in range(in_dict['n_frac'].item()):
+                if i == j: continue
+                value = torch.exp(out_dict[f'{j}-{i}']['matching_scores_drop']).sum()
+                if max_score < value:
+                    max_score = value
+                    max_idx = j
+            relative_rotat = Rotation.from_matrix(out_dict[f'{i}-{max_idx}']['estimated_rotat'].cpu().numpy()).as_quat()
+            relative_trans = out_dict[f'{i}-{max_idx}']['estimated_trans'].cpu().numpy()
+            max_score = max_score.cpu()
 
-        # 2-2. Run shonan averaging
+            # add factor
+            pose = gtsam.Pose3(gtsam.Rot3.Quaternion(relative_rotat[3], relative_rotat[0], relative_rotat[1], relative_rotat[2]), gtsam.Point3(relative_trans))
+            factors.append(gtsam.BetweenFactorPose3(i, max_idx, pose, gtsam.noiseModel.Diagonal.Information((1/max_score) * np.eye(6))))
+            uncertainty.append(1/max_score)
+        
+        # 2-3. Run shonan averaging
         sa3 = gtsam.ShonanAveraging3(factors, params)
         initial = sa3.initializeRandomly()
         pMax = 20
@@ -210,7 +237,7 @@ def test(args):
             except RuntimeError as e:
                 print(f"An error occurred during Shonan::run: with pMax {pMax}")
                 continue
-            
+
         # Align predicted rotation to anchor fracture
         anchor_idx = in_dict['anchor_idx']
         if not shonan_fail:
@@ -225,12 +252,11 @@ def test(args):
                 if i == anchor_idx: aligned_pred_rotat.append(torch.eye(3).to(torch.float32).cuda())
                 else: aligned_pred_rotat.append(out_dict[f'{anchor_idx}-{i}']['estimated_rotat'].squeeze(0))
         
-        # Align predicted rotation to anchor fracture
+        # Align predicted translation to anchor fracture
         for i in range(0, in_dict['n_frac']):
             if i == anchor_idx: aligned_pred_trans.append(torch.tensor([0,0,0]).to(torch.float32).cuda())
             else: aligned_pred_trans.append(out_dict[f'{anchor_idx}-{i}']['estimated_trans'])
-            # else: aligned_pred_trans.append(torch.tensor((abs_trans.atPoint3(i) - abs_trans.atPoint3(anchor_idx))).to(torch.float32).cuda())
-
+        
         # Align GT transformation to anchor fracture
         aligned_gt_rotat, aligned_gt_trans = [], []
         for i in range(0, in_dict['n_frac']):
@@ -256,7 +282,7 @@ def test(args):
         pa = _part_accuracy(pcds_pred, pcds_grtr)
         pa_crd = _part_accuracy_crd(pcds_pred, pcds_grtr)
 
-        if args.visualize: save_mesh(in_dict, out_dict, crd, cd, rrmse)
+        if args.visualize: save_mesh(in_dict, out_dict, crd, cd, pa_crd, pa)
         
         crd_list.append(crd)
         cd_list.append(cd)
@@ -265,10 +291,17 @@ def test(args):
         pa_list.append(pa)
         pa_crd_list.append(pa_crd)
 
-        print(f'{idx}/{total} | #-Part: {len(pcds_pred)} | CRD: {round(crd,2)} | CD: {round(cd,2)} | RRMSE: {round(rrmse,2)} | TRMSE: {round(trmse,2)} | PA(cd): {round(pa,2)} | PA(crd): {round(pa_crd,2)}')
-        # save_pc(f"./vis/mpa_everyday_vis/{len(pcds_pred)}part_crd{round(crd,2)}_rrmse{round(rrmse,1)}_trmse{round(trmse,2)}_cd{round(cd,2)}_pred_{in_dict['filepath'].replace('/','_')}.pcd", pcds_pred)
-        # save_pc(f"./vis/mpa_everyday_vis/{len(pcds_pred)}part_crd{round(crd,2)}_rrmse{round(rrmse,1)}_trmse{round(trmse,2)}_cd{round(cd,2)}_grtr_{in_dict['filepath'].replace('/','_')}.pcd", pcds_grtr)
-    
+        result_str = f'{idx}/{total} | #-Part: {len(pcds_pred)} | CRD: {round(crd,2)} | CD: {round(cd,2)} | RRMSE: {round(rrmse,2)} | TRMSE: {round(trmse,2)} | PA(cd): {round(pa,2)} | PA(crd): {round(pa_crd,2)}'
+        print(result_str)
+
+        # Write results in 'w' mode first to clear previous results
+        # if idx == 0:
+        #     with open('mpa_artifact_results.txt', 'w') as f:
+        #         f.write(result_str + '\n')
+        # else: 
+        #     with open('mpa_artifact_results.txt', 'a') as f:
+        #         f.write(result_str + '\n')
+
     print('====MULTI PART ASSEMBLY RESULTS====')
     print('CRD: ', sum(crd_list)/len(crd_list))
     print('CD: ', sum(cd_list)/len(cd_list))
@@ -295,12 +328,12 @@ if __name__ == '__main__':
     parser.add_argument('--scale', type=str, default='full', choices=['full', 'small', 'overfitting'])
 
     # Ablation studies
-    parser.add_argument('--backbone', type=str, default='unet', choices=['dgcnn', 'unet'])
-    parser.add_argument('--shape', type=str, default='local', choices=['local', 'global'])
-    parser.add_argument('--occ', type=str, default='local', choices=['local', 'global'])
+    parser.add_argument('--model', type=str, default='both', choices=['both', 'shape_only', 'occ_only'])
+    parser.add_argument('--backbone', type=str, default='vn_unet', choices=['vn_unet', 'vn_dgcnn', 'unet', 'dgcnn'])
     parser.add_argument('--shape_loss', type=str, default='positive', choices=['positive', 'negative'])
     parser.add_argument('--occ_loss', type=str, default='negative', choices=['positive', 'negative'])
     parser.add_argument('--no_ori', action='store_false')
+    parser.add_argument('--attention', type=str, default='channel', choices=['channel', 'none'])
 
     parser.add_argument('--visualize', action='store_true')
     parser.add_argument('--debug', action='store_true')

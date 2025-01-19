@@ -153,7 +153,7 @@ class EquiAssem(pl.LightningModule):
         """Build optimizer and lr scheduler."""
         lr = self.lr
         optimizer = optim.AdamW(self.parameters(), lr=lr, weight_decay=0.)
-        scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=14603, eta_min=8e-3) # 16919, 6671
+        scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=16919, eta_min=1e-3) # 16919, 6671
         
         return {'optimizer': optimizer,
                 'lr_scheduler': scheduler}
@@ -204,7 +204,7 @@ class EquiAssem(pl.LightningModule):
         trg_pcd_raw = in_dict['pcd'][1].squeeze(0)
         src_pcd = in_dict['pcd_t'][0] # (1, N ,3)
         trg_pcd = in_dict['pcd_t'][1] # (1, M ,3)
-
+        
         # 1. SO(3)-Equivariant Feature Extractor
         src_equi_feats = self.backbone(src_pcd) # (1, 341, 3, N)
         trg_equi_feats = self.backbone(trg_pcd) # (1, 341, 3, M)
@@ -268,24 +268,6 @@ class EquiAssem(pl.LightningModule):
             out_dict['estimated_rotat'] = estimated_transform[:3, :3].T
             out_dict['estimated_trans'] = -(estimated_transform[:3, :3].inverse() @ -estimated_transform[:3, 3])
 
-        if self.debug:
-            out_dict['src_shape_feats'] = src_shape_feats.squeeze(0)
-            out_dict['src_occ_feats'] = src_occ_feats.squeeze(0)
-            out_dict['trg_shape_feats'] = trg_shape_feats.squeeze(0)
-            out_dict['trg_occ_feats'] = trg_occ_feats.squeeze(0)
-            out_dict['src_ori'] = src_ori.squeeze(0)
-            out_dict['trg_ori'] = trg_ori.squeeze(0)
-            out_dict['src_pcd'] = src_pcd.squeeze(0)
-            out_dict['trg_pcd'] = trg_pcd.squeeze(0)
-            out_dict['src_pcd_raw'] = src_pcd_raw.squeeze(0)
-            out_dict['trg_pcd_raw'] = trg_pcd_raw.squeeze(0)
-            out_dict['src_gt_rot'] = in_dict['gt_rotat'][0].squeeze(0)
-            out_dict['trg_gt_rot'] = in_dict['gt_rotat'][1].squeeze(0)
-            out_dict['gt_correspondence'] = in_dict['gt_correspondence'].squeeze(0)
-            out_dict['pred_corr'] = pred_corr
-            with open(f'./pickle/ours/{in_dict["eval_idx"].item()}_debug.pickle', 'wb') as f:
-                pickle.dump(out_dict, f)
-
         # 10. Calculate Loss
         gt_corr = in_dict['gt_correspondence'].squeeze(0)
         
@@ -312,7 +294,30 @@ class EquiAssem(pl.LightningModule):
         if mode in ['val', 'test']:
             eval_dict = self.evaluate_prediction(in_dict, out_dict, gt_corr)
             loss.update(eval_dict)
-        
+
+        if self.debug:
+            if min(src_pcd.size(1), trg_pcd.size(1))>1000:
+                vis_dict = {}
+                vis_dict['src_shape_feats'] = src_shape_feats.squeeze(0).cpu().detach()
+                vis_dict['src_occ_feats'] = src_occ_feats.squeeze(0).cpu().detach()
+                vis_dict['trg_shape_feats'] = trg_shape_feats.squeeze(0).cpu().detach()
+                vis_dict['trg_occ_feats'] = trg_occ_feats.squeeze(0).cpu().detach()
+                # vis_dict['src_vec'] = src_vecs.squeeze(0).cpu().detach()
+                # vis_dict['trg_vec'] = trg_vecs.squeeze(0).cpu().detach()
+                # vis_dict['src_ori'] = src_ori.squeeze(0).cpu().detach()
+                # vis_dict['trg_ori'] = trg_ori.squeeze(0).cpu().detach()
+                # vis_dict['src_pcd'] = src_pcd.squeeze(0).cpu().detach()
+                # vis_dict['trg_pcd'] = trg_pcd.squeeze(0).cpu().detach()
+                vis_dict['src_pcd_raw'] = src_pcd_raw.squeeze(0).cpu().detach()
+                vis_dict['trg_pcd_raw'] = trg_pcd_raw.squeeze(0).cpu().detach()
+                # vis_dict['src_gt_rot'] = in_dict['gt_rotat'][0].squeeze(0).cpu().detach()
+                # vis_dict['trg_gt_rot'] = in_dict['gt_rotat'][1].squeeze(0).cpu().detach()
+                vis_dict['gt_correspondence'] = in_dict['gt_correspondence'].squeeze(0).cpu().detach()
+                vis_dict['pred_corr'] = pred_corr.cpu().detach()
+
+                with open(f'./mscho_combined/{in_dict["eval_idx"].item()}_debug.pickle', 'wb') as f:
+                    pickle.dump(vis_dict, f)
+
         # in training we log for every step
         if mode == 'train':
             log_dict = {f'{mode}/{k}': v.item() for k, v in loss.items()}
@@ -346,37 +351,49 @@ class EquiAssem(pl.LightningModule):
         eval_result['crd'] = self._correspondence_distance(assm_pred, assm_grtr, is_trg_larger)
 
         if self.visualize:
-            # pcds_pred.append(pcds_pred[0][gt_corr[:,0]])
-            # pcds_pred.append(pcds_pred[1][gt_corr[:,1]])
-            # pcds_grtr.append(pcds_grtr[0][gt_corr[:,0]])
-            # pcds_grtr.append(pcds_grtr[1][gt_corr[:,1]])
-            # save_pc(f"./vis_fantastic/o_loss{round(out_dict['o_loss'].item(),2)}_cd{round(eval_result['cd'].item(),2)}_crd{round(eval_result['crd'].item(),2)}_c_loss{round(out_dict['c_loss'].item(),2)}_occ_loss{round(out_dict['occ_loss'].item(),2)}_rrmse{round(eval_result['rrmse'].item(),1)}_pred.pcd", pcds_pred)
-            # save_pc(f"./vis_fantastic/o_loss{round(out_dict['o_loss'].item(),2)}_cd{round(eval_result['cd'].item(),2)}_crd{round(eval_result['crd'].item(),2)}_c_loss{round(out_dict['c_loss'].item(),2)}_occ_loss{round(out_dict['occ_loss'].item(),2)}_rrmse{round(eval_result['rrmse'].item(),1)}_grtr.pcd", pcds_grtr)
+            if min(src_pcd.size(0), trg_pcd.size(0))>1000:
+                pcds_pred.append(pcds_pred[0][gt_corr[:,0]])
+                pcds_pred.append(pcds_pred[1][gt_corr[:,1]])
+                pcds_grtr.append(pcds_grtr[0][gt_corr[:,0]])
+                pcds_grtr.append(pcds_grtr[1][gt_corr[:,1]])
+                save_pc(f'./junhong/{in_dict["eval_idx"].item()}_{in_dict["obj_class"][0]}_{round(eval_result["crd"].item(),3)}_pred.pcd', pcds_pred)
+                save_pc(f"./junhong/{in_dict['eval_idx'].item()}_{in_dict['obj_class'][0]}_{round(eval_result['crd'].item(),3)}_grtr.pcd", pcds_grtr)
             
-            base_path = '../../data/bbad_v2/'
-            obj_paths = [os.path.join(base_path + in_dict['filepath'][0], x) for x in os.listdir(base_path + in_dict['filepath'][0])]
+            ### MESH VISUALIZATION ###
+            # base_path = '../../data/bbad_v2/'
+            # obj_paths = [os.path.join(base_path + in_dict['filepath'][0], x) for x in os.listdir(base_path + in_dict['filepath'][0])]
 
-            mesh = [trimesh.load_mesh(x) for x in obj_paths]
+            # mesh = [trimesh.load_mesh(x) for x in obj_paths]
             
-            for idx in range(len(mesh)):
-                mesh[idx].vertices = in_dict['mesh_t'][idx].squeeze(0).cpu().detach().numpy()
+            # for idx in range(len(mesh)):
+            #     mesh[idx].vertices = in_dict['mesh_t'][idx].squeeze(0).cpu().detach().numpy()
 
-            assm_pred, mesh_pred = self._pairwise_mating_mesh(mesh[0], mesh[1], pred_relative_trsfm[0], pred_relative_trsfm[1], is_trg_larger)
-            assm_grtr, mesh_grtr = self._pairwise_mating_mesh(mesh[0], mesh[1], grtr_relative_trsfm[0], grtr_relative_trsfm[1], is_trg_larger)
+            # assm_pred, mesh_pred = self._pairwise_mating_mesh(mesh[0], mesh[1], pred_relative_trsfm[0], pred_relative_trsfm[1], is_trg_larger)
+            # assm_grtr, mesh_grtr = self._pairwise_mating_mesh(mesh[0], mesh[1], grtr_relative_trsfm[0], grtr_relative_trsfm[1], is_trg_larger)
             
-            base_name = f"{len(mesh_pred)}_part_crd{round(eval_result['crd'].item(), 2)}_cd{round(eval_result['cd'].item(), 1)}_rrmse{round(eval_result['rrmse'].item(), 2)}_{in_dict['filepath'][0].split('/')[2]}_{in_dict['filepath'][0].split('/')[3]}"
-            if not os.path.exists(os.path.join('./vis_mesh_pred', base_name)):
-                os.makedirs(os.path.join('./vis_mesh_pred', base_name))
-            for idx, _mesh in enumerate(mesh_pred):
-                _mesh.export(os.path.join('./vis_mesh_pred', base_name, f'{idx}_fracture.obj'), file_type='obj')
-            assm_pred.export(os.path.join('./vis_mesh_pred', base_name ,f'assemble.obj'), file_type='obj')
+            # # Set base name
+            # if in_dict['filepath'][0].split('/')[0] == 'everyday':
+            #     base_name = f"{in_dict['eval_idx'].item()}_{len(mesh_pred)}_part_crd{round(eval_result['crd'].item(), 2)}_cd{round(eval_result['cd'].item(), 1)}_rrmse{round(eval_result['rrmse'].item(), 2)}_{in_dict['filepath'][0].split('/')[2]}_{in_dict['filepath'][0].split('/')[3]}"
+            # elif in_dict['filepath'][0].split('/')[0] == 'artifact':
+            #     base_name = f"{in_dict['eval_idx'].item()}_{len(mesh_pred)}_part_crd{round(eval_result['crd'].item(), 2)}_cd{round(eval_result['cd'].item(), 1)}_rrmse{round(eval_result['rrmse'].item(), 2)}_{in_dict['filepath'][0].split('/')[1]}_{in_dict['filepath'][0].split('/')[2]}"
             
-            if not os.path.exists(os.path.join('./vis_mesh_grtr', base_name)):
-                os.makedirs(os.path.join('./vis_mesh_grtr', base_name))
-            for idx, _mesh in enumerate(mesh_grtr):
-                _mesh.export(os.path.join('./vis_mesh_grtr', base_name, f'{idx}_fracture.obj'), file_type='obj')
-            assm_grtr.export(os.path.join('./vis_mesh_grtr', base_name, f'assemble.obj'), file_type='obj')
+            # if min(in_dict['pcd'][0].size(1), in_dict['pcd'][1].size(1))>1000:
+            #     if not os.path.exists(os.path.join('./teaser_mesh_pos', base_name)):
+            #         os.makedirs(os.path.join('./teaser_mesh_pos', base_name))
+            #     for idx, _mesh in enumerate(mesh_pred):
+            #         _mesh.export(os.path.join('./teaser_mesh_pos', base_name, f'{idx}_fracture.obj'), file_type='obj')
+            #     assm_pred.export(os.path.join('./teaser_mesh_pos', base_name ,f'assemble.obj'), file_type='obj')
             
+            # if not os.path.exists(os.path.join('./vis_mesh_grtr', base_name)):
+            #     os.makedirs(os.path.join('./vis_mesh_grtr', base_name))
+            # for idx, _mesh in enumerate(mesh_grtr):
+            #     _mesh.export(os.path.join('./vis_mesh_grtr', base_name, f'{idx}_fracture.obj'), file_type='obj')
+            # assm_grtr.export(os.path.join('./vis_mesh_grtr', base_name, f'assemble.obj'), file_type='obj')
+
+            # if min(in_dict['pcd'][0].size(1), in_dict['pcd'][1].size(1))>1000:
+            #     for idx, _mesh in enumerate(mesh):
+            #         _mesh.export(os.path.join('./vec_ours', f'{in_dict["eval_idx"].item()}_{idx}_fracture.obj'), file_type='obj')
+
         return eval_result
     
     def _is_trg_larger(self, src_pcd, trg_pcd):
@@ -447,3 +464,92 @@ class EquiAssem(pl.LightningModule):
             trmse += (t1 - t2).pow(2).mean().pow(0.5) * rrmse_scaling
         div = len(rotat1) if multi_part else 1
         return rrmse / div, trmse / div
+
+    def _part_accuracy(self, assm_pts1, assm_pts2, scaling=100):
+        success = 0
+        for pred_pts, gt_pts in zip(assm_pts1, assm_pts2):
+            part_cd = self._chamfer_distance(pred_pts, gt_pts, 1)
+            if part_cd < 0.01: success += 1
+        return success / len(assm_pts1) * scaling
+
+    def _part_accuracy_crd(self, assm_pts1, assm_pts2, scaling=100):
+        success = 0
+        for pred_pts, gt_pts in zip(assm_pts1, assm_pts2):
+            part_crd = self._correspondence_distance(pred_pts, gt_pts, 1)
+            if part_crd < 0.1: success += 1
+        return success / len(assm_pts1) * scaling
+
+    @torch.no_grad()
+    def forward_mpa(self, in_dict):
+
+        out_dict, loss = {}, {}
+        src_pcd_raw = in_dict['pcd'][0].squeeze(0)
+        trg_pcd_raw = in_dict['pcd'][1].squeeze(0)
+        src_pcd = in_dict['pcd_t'][0] # (1, N ,3)
+        trg_pcd = in_dict['pcd_t'][1] # (1, M ,3)
+
+        # 1. SO(3)-Equivariant Feature Extractor
+        src_equi_feats = self.backbone(src_pcd) # (1, 341, 3, N)
+        trg_equi_feats = self.backbone(trg_pcd) # (1, 341, 3, M)
+
+        # 2. Basis Vector Projection 
+        src_vecs = self.proj(src_equi_feats).permute(0, 3, 1, 2) # (1, 341, 3, N) -> (1, 2, 3, N) -> (1, N, 2, 3)
+        trg_vecs = self.proj(trg_equi_feats).permute(0, 3, 1, 2) # (1, 341, 3, M) -> (1, 2, 3, M) -> (1, M, 2, 3)
+
+        # 3. Gram Schmidt & Cross-product
+        src_ori = ortho2rotation(src_vecs) # (1, N, 2, 3) -> (1, N, 3, 3)
+        trg_ori = ortho2rotation(trg_vecs) # (1, M, 2, 3) -> (1, M, 3, 3)
+
+        # 4. Invariant Features
+        src_inv_feats = torch.matmul(src_equi_feats.permute(0, 3, 1, 2), src_ori.transpose(-2,-1)) # (1, N, 341, 3) x (1, N, 3, 3) -> (1, N, 341, 3)
+        trg_inv_feats = torch.matmul(trg_equi_feats.permute(0, 3, 1, 2), trg_ori.transpose(-2,-1)) # (1, M, 341, 3) x (1, M, 3, 3) -> (1, M, 341, 3)
+        src_inv_feats = rearrange(src_inv_feats, 'b n c r -> b (c r) n') # (1, N, 341, 3) -> (1, 1023, N)
+        trg_inv_feats = rearrange(trg_inv_feats, 'b n c r -> b (c r) n') # (1, M, 341, 3) -> (1, 1023, M)
+        
+        # 5. Chaneel Attention Map
+        if self.attention == 'channel':
+            inv_feats = torch.cat([src_inv_feats, trg_inv_feats], dim=-1)  # (1, 1023, N+M)
+            attention = self.c_attn(inv_feats) # (1, 1023, N+M) -> (1, 1023, N+M)
+            
+            shape_attention, occ_attention = attention[:, :512], attention[:, 512:]
+            loss['shape_attn_ratio'] = shape_attention.sum() / (shape_attention.sum()+occ_attention.sum())
+            loss['occ_attn_ratio'] = occ_attention.sum() / (shape_attention.sum()+occ_attention.sum())
+        
+        #### 6. SHAPE DESCRIPTOR ####
+        src_shape_feats = self.shape_mlp(src_inv_feats) # (1, 1023, M) -> (1, 512, M)
+        if self.attention == 'channel': src_shape_feats = src_shape_feats * shape_attention
+        trg_shape_feats = self.shape_mlp(trg_inv_feats) # (1, 1023, M) -> (1, 512, M)
+        if self.attention == 'channel': trg_shape_feats = trg_shape_feats * shape_attention
+        #### 6. SHAPE DESCRIPTOR ####
+
+        #### 7. OCCUPANCY DESCRIPTOR ####
+        src_occ_feats = self.occ_mlp(src_inv_feats) # (1, 1023, N) -> (1, 512, N)
+        if self.attention == 'channel': src_occ_feats = src_occ_feats * occ_attention
+        trg_occ_feats = self.occ_mlp(trg_inv_feats) # (1, 1023, M) -> (1, 512, M)
+        if self.attention == 'channel': trg_occ_feats = trg_occ_feats * occ_attention
+        #### 7. OCCUPANCY DESCRIPTOR ####
+
+        # 8. Optimal Transport
+        shape_matching_scores = torch.einsum('b c n , b c m -> b n m', src_shape_feats, trg_shape_feats) # (1, N, M)
+        shape_matching_scores = shape_matching_scores / src_shape_feats.shape[1] ** 0.5
+
+        if self.occ_loss=='positive': 
+            occ_matching_scores = torch.einsum('b c n , b c m -> b n m', src_occ_feats, trg_occ_feats) # (1, N, M)
+        else: 
+            occ_matching_scores = -torch.einsum('b c n , b c m -> b n m', src_occ_feats, trg_occ_feats) # (1, N, M)
+        occ_matching_scores = occ_matching_scores / src_occ_feats.shape[1] ** 0.5
+
+        matching_scores = self.optimal_transport(shape_matching_scores + occ_matching_scores) # (1, N, M) -> (1, N+1, M+1)
+        matching_scores_drop = matching_scores[:,:-1,:-1]
+
+        # 9. Weighted SVD with top-k correspondence selections
+        with torch.no_grad():
+            src_corr_pts, trg_corr_pts, corr_scores, estimated_transform, pred_corr = self.fine_matching(
+                src_pcd, trg_pcd, matching_scores_drop, k=128)
+
+        out_dict['estimated_rotat'] = estimated_transform[:3, :3].T
+        out_dict['estimated_trans'] = -(estimated_transform[:3, :3].inverse() @ -estimated_transform[:3, 3])
+        out_dict['corr_scores'] = corr_scores
+        out_dict['matching_scores_drop'] = matching_scores_drop
+        
+        return out_dict
