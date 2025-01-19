@@ -14,3 +14,6 @@ vis/
 *.pcd
 /outputs
 *.sh
+*.obj
+*.ply
+ipynb/
