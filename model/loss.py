@@ -53,20 +53,6 @@ class CircleLoss(nn.Module):
 
         return circle_loss
 
-    # def get_recall(self, coords_dist, feats_dist):
-    #     """
-    #     Get feature match recall, divided by number of true inliers
-    #     """
-    #     pos_mask = coords_dist < self.pos_radius
-    #     n_gt_pos = (pos_mask.sum(-1)>0).float().sum()+1e-12
-    #     try:
-    #         _, sel_idx = torch.min(feats_dist, -1)
-    #     except:
-    #         return torch.tensor(0.).to(feats_dist.device)
-    #     sel_dist = torch.gather(coords_dist,dim=-1,index=sel_idx[:,None])[pos_mask.sum(-1)>0]
-    #     n_pred_pos = (sel_dist < self.pos_radius).float().sum()
-    #     recall = n_pred_pos / n_gt_pos
-    #     return recall
 
     def forward(self, src_pcd, tgt_pcd, src_feats, tgt_feats, correspondence):
         if len(correspondence) == 0:

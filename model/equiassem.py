@@ -35,6 +35,9 @@ from common.utils import save_pc, knn, get_graph_feature
 
 import os, trimesh
 
+# REBUTTAL
+from vecAdam.vectoradam import VectorAdam
+
 class ChannelAttentionModule(nn.Module):
     """ this function is used to achieve the channel attention module in CBAM paper"""
     def __init__(self, in_dim=1023, out_dim=1024, ratio=4):
@@ -153,6 +156,9 @@ class EquiAssem(pl.LightningModule):
         """Build optimizer and lr scheduler."""
         lr = self.lr
         optimizer = optim.AdamW(self.parameters(), lr=lr, weight_decay=0.)
+        # REBUTTAL
+        # optimizer = VectorAdam(self.parameters(), lr=lr)
+        
         scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=16919, eta_min=1e-3) # 16919, 6671
         
         return {'optimizer': optimizer,
@@ -296,27 +302,28 @@ class EquiAssem(pl.LightningModule):
             loss.update(eval_dict)
 
         if self.debug:
-            if min(src_pcd.size(1), trg_pcd.size(1))>1000:
-                vis_dict = {}
-                vis_dict['src_shape_feats'] = src_shape_feats.squeeze(0).cpu().detach()
-                vis_dict['src_occ_feats'] = src_occ_feats.squeeze(0).cpu().detach()
-                vis_dict['trg_shape_feats'] = trg_shape_feats.squeeze(0).cpu().detach()
-                vis_dict['trg_occ_feats'] = trg_occ_feats.squeeze(0).cpu().detach()
-                # vis_dict['src_vec'] = src_vecs.squeeze(0).cpu().detach()
-                # vis_dict['trg_vec'] = trg_vecs.squeeze(0).cpu().detach()
-                # vis_dict['src_ori'] = src_ori.squeeze(0).cpu().detach()
-                # vis_dict['trg_ori'] = trg_ori.squeeze(0).cpu().detach()
-                # vis_dict['src_pcd'] = src_pcd.squeeze(0).cpu().detach()
-                # vis_dict['trg_pcd'] = trg_pcd.squeeze(0).cpu().detach()
-                vis_dict['src_pcd_raw'] = src_pcd_raw.squeeze(0).cpu().detach()
-                vis_dict['trg_pcd_raw'] = trg_pcd_raw.squeeze(0).cpu().detach()
-                # vis_dict['src_gt_rot'] = in_dict['gt_rotat'][0].squeeze(0).cpu().detach()
-                # vis_dict['trg_gt_rot'] = in_dict['gt_rotat'][1].squeeze(0).cpu().detach()
-                vis_dict['gt_correspondence'] = in_dict['gt_correspondence'].squeeze(0).cpu().detach()
-                vis_dict['pred_corr'] = pred_corr.cpu().detach()
+            # if min(src_pcd.size(1), trg_pcd.size(1))>1000:
+            vis_dict = {}
+            vis_dict['src_shape_feats'] = src_shape_feats.squeeze(0).cpu().detach()
+            vis_dict['src_occ_feats'] = src_occ_feats.squeeze(0).cpu().detach()
+            vis_dict['trg_shape_feats'] = trg_shape_feats.squeeze(0).cpu().detach()
+            vis_dict['trg_occ_feats'] = trg_occ_feats.squeeze(0).cpu().detach()
+            # vis_dict['src_vec'] = src_vecs.squeeze(0).cpu().detach()
+            # vis_dict['trg_vec'] = trg_vecs.squeeze(0).cpu().detach()
+            # vis_dict['src_ori'] = src_ori.squeeze(0).cpu().detach()
+            # vis_dict['trg_ori'] = trg_ori.squeeze(0).cpu().detach()
+            # vis_dict['src_pcd'] = src_pcd.squeeze(0).cpu().detach()
+            # vis_dict['trg_pcd'] = trg_pcd.squeeze(0).cpu().detach()
+            vis_dict['src_pcd_raw'] = src_pcd_raw.squeeze(0).cpu().detach()
+            vis_dict['trg_pcd_raw'] = trg_pcd_raw.squeeze(0).cpu().detach()
+            # vis_dict['src_gt_rot'] = in_dict['gt_rotat'][0].squeeze(0).cpu().detach()
+            # vis_dict['trg_gt_rot'] = in_dict['gt_rotat'][1].squeeze(0).cpu().detach()
+            vis_dict['gt_corr'] = in_dict['gt_correspondence'].squeeze(0).cpu().detach()
+            vis_dict['pred_corr'] = pred_corr.cpu().detach()
 
-                with open(f'./mscho_combined/{in_dict["eval_idx"].item()}_debug.pickle', 'wb') as f:
-                    pickle.dump(vis_dict, f)
+            with open(f'./multi_identical/{in_dict["eval_idx"].item()}_debug.pickle', 'wb') as f:
+                pickle.dump(vis_dict, f)
+
 
         # in training we log for every step
         if mode == 'train':
@@ -356,13 +363,14 @@ class EquiAssem(pl.LightningModule):
                 pcds_pred.append(pcds_pred[1][gt_corr[:,1]])
                 pcds_grtr.append(pcds_grtr[0][gt_corr[:,0]])
                 pcds_grtr.append(pcds_grtr[1][gt_corr[:,1]])
-                save_pc(f'./junhong/{in_dict["eval_idx"].item()}_{in_dict["obj_class"][0]}_{round(eval_result["crd"].item(),3)}_pred.pcd', pcds_pred)
-                save_pc(f"./junhong/{in_dict['eval_idx'].item()}_{in_dict['obj_class'][0]}_{round(eval_result['crd'].item(),3)}_grtr.pcd", pcds_grtr)
+                save_pc(f'./fantastic_ours/{in_dict["filepath"][0].split("/")[-1]}_{in_dict["obj_class"][0]}_{round(eval_result["crd"].item(),3)}_pred.pcd', pcds_pred)
+                save_pc(f'./fantastic_ours/{in_dict["filepath"][0].split("/")[-1]}_{in_dict["obj_class"][0]}_{round(eval_result["crd"].item(),3)}_grtr.pcd', pcds_grtr)
             
             ### MESH VISUALIZATION ###
             # base_path = '../../data/bbad_v2/'
             # obj_paths = [os.path.join(base_path + in_dict['filepath'][0], x) for x in os.listdir(base_path + in_dict['filepath'][0])]
-
+            
+            # obj_paths = ['%s/model_r_0.ply' % in_dict['filepath'][0], '%s/model_b_0.ply' % in_dict['filepath'][0]]
             # mesh = [trimesh.load_mesh(x) for x in obj_paths]
             
             # for idx in range(len(mesh)):
@@ -376,23 +384,21 @@ class EquiAssem(pl.LightningModule):
             #     base_name = f"{in_dict['eval_idx'].item()}_{len(mesh_pred)}_part_crd{round(eval_result['crd'].item(), 2)}_cd{round(eval_result['cd'].item(), 1)}_rrmse{round(eval_result['rrmse'].item(), 2)}_{in_dict['filepath'][0].split('/')[2]}_{in_dict['filepath'][0].split('/')[3]}"
             # elif in_dict['filepath'][0].split('/')[0] == 'artifact':
             #     base_name = f"{in_dict['eval_idx'].item()}_{len(mesh_pred)}_part_crd{round(eval_result['crd'].item(), 2)}_cd{round(eval_result['cd'].item(), 1)}_rrmse{round(eval_result['rrmse'].item(), 2)}_{in_dict['filepath'][0].split('/')[1]}_{in_dict['filepath'][0].split('/')[2]}"
+            # elif in_dict['filepath'][0].split('/')[3] == 'FantasticBreaks':
+            #     base_name = f"{in_dict['filepath'][0].split('/')[-1]}_{len(mesh_pred)}_part_crd{round(eval_result['crd'].item(), 2)}_cd{round(eval_result['cd'].item(), 1)}_rrmse{round(eval_result['rrmse'].item(), 2)}"
             
             # if min(in_dict['pcd'][0].size(1), in_dict['pcd'][1].size(1))>1000:
-            #     if not os.path.exists(os.path.join('./teaser_mesh_pos', base_name)):
-            #         os.makedirs(os.path.join('./teaser_mesh_pos', base_name))
+            #     if not os.path.exists(os.path.join('./fantastic_ours/mesh_pred', base_name)):
+            #         os.makedirs(os.path.join('./fantastic_ours/mesh_pred', base_name))
             #     for idx, _mesh in enumerate(mesh_pred):
-            #         _mesh.export(os.path.join('./teaser_mesh_pos', base_name, f'{idx}_fracture.obj'), file_type='obj')
-            #     assm_pred.export(os.path.join('./teaser_mesh_pos', base_name ,f'assemble.obj'), file_type='obj')
+            #         _mesh.export(os.path.join('./fantastic_ours/mesh_pred', base_name, f'{idx}_fracture.obj'), file_type='obj')
+            #     assm_pred.export(os.path.join('./fantastic_ours/mesh_pred', base_name ,f'assemble.obj'), file_type='obj')
             
-            # if not os.path.exists(os.path.join('./vis_mesh_grtr', base_name)):
-            #     os.makedirs(os.path.join('./vis_mesh_grtr', base_name))
-            # for idx, _mesh in enumerate(mesh_grtr):
-            #     _mesh.export(os.path.join('./vis_mesh_grtr', base_name, f'{idx}_fracture.obj'), file_type='obj')
-            # assm_grtr.export(os.path.join('./vis_mesh_grtr', base_name, f'assemble.obj'), file_type='obj')
-
-            # if min(in_dict['pcd'][0].size(1), in_dict['pcd'][1].size(1))>1000:
-            #     for idx, _mesh in enumerate(mesh):
-            #         _mesh.export(os.path.join('./vec_ours', f'{in_dict["eval_idx"].item()}_{idx}_fracture.obj'), file_type='obj')
+            #     if not os.path.exists(os.path.join('./fantastic_ours/mesh_gt', base_name)):
+            #         os.makedirs(os.path.join('./fantastic_ours/mesh_gt', base_name))
+            #     for idx, _mesh in enumerate(mesh_grtr):
+            #         _mesh.export(os.path.join('./fantastic_ours/mesh_gt', base_name, f'{idx}_fracture.obj'), file_type='obj')
+            #     assm_grtr.export(os.path.join('./fantastic_ours/mesh_gt', base_name, f'assemble.obj'), file_type='obj')
 
         return eval_result
     

@@ -13,61 +13,40 @@ from torch.utils.data import Dataset
 from einops import rearrange, repeat
 import open3d as o3d
 from data.utils import to_o3d_pcd, to_array, get_correspondences
-from common.utils import save_pc
 
-import glob
 import warnings
 warnings.filterwarnings("ignore", category=RuntimeWarning, message="divide by zero encountered in scalar divide")
 
-def normalize_scale_pca(points: torch.Tensor, scale: float) -> torch.Tensor:
-    """
-    points: (N,3) 텐서, 임의의 스케일을 가진 포인트 클라우드
-    반환값: obb_extents[0]이 1이 되도록 스케일이 조정된 포인트 클라우드
-    """
-    # 1) 중심 계산
-    centroid = points.mean(dim=0, keepdim=True)          # (1,3)
-    X = points - centroid                                # centered
-
-    # 2) 공분산 행렬 & 고유분해
-    cov = (X.T @ X) / (X.shape[0] - 1)                    # (3,3)
-    eigvals, eigvecs = torch.linalg.eigh(cov)            # ascending
-    order = torch.argsort(eigvals, descending=True)      # 내림차순 인덱스
-    axes = eigvecs[:, order]                             # (3,3), 주성분 축들
-
-    # 3) 주성분 좌표로 투영
-    proj = X @ axes                                      # (N,3)
-
-    # 4) 각 축별 최소·최대 → extents
-    mins, _ = proj.min(dim=0)
-    maxs, _ = proj.max(dim=0)
-    extents = maxs - mins                                # (3,)
-
-    # 5) 첫 번째 주성분 축 길이를 scale로 맞추는 스케일 계산
-    scale = scale / extents[0]
-
-    # 6) 전체 점군 스케일 조정 (centroid 기준)
-    scaled = (X * scale) + centroid
-
-    return scaled
-
-class DatasetFantasticBreaks(Dataset):
-    def __init__(self, datapath, n_pts, visualize=False):
+class DatasetAmbiguous(Dataset):
+    def __init__(self, datapath, data_category, sub_category, min_part, max_part, n_pts, split, scale, visualize=False):
         self.datapath = datapath
+        self.data_category = data_category # ['everyday', 'artifact']
+        self.split = split
+        self.sub_category = sub_category
         self.n_pts = n_pts
-        self.min_n_pts = 256
-
-        # Read fracture path list
-        self.filepaths, self.assmpaths = [], []
-        fb_cls_dir = sorted(glob.glob('../../data/FantasticBreaks/*'))
-        for cls_dir in fb_cls_dir:
-            fb_sample_dir = sorted(glob.glob('%s/*' % cls_dir))
-            for sample_dir in fb_sample_dir:
-                self.filepaths.append(['%s/model_r_0.ply' % sample_dir, '%s/model_b_0.ply' % sample_dir])
-                self.assmpaths.append('%s/model_c.ply' % sample_dir)
-
-        self.overlap_radius = 0.018
         self.visualize = visualize
 
+        self.min_n_pts = 256
+        self.min_part = min_part
+        self.max_part = max_part
+        self.mpa = True if self.max_part > 2 else False
+        self.anchor_idx = 0
+
+        # filepaths = join('./data/data_list', f"{data_category}_{split}_v2.txt")
+        filepaths = join('./data/data_list', f"multi_identical.txt")
+        print(filepaths)
+        
+        with open(filepaths, 'r') as f:
+            self.filepaths = [x.strip() for x in f.readlines() if x.strip()]
+
+        self.filepaths = [x for x in self.filepaths if self.min_part <= int(x.split()[0]) <= self.max_part]
+        if self.sub_category != 'all': self.filepaths = [x for x in self.filepaths if x.split()[1].split('/')[2] == self.sub_category]
+
+        self.n_frac = [int(x.split()[0]) for x in self.filepaths]
+        self.filepaths = [x.split()[1] for x in self.filepaths]
+        
+        self.overlap_radius = 0.018
+        
     def __len__(self):
         return len(self.filepaths)
 
@@ -100,12 +79,12 @@ class DatasetFantasticBreaks(Dataset):
             key = f"{src_idx}-{trg_idx}"
             permut_relative_transform[key] = relative_rotat, relative_trans
 
-        # return {'0-1':permut_relative_transform['0-1']}
-        return permut_relative_transform
+        if self.split in ['train', 'val']: return {'0-1':permut_relative_transform['0-1']}
+        else: return permut_relative_transform
 
     def __getitem__(self, idx):
         # Fix randomness
-        np.random.seed(idx)
+        if self.split in ['val', 'test']: np.random.seed(idx)
 
         # Read mesh, point cloud of a fractured object
         logger = logging.getLogger("trimesh")
@@ -119,17 +98,17 @@ class DatasetFantasticBreaks(Dataset):
         pcd_t, mesh_t, gt_trans = self._translate(mesh, pcd)
         pcd_t, mesh_t, gt_rotat = self._rotate(mesh_t, pcd_t)
         gt_relative_trsfm = self._compute_relative_transform(gt_trans, gt_rotat)
-
+        
         batch = {
                 'eval_idx': idx,
-                'filepath': os.path.dirname(self.filepaths[idx][0]),
-                'obj_class': self.filepaths[idx][0].split('/')[3],
+                'filepath': self.filepaths[idx],
+                'obj_class': self.filepaths[idx].split('/')[2],
 
                 'mesh': [torch.tensor(_mesh.vertices).float() for _mesh in mesh],
                 'mesh_t': [torch.tensor(_mesh.vertices).float() for _mesh in mesh_t],
                 'pcd_t': pcd_t,
                 'pcd': pcd,
-                'n_frac': 2,
+                'n_frac': self.n_frac[idx],
                 'anchor_idx': self.anchor_idx,
 
                 'gt_trans': gt_trans,
@@ -144,39 +123,41 @@ class DatasetFantasticBreaks(Dataset):
         return batch
 
     def read_obj_data(self, idx):
-        random.seed(idx)
+        if self.split in ['val', 'test']: random.seed(idx)
+        # np.seterr(divide='ignore', invalid='ignore')
+        
+        filepath = self.filepaths[idx]
+        n_frac = self.n_frac[idx]
 
-        obj_paths = self.filepaths[idx]
-        assm_path = self.assmpaths[idx]
+        # Load N-part meshes and calculate each area
+        base_path = join(self.datapath, filepath)
+        if self.mpa and self.split in ['train', 'val']:
+            obj_paths = [join(base_path, x) for x in [self.frac0[idx], self.frac1[idx]]]
+        else: obj_paths = [join(base_path, x) for x in os.listdir(base_path)]
 
-        mesh_all = [trimesh.load_mesh(obj_path) for obj_path in obj_paths]
-        mesh_areas = [mesh_.area for mesh_ in mesh_all]
+        meshes = [trimesh.load_mesh(x) for x in obj_paths]
+        mesh_areas = [mesh_.area for mesh_ in meshes]
 
         # Set anchor fracture and sum all of areas
         self.anchor_idx, total_area = mesh_areas.index(max(mesh_areas)), sum(mesh_areas)
 
-        pcd_all = []
-        for mesh in mesh_all:
+        # Sample N-part point clouds from meshes
+        pcds = []
+        for mesh in meshes:
             n_pts = int(self.n_pts * mesh.area / total_area)
-            sampled_pts = torch.tensor(trimesh.sample.sample_surface_even(mesh, n_pts, seed=idx)[0]).float()
+            if self.split in ['val', 'test']: sampled_pts = torch.tensor(trimesh.sample.sample_surface_even(mesh, n_pts, seed=idx)[0]).float()
+            else: sampled_pts = torch.tensor(trimesh.sample.sample_surface_even(mesh, n_pts)[0]).float()
 
             if sampled_pts.size(0) < self.min_n_pts:
-                extra_pts, _ = trimesh.sample.sample_surface(mesh, self.min_n_pts - sampled_pts.size(0), seed=idx)
+                if self.split in ['val', 'test']: extra_pts, _ = trimesh.sample.sample_surface(mesh, self.min_n_pts - sampled_pts.size(0), seed=idx)
+                else: extra_pts, _ = trimesh.sample.sample_surface(mesh, self.min_n_pts - sampled_pts.size(0))
                 sampled_pts = torch.cat([sampled_pts, torch.tensor(extra_pts).float()], dim=0)
             
-            pcd_all.append(sampled_pts)
+            pcds.append(sampled_pts)
 
-        # Normalize the sampled points
-        combined_pcd = torch.cat(pcd_all, dim=0)
-        centroid = torch.mean(combined_pcd, dim=0)
-        combined_pcd -= centroid
-        # combined_pcd = normalize_scale_pca(combined_pcd, 1)
-        pcd_all = [combined_pcd[0:pcd_all[0].size(0)], combined_pcd[pcd_all[0].size(0):]]
+        # Augment train dataset
+        if self.split == 'train' and random.random() > 0.5:
+            meshes.reverse()
+            pcds.reverse()
         
-        return mesh_all, pcd_all
-    
-        # save npy
-        np.save(f'./vis_fantastic/{idx}.npy', combined_pcd)
-        save_pc(f'./vis_fantastic/{idx}.pcd', pcd_all)
-
-        return mesh_all, pcd_all
+        return meshes, pcds

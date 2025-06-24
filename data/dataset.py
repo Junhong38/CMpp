@@ -3,6 +3,8 @@ from torchvision import transforms
 from torch.utils.data import DataLoader
 from data.breakingbad import DatasetBreakingBad
 from data.fantasticbreaks import DatasetFantasticBreaks
+from data.ambiguous import DatasetAmbiguous
+
 class GADataset:
 
     @classmethod
@@ -21,6 +23,8 @@ class GADataset:
         shuffle = training
         if cls.data_category == 'fantastic':
             dataset = DatasetFantasticBreaks(cls.datapath, cls.n_pts, visualize)
+        elif cls.data_category == 'ambiguous':
+            dataset = DatasetAmbiguous(cls.datapath, cls.data_category, cls.sub_category, cls.min_part, cls.max_part, cls.n_pts, split, cls.scale, visualize)
         else:
             dataset = DatasetBreakingBad(cls.datapath, cls.data_category, cls.sub_category, cls.min_part, cls.max_part, cls.n_pts, split, cls.scale, visualize)
         dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=shuffle, num_workers=nworker, pin_memory=False)
