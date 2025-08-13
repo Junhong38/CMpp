@@ -27,7 +27,7 @@ from model.learnable_sinkhorn import LearnableLogOptimalTransport
 from model.local_global_registration import LocalGlobalRegistration, WeightedProcrustes
 
 from model.ransac import ransac_rigid
-from model.match_selection import topk_matching, unidirectional_nn_matching, injective_matching, bijective_matching, reciprocal_test
+from model.match_selection import topk_matching, unidirectional_nn_matching, injective_matching, bijective_matching, mutual_topk_matching, soft_topk_matching
 from data.utils import get_correspondences
 
 from einops import rearrange, repeat
@@ -37,14 +37,14 @@ import open3d as o3d
 import random
 
 import pickle
-from common.utils import save_pc, knn, get_graph_feature, save_ori, SVD
+from common.utils import save_pc, knn, get_graph_feature, save_ori, SVD, save_normal
 
 import os, trimesh
 import math
 
 class ChannelAttentionModule(nn.Module):
     """ this function is used to achieve the channel attention module in CBAM paper"""
-    def __init__(self, in_dim=1023, out_dim=1024, ratio=4):
+    def __init__(self, in_dim=1024, out_dim=1024, ratio=4):
         super(ChannelAttentionModule, self).__init__()
 
         self.mlp = nn.Sequential(
@@ -69,15 +69,15 @@ class ChannelAttentionModule(nn.Module):
         return attention
 
 class EquiAssem(pl.LightningModule):
-    def __init__(
-            self, 
-            lr, backbone='vn_unet', shape_loss='positive', occ_loss='negative', 
-            no_ori=False, attention='channel', registration='ransac', match_selection_str='injective', 
-            visualize=False, debug=False, inlier_threshold=0.01, score_threshold=0, 
-            auto_score_threshold=False, ori_threshold=-1, weighted_voting=False,
-            gt_normal_threshold=-1, gt_mating_surface=False,
-            score_comb='intersection'
-            ):
+    def __init__(self, lr, backbone='vn_unet', shape_loss='positive', occ_loss='negative', no_ori=False, attention='channel', visualize=False, debug=False):
+            # self, 
+            # lr, backbone='vn_unet', shape_loss='positive', occ_loss='negative', 
+            # no_ori=False, attention='channel', registration='ransac', match_selection_str='injective', 
+            # visualize=False, debug=False, inlier_threshold=0.01, score_threshold=0, 
+            # auto_score_threshold=False, ori_threshold=-1, weighted_voting=False,
+            # gt_normal_threshold=-1, gt_mating_surface=False,
+            # score_comb='intersection'
+            # ):
         super(EquiAssem, self).__init__()
 
         self.lr = lr
@@ -86,8 +86,8 @@ class EquiAssem(pl.LightningModule):
         self.no_ori = no_ori
         self.attention = attention
         
-        self.registration = registration
-        self.match_selection = match_selection_str
+        # self.registration = registration
+        # self.match_selection = match_selection_str
 
         # Output feature dimension of Feature Extractor
         self.feat_dim = 1024
@@ -103,63 +103,64 @@ class EquiAssem(pl.LightningModule):
             raise NotImplementedError("DGCNN backbone not implemented")
         
         # Basis Vector
-        self.proj = VNLinear(self.feat_dim//3, 2)
+        # self.proj = VNLinear(self.feat_dim//3, 2)
+        self.proj = VNLinear(self.feat_dim, 1)
 
-        # Channel Attention
-        if attention == 'channel':
-            self.c_attn = ChannelAttentionModule(1023, 1024, ratio=4)
+        # # Channel Attention
+        # if attention == 'channel':
+        #     self.c_attn = ChannelAttentionModule(self.feat_dim, self.feat_dim, ratio=4)
         
-        # Shape Descriptor
-        self.shape_mlp = nn.Sequential(nn.Conv1d(1023, 512, kernel_size=1, bias=False),
-                                nn.InstanceNorm1d(512),
-                                nn.LeakyReLU(negative_slope=0.2),
-                                nn.Conv1d(512, 512, kernel_size=1, bias=False),
-                                nn.InstanceNorm1d(512),
-                                nn.LeakyReLU(negative_slope=0.2),
-                                nn.Conv1d(512, 512, kernel_size=1, bias=False),
-                                nn.InstanceNorm1d(512),
-                                nn.LeakyReLU(negative_slope=0.2),
-                                )
+        # # Shape Descriptor
+        # self.shape_mlp = nn.Sequential(nn.Conv1d(self.feat_dim, self.feat_dim//2, kernel_size=1, bias=False),
+        #                         nn.InstanceNorm1d(self.feat_dim//2),
+        #                         nn.LeakyReLU(negative_slope=0.2),
+        #                         nn.Conv1d(self.feat_dim//2, self.feat_dim//2, kernel_size=1, bias=False),
+        #                         nn.InstanceNorm1d(self.feat_dim//2),
+        #                         nn.LeakyReLU(negative_slope=0.2),
+        #                         nn.Conv1d(self.feat_dim//2, self.feat_dim//2, kernel_size=1, bias=False),
+        #                         nn.InstanceNorm1d(self.feat_dim//2),
+        #                         nn.LeakyReLU(negative_slope=0.2),
+        #                         )
         
-        # Occupancy Descriptor
-        self.occ_mlp = nn.Sequential(nn.Conv1d(1023, 512, kernel_size=1, bias=False),
-                                nn.InstanceNorm1d(512),
-                                nn.LeakyReLU(negative_slope=0.2),
-                                nn.Conv1d(512, 512, kernel_size=1, bias=False),
-                                nn.InstanceNorm1d(512),
-                                nn.LeakyReLU(negative_slope=0.2),
-                                nn.Conv1d(512, 512, kernel_size=1, bias=False),
-                                nn.InstanceNorm1d(512),
-                                nn.Tanh()
-                                )
+        # # Occupancy Descriptor
+        # self.occ_mlp = nn.Sequential(nn.Conv1d(self.feat_dim, self.feat_dim//2, kernel_size=1, bias=False),
+        #                         nn.InstanceNorm1d(self.feat_dim//2),
+        #                         nn.LeakyReLU(negative_slope=0.2),
+        #                         nn.Conv1d(self.feat_dim//2, self.feat_dim//2, kernel_size=1, bias=False),
+        #                         nn.InstanceNorm1d(self.feat_dim//2),
+        #                         nn.LeakyReLU(negative_slope=0.2),
+        #                         nn.Conv1d(self.feat_dim//2, self.feat_dim//2, kernel_size=1, bias=False),
+        #                         nn.InstanceNorm1d(self.feat_dim//2),
+        #                         nn.Tanh()
+        #                         )
         
-        # Optimal Transport
-        self.optimal_transport = LearnableLogOptimalTransport(num_iterations=100)
+        # # Optimal Transport
+        # self.optimal_transport = LearnableLogOptimalTransport(num_iterations=100)
 
-        # LGR
-        self.fine_matching = LocalGlobalRegistration(
-            k=3,
-            acceptance_radius=0.1,
-            mutual=True,
-            confidence_threshold=0.05,
-            use_dustbin=False,
-            use_global_score=False,
-            correspondence_threshold=3,
-            correspondence_limit=None,
-            num_refinement_steps=5,
-        )
+        # # LGR
+        # self.fine_matching = LocalGlobalRegistration(
+        #     k=3,
+        #     acceptance_radius=0.1,
+        #     mutual=True,
+        #     confidence_threshold=0.05,
+        #     use_dustbin=False,
+        #     use_global_score=False,
+        #     correspondence_threshold=3,
+        #     correspondence_limit=None,
+        #     num_refinement_steps=5,
+        # )
         
         # Objectives
-        self.circle_loss = CircleLoss()
-        self.matching_loss = PointMatchingLoss()
+        # self.circle_loss = CircleLoss()
+        # self.matching_loss = PointMatchingLoss()
         self.orientation_loss = OrientationLoss()
-        self.occupancy_loss = CircleLoss()
+        # self.occupancy_loss = CircleLoss()
 
-        # Weights for losses
-        self.c_loss_weight = 0.5 
-        self.occ_loss_weight = 0.5
-        self.p_loss_weight = 1.0
-        self.o_loss_weight = 0 if no_ori else 0.1
+        # # Weights for losses
+        # self.c_loss_weight = 0.5 
+        # self.occ_loss_weight = 0.5
+        # self.p_loss_weight = 1.0
+        # self.o_loss_weight = 0 if no_ori else 0.1
 
         self.debug = debug
         self.visualize = visualize
@@ -167,14 +168,14 @@ class EquiAssem(pl.LightningModule):
         self.validation_step_outputs = []
         self.test_step_outputs = []
 
-        self.inlier_threshold = inlier_threshold
-        self.score_threshold = score_threshold
-        self.auto_score_threshold = auto_score_threshold
-        self.ori_threshold = ori_threshold
-        self.weighted_voting = weighted_voting
-        self.gt_normal_threshold = gt_normal_threshold
-        self.gt_mating_surface = gt_mating_surface
-        self.score_comb = score_comb
+        # self.inlier_threshold = inlier_threshold
+        # self.score_threshold = score_threshold
+        # self.auto_score_threshold = auto_score_threshold
+        # self.ori_threshold = ori_threshold
+        # self.weighted_voting = weighted_voting
+        # self.gt_normal_threshold = gt_normal_threshold
+        # self.gt_mating_surface = gt_mating_surface
+        # self.score_comb = score_comb
         
     def configure_optimizers(self):
         """Build optimizer and lr scheduler."""
@@ -224,6 +225,7 @@ class EquiAssem(pl.LightningModule):
         self.test_results = avg_loss
         self.test_step_outputs.clear()
 
+    # @torch.no_grad()
     def forward_pass(self, in_dict, mode):
 
         out_dict, loss = {}, {}
@@ -240,113 +242,125 @@ class EquiAssem(pl.LightningModule):
         out_dict['trg_equi_feats'] = trg_equi_feats
 
         # 2. Basis Vector Projection 
-        src_vecs = self.proj(src_equi_feats).permute(0, 3, 1, 2) # (1, 341, 3, N) -> (1, 2, 3, N) -> (1, N, 2, 3)
-        trg_vecs = self.proj(trg_equi_feats).permute(0, 3, 1, 2) # (1, 341, 3, M) -> (1, 2, 3, M) -> (1, M, 2, 3)
+        src_vecs = self.proj(src_equi_feats).permute(0, 3, 1, 2) # (1, 341, 3, N) -> (1, 1, 3, N) -> (1, N, 1, 3)
+        trg_vecs = self.proj(trg_equi_feats).permute(0, 3, 1, 2) # (1, 341, 3, M) -> (1, 1, 3, M) -> (1, M, 1, 3)
 
         # 3. Gram Schmidt & Cross-product
-        src_ori = ortho2rotation(src_vecs) # (1, N, 2, 3) -> (1, N, 3, 3)
-        trg_ori = ortho2rotation(trg_vecs) # (1, M, 2, 3) -> (1, M, 3, 3)
+        # src_ori = ortho2rotation(src_vecs) # (1, N, 2, 3) -> (1, N, 3, 3)
+        # trg_ori = ortho2rotation(trg_vecs) # (1, M, 2, 3) -> (1, M, 3, 3)
 
-        # 4. Invariant Features
-        src_inv_feats = torch.matmul(src_equi_feats.permute(0, 3, 1, 2), src_ori.transpose(-2,-1)) # (1, N, 341, 3) x (1, N, 3, 3) -> (1, N, 341, 3)
-        trg_inv_feats = torch.matmul(trg_equi_feats.permute(0, 3, 1, 2), trg_ori.transpose(-2,-1)) # (1, M, 341, 3) x (1, M, 3, 3) -> (1, M, 341, 3)
-        src_inv_feats = rearrange(src_inv_feats, 'b n c r -> b (c r) n') # (1, N, 341, 3) -> (1, 1023, N)
-        trg_inv_feats = rearrange(trg_inv_feats, 'b n c r -> b (c r) n') # (1, M, 341, 3) -> (1, 1023, M)
+        # 3. Normalization
+        eps = 1e-8
+        src_ori = src_vecs / (torch.norm(src_vecs, dim=3, keepdim=True) + eps)
+        trg_ori = trg_vecs / (torch.norm(trg_vecs, dim=3, keepdim=True) + eps)
+
+        # # 4. Invariant Features
+        # src_inv_feats = torch.matmul(src_equi_feats.permute(0, 3, 1, 2), src_ori.transpose(-2,-1)) # (1, N, 341, 3) x (1, N, 3, 1) -> (1, N, 341, 1)
+        # trg_inv_feats = torch.matmul(trg_equi_feats.permute(0, 3, 1, 2), trg_ori.transpose(-2,-1)) # (1, M, 341, 3) x (1, M, 3, 1) -> (1, M, 341, 1)
+        # src_inv_feats = rearrange(src_inv_feats, 'b n c r -> b (c r) n') # (1, N, 341, 3) -> (1, 1024, N)
+        # trg_inv_feats = rearrange(trg_inv_feats, 'b n c r -> b (c r) n') # (1, M, 341, 3) -> (1, 1024, M)
         
-        # 5. Chaneel Attention Map
-        if self.attention == 'channel':
-            inv_feats = torch.cat([src_inv_feats, trg_inv_feats], dim=-1)  # (1, 1023, N+M)
-            attention = self.c_attn(inv_feats) # (1, 1023, N+M) -> (1, 1023, N+M)
+        # # 5. Chaneel Attention Map
+        # if self.attention == 'channel':
+        #     inv_feats = torch.cat([src_inv_feats, trg_inv_feats], dim=-1)  # (1, 1024, N+M)
+        #     attention = self.c_attn(inv_feats) # (1, 1024, N+M) -> (1, 1024, N+M)
             
-            shape_attention, occ_attention = attention[:, :512], attention[:, 512:]
-            loss['shape_attn_ratio'] = shape_attention.sum() / (shape_attention.sum()+occ_attention.sum())
-            loss['occ_attn_ratio'] = occ_attention.sum() / (shape_attention.sum()+occ_attention.sum())
+        #     shape_attention, occ_attention = attention[:, :512], attention[:, 512:]
+        #     loss['shape_attn_ratio'] = shape_attention.sum() / (shape_attention.sum()+occ_attention.sum())
+        #     loss['occ_attn_ratio'] = occ_attention.sum() / (shape_attention.sum()+occ_attention.sum())
         
-        #### 6. SHAPE DESCRIPTOR ####
-        src_shape_feats = self.shape_mlp(src_inv_feats) # (1, 1023, M) -> (1, 512, M)
-        if self.attention == 'channel': src_shape_feats = src_shape_feats * shape_attention
-        trg_shape_feats = self.shape_mlp(trg_inv_feats) # (1, 1023, M) -> (1, 512, M)
-        if self.attention == 'channel': trg_shape_feats = trg_shape_feats * shape_attention
-        #### 6. SHAPE DESCRIPTOR ####
+        # #### 6. SHAPE DESCRIPTOR ####
+        # src_shape_feats = self.shape_mlp(src_inv_feats) # (1, 1024, M) -> (1, 512, M)
+        # if self.attention == 'channel': src_shape_feats = src_shape_feats * shape_attention
+        # trg_shape_feats = self.shape_mlp(trg_inv_feats) # (1, 1024, M) -> (1, 512, M)
+        # if self.attention == 'channel': trg_shape_feats = trg_shape_feats * shape_attention
+        # #### 6. SHAPE DESCRIPTOR ####
 
-        #### 7. OCCUPANCY DESCRIPTOR ####
-        src_occ_feats = self.occ_mlp(src_inv_feats) # (1, 1023, N) -> (1, 512, N)
-        if self.attention == 'channel': src_occ_feats = src_occ_feats * occ_attention
-        trg_occ_feats = self.occ_mlp(trg_inv_feats) # (1, 1023, M) -> (1, 512, M)
-        if self.attention == 'channel': trg_occ_feats = trg_occ_feats * occ_attention
-        #### 7. OCCUPANCY DESCRIPTOR ####
+        # #### 7. OCCUPANCY DESCRIPTOR ####
+        # src_occ_feats = self.occ_mlp(src_inv_feats) # (1, 1024, N) -> (1, 512, N)
+        # if self.attention == 'channel': src_occ_feats = src_occ_feats * occ_attention
+        # trg_occ_feats = self.occ_mlp(trg_inv_feats) # (1, 1024, M) -> (1, 512, M)
+        # if self.attention == 'channel': trg_occ_feats = trg_occ_feats * occ_attention
+        # #### 7. OCCUPANCY DESCRIPTOR ####
 
-        # 8. Optimal Transport
-        shape_matching_scores = torch.einsum('b c n , b c m -> b n m', src_shape_feats, trg_shape_feats) # (1, N, M)
-        shape_matching_scores = shape_matching_scores / src_shape_feats.shape[1] ** 0.5
+        # # 8. Optimal Transport
+        # shape_matching_scores = torch.einsum('b c n , b c m -> b n m', src_shape_feats, trg_shape_feats) # (1, N, M)
+        # shape_matching_scores = shape_matching_scores / src_shape_feats.shape[1] ** 0.5
 
-        if self.occ_loss=='positive': 
-            occ_matching_scores = torch.einsum('b c n , b c m -> b n m', src_occ_feats, trg_occ_feats) # (1, N, M)
-        else: 
-            occ_matching_scores = -torch.einsum('b c n , b c m -> b n m', src_occ_feats, trg_occ_feats) # (1, N, M)
-        occ_matching_scores = occ_matching_scores / src_occ_feats.shape[1] ** 0.5
+        # if self.occ_loss=='positive': 
+        #     occ_matching_scores = torch.einsum('b c n , b c m -> b n m', src_occ_feats, trg_occ_feats) # (1, N, M)
+        # else: 
+        #     occ_matching_scores = -torch.einsum('b c n , b c m -> b n m', src_occ_feats, trg_occ_feats) # (1, N, M)
+        # occ_matching_scores = occ_matching_scores / src_occ_feats.shape[1] ** 0.5
 
-        matching_scores = self.optimal_transport(shape_matching_scores + occ_matching_scores) # (1, N, M) -> (1, N+1, M+1)
-        matching_scores_drop = matching_scores[:,:-1,:-1]
+        # matching_scores = self.optimal_transport(shape_matching_scores + occ_matching_scores) # (1, N, M) -> (1, N+1, M+1)
+        # matching_scores_drop = matching_scores[:,:-1,:-1]
 
-        # 9. Weighted SVD with top-k correspondence selections
-        if mode in ['val', 'test']:
-            with torch.no_grad():
-                src_corr_pts, trg_corr_pts, corr_scores, estimated_transform, pred_corr = self.fine_matching(
-                    src_pcd, trg_pcd, matching_scores_drop, k=128)
+        # # 9. Weighted SVD with top-k correspondence selections
+        # if mode in ['val', 'test']:
+        #     with torch.no_grad():
+        #         src_corr_pts, trg_corr_pts, corr_scores, estimated_transform, pred_corr = self.fine_matching(
+        #             src_pcd, trg_pcd, matching_scores_drop, k=128)
 
-            out_dict['estimated_rotat'] = estimated_transform[:3, :3].T
-            out_dict['estimated_trans'] = -(estimated_transform[:3, :3].inverse() @ -estimated_transform[:3, 3])
+        #     out_dict['estimated_rotat'] = estimated_transform[:3, :3].T
+        #     out_dict['estimated_trans'] = -(estimated_transform[:3, :3].inverse() @ -estimated_transform[:3, 3])
 
-        # 10. Calculate Loss
-        gt_corr = in_dict['gt_correspondence'].squeeze(0)
+        # # 10. Calculate Loss
+        # gt_corr = in_dict['gt_correspondence'].squeeze(0)
         
-        # 9-1. circle loss
-        loss['c_loss'] = self.circle_loss(src_pcd_raw, trg_pcd_raw, src_shape_feats.transpose(-2,-1), trg_shape_feats.transpose(-2,-1), gt_corr)
+        # # 9-1. circle loss
+        # loss['c_loss'] = self.circle_loss(src_pcd_raw, trg_pcd_raw, src_shape_feats.transpose(-2,-1), trg_shape_feats.transpose(-2,-1), gt_corr)
 
-        # 9-2 point matching loss
-        loss['p_loss'] = self.matching_loss(matching_scores, gt_corr, src_pcd_raw, trg_pcd_raw)
+        # # 9-2 point matching loss
+        # loss['p_loss'] = self.matching_loss(matching_scores, gt_corr, src_pcd_raw, trg_pcd_raw)
 
         # 9-3. orientation loss
-        loss['o_loss'] = self.orientation_loss(src_ori, trg_ori, gt_corr, in_dict['gt_rotat'])
+        # loss['o_loss'] = self.orientation_loss(src_ori, trg_ori, gt_corr, in_dict['gt_rotat'])
+        loss['o_loss'] = self.orientation_loss(src_ori, trg_ori, in_dict['gt_normals'])
         
-        # 9-4. occupancy loss
-        if self.occ_loss=='positive': 
-            loss['occ_loss'] = self.occupancy_loss(src_pcd_raw, trg_pcd_raw, src_occ_feats.transpose(-2,-1), trg_occ_feats.transpose(-2,-1), gt_corr)
-        else:
-            loss['occ_loss'] = self.occupancy_loss(src_pcd_raw, trg_pcd_raw, src_occ_feats.transpose(-2,-1), -trg_occ_feats.transpose(-2,-1), gt_corr)
+        # # 9-4. occupancy loss
+        # if self.occ_loss=='positive': 
+        #     loss['occ_loss'] = self.occupancy_loss(src_pcd_raw, trg_pcd_raw, src_occ_feats.transpose(-2,-1), trg_occ_feats.transpose(-2,-1), gt_corr)
+        # else:
+        #     loss['occ_loss'] = self.occupancy_loss(src_pcd_raw, trg_pcd_raw, src_occ_feats.transpose(-2,-1), -trg_occ_feats.transpose(-2,-1), gt_corr)
 
         # 9-4. final loss
-        loss['loss'] = self.c_loss_weight * loss['c_loss'] + self.p_loss_weight * loss['p_loss'] + self.o_loss_weight * loss['o_loss'] +  self.occ_loss_weight * loss['occ_loss']
+        # loss['loss'] = self.c_loss_weight * loss['c_loss'] + self.p_loss_weight * loss['p_loss'] + self.o_loss_weight * loss['o_loss'] +  self.occ_loss_weight * loss['occ_loss']
+        loss['loss'] = loss['o_loss']
         out_dict.update(loss)
         
-        # 10. Evaluation
-        if mode in ['val', 'test']:
-            eval_dict = self.evaluate_prediction(in_dict, out_dict, gt_corr)
-            loss.update(eval_dict)
+        # # 10. Evaluation
+        # if mode in ['val', 'test']:
+        #     eval_dict = self.evaluate_prediction(in_dict, out_dict, gt_corr)
+        #     loss.update(eval_dict)
+
+        # breakpoint()
 
         if self.debug:
-            if min(src_pcd.size(1), trg_pcd.size(1))>1000:
-                vis_dict = {}
-                vis_dict['src_shape_feats'] = src_shape_feats.squeeze(0).cpu().detach()
-                vis_dict['src_occ_feats'] = src_occ_feats.squeeze(0).cpu().detach()
-                vis_dict['trg_shape_feats'] = trg_shape_feats.squeeze(0).cpu().detach()
-                vis_dict['trg_occ_feats'] = trg_occ_feats.squeeze(0).cpu().detach()
-                vis_dict['src_vec'] = src_vecs.squeeze(0).cpu().detach()
-                vis_dict['trg_vec'] = trg_vecs.squeeze(0).cpu().detach()
-                vis_dict['src_ori'] = src_ori.squeeze(0).cpu().detach()
-                vis_dict['trg_ori'] = trg_ori.squeeze(0).cpu().detach()
-                # vis_dict['src_pcd'] = src_pcd.squeeze(0).cpu().detach()
-                # vis_dict['trg_pcd'] = trg_pcd.squeeze(0).cpu().detach()
-                vis_dict['src_pcd_raw'] = src_pcd_raw.squeeze(0).cpu().detach()
-                vis_dict['trg_pcd_raw'] = trg_pcd_raw.squeeze(0).cpu().detach()
-                vis_dict['src_gt_rot'] = in_dict['gt_rotat'][0].squeeze(0).cpu().detach()
-                vis_dict['trg_gt_rot'] = in_dict['gt_rotat'][1].squeeze(0).cpu().detach()
-                vis_dict['gt_correspondence'] = in_dict['gt_correspondence'].squeeze(0).cpu().detach()
-                vis_dict['pred_corr'] = pred_corr.cpu().detach()
+            # if min(src_pcd.size(1), trg_pcd.size(1))>1000:
+            vis_dict = {}
+            # vis_dict['src_shape_feats'] = src_shape_feats.squeeze(0).cpu().detach()
+            # vis_dict['src_occ_feats'] = src_occ_feats.squeeze(0).cpu().detach()
+            # vis_dict['trg_shape_feats'] = trg_shape_feats.squeeze(0).cpu().detach()
+            # vis_dict['trg_occ_feats'] = trg_occ_feats.squeeze(0).cpu().detach()
+            vis_dict['src_vec'] = src_vecs.squeeze(0).cpu().detach()
+            vis_dict['trg_vec'] = trg_vecs.squeeze(0).cpu().detach()
+            vis_dict['src_ori'] = src_ori.squeeze(0).cpu().detach()
+            vis_dict['trg_ori'] = trg_ori.squeeze(0).cpu().detach()
+            # vis_dict['src_pcd'] = src_pcd.squeeze(0).cpu().detach()
+            # vis_dict['trg_pcd'] = trg_pcd.squeeze(0).cpu().detach()
+            vis_dict['src_pcd_raw'] = src_pcd_raw.squeeze(0).cpu().detach()
+            vis_dict['trg_pcd_raw'] = trg_pcd_raw.squeeze(0).cpu().detach()
+            vis_dict['src_gt_rot'] = in_dict['gt_rotat'][0].squeeze(0).cpu().detach()
+            vis_dict['trg_gt_rot'] = in_dict['gt_rotat'][1].squeeze(0).cpu().detach()
+            # vis_dict['gt_correspondence'] = in_dict['gt_correspondence'].squeeze(0).cpu().detach()
+            # vis_dict['pred_corr'] = pred_corr.cpu().detach()
 
-                with open(f'./mscho_combined/{in_dict["eval_idx"].item()}_debug.pickle', 'wb') as f:
-                    pickle.dump(vis_dict, f)
+            save_folder = './pickles/only_ori'
+            os.makedirs(save_folder, exist_ok=True)
+            with open(f'{save_folder}/{in_dict["eval_idx"]}_debug.pickle', 'wb') as f:
+                pickle.dump(vis_dict, f)
+            print("writing...")
 
         # in training we log for every step
         if mode == 'train':
@@ -533,29 +547,29 @@ class EquiAssem(pl.LightningModule):
         # 4. Invariant Features
         src_inv_feats = torch.matmul(src_equi_feats.permute(0, 3, 1, 2), src_ori.transpose(-2,-1)) # (1, N, 341, 3) x (1, N, 3, 3) -> (1, N, 341, 3)
         trg_inv_feats = torch.matmul(trg_equi_feats.permute(0, 3, 1, 2), trg_ori.transpose(-2,-1)) # (1, M, 341, 3) x (1, M, 3, 3) -> (1, M, 341, 3)
-        src_inv_feats = rearrange(src_inv_feats, 'b n c r -> b (c r) n') # (1, N, 341, 3) -> (1, 1023, N)
-        trg_inv_feats = rearrange(trg_inv_feats, 'b n c r -> b (c r) n') # (1, M, 341, 3) -> (1, 1023, M)
+        src_inv_feats = rearrange(src_inv_feats, 'b n c r -> b (c r) n') # (1, N, 341, 3) -> (1, 1024, N)
+        trg_inv_feats = rearrange(trg_inv_feats, 'b n c r -> b (c r) n') # (1, M, 341, 3) -> (1, 1024, M)
         
         # 5. Chaneel Attention Map
         if self.attention == 'channel':
-            inv_feats = torch.cat([src_inv_feats, trg_inv_feats], dim=-1)  # (1, 1023, N+M)
-            attention = self.c_attn(inv_feats) # (1, 1023, N+M) -> (1, 1023, N+M)
+            inv_feats = torch.cat([src_inv_feats, trg_inv_feats], dim=-1)  # (1, 1024, N+M)
+            attention = self.c_attn(inv_feats) # (1, 1024, N+M) -> (1, 1024, N+M)
             
             shape_attention, occ_attention = attention[:, :512], attention[:, 512:]
             loss['shape_attn_ratio'] = shape_attention.sum() / (shape_attention.sum()+occ_attention.sum())
             loss['occ_attn_ratio'] = occ_attention.sum() / (shape_attention.sum()+occ_attention.sum())
         
         #### 6. SHAPE DESCRIPTOR ####
-        src_shape_feats = self.shape_mlp(src_inv_feats) # (1, 1023, M) -> (1, 512, M)
+        src_shape_feats = self.shape_mlp(src_inv_feats) # (1, 1024, M) -> (1, 512, M)
         if self.attention == 'channel': src_shape_feats = src_shape_feats * shape_attention
-        trg_shape_feats = self.shape_mlp(trg_inv_feats) # (1, 1023, M) -> (1, 512, M)
+        trg_shape_feats = self.shape_mlp(trg_inv_feats) # (1, 1024, M) -> (1, 512, M)
         if self.attention == 'channel': trg_shape_feats = trg_shape_feats * shape_attention
         #### 6. SHAPE DESCRIPTOR ####
 
         #### 7. OCCUPANCY DESCRIPTOR ####
-        src_occ_feats = self.occ_mlp(src_inv_feats) # (1, 1023, N) -> (1, 512, N)
+        src_occ_feats = self.occ_mlp(src_inv_feats) # (1, 1024, N) -> (1, 512, N)
         if self.attention == 'channel': src_occ_feats = src_occ_feats * occ_attention
-        trg_occ_feats = self.occ_mlp(trg_inv_feats) # (1, 1023, M) -> (1, 512, M)
+        trg_occ_feats = self.occ_mlp(trg_inv_feats) # (1, 1024, M) -> (1, 512, M)
         if self.attention == 'channel': trg_occ_feats = trg_occ_feats * occ_attention
         #### 7. OCCUPANCY DESCRIPTOR ####
 

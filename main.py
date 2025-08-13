@@ -96,23 +96,25 @@ def main(args):
         logger_id = None
     
     # configure callbacks
-    checkpoint_callback_crd = ModelCheckpoint(dirpath=ckp_dir, filename='model-crd-{epoch:03d}', monitor='val/crd', save_top_k=1, mode='min')
-    checkpoint_callback_cd = ModelCheckpoint(dirpath=ckp_dir, filename='model-cd-{epoch:03d}', monitor='val/cd', save_top_k=1, mode='min')
-    checkpoint_callback_rrmse = ModelCheckpoint(dirpath=ckp_dir, filename='model-rrmse-{epoch:03d}', monitor='val/rrmse', save_top_k=1, mode='min')
-    checkpoint_callback_trmse = ModelCheckpoint(dirpath=ckp_dir, filename='model-trmse-{epoch:03d}', monitor='val/trmse', save_top_k=1, mode='min')
+    # checkpoint_callback_crd = ModelCheckpoint(dirpath=ckp_dir, filename='model-crd-{epoch:03d}', monitor='val/crd', save_top_k=1, mode='min')
+    # checkpoint_callback_cd = ModelCheckpoint(dirpath=ckp_dir, filename='model-cd-{epoch:03d}', monitor='val/cd', save_top_k=1, mode='min')
+    # checkpoint_callback_rrmse = ModelCheckpoint(dirpath=ckp_dir, filename='model-rrmse-{epoch:03d}', monitor='val/rrmse', save_top_k=1, mode='min')
+    # checkpoint_callback_trmse = ModelCheckpoint(dirpath=ckp_dir, filename='model-trmse-{epoch:03d}', monitor='val/trmse', save_top_k=1, mode='min')
+    checkpoint_callback_Oloss = ModelCheckpoint(dirpath=ckp_dir, filename='model-Oloss-{epoch:03d}', monitor='val/o_loss', save_top_k=1, mode='min')
     latest_checkpoint_callback = ModelCheckpoint(dirpath=ckp_dir, filename='model-latest', save_last=True)
 
     callbacks = [
         LearningRateMonitor('epoch'),
-        checkpoint_callback_crd,
-        checkpoint_callback_cd,
-        checkpoint_callback_rrmse,
-        checkpoint_callback_trmse,
+        # checkpoint_callback_crd,
+        # checkpoint_callback_cd,
+        # checkpoint_callback_rrmse,
+        # checkpoint_callback_trmse,
+        checkpoint_callback_Oloss,
         latest_checkpoint_callback,
     ]
 
     logger = WandbLogger(
-        project='cvpr25-equiassem',
+        project='iclr26-CM++',
         name=logger_name,
         id=logger_id,
         save_dir=ckp_dir,
@@ -165,7 +167,7 @@ def main(args):
 if __name__ == '__main__':
     # Arguments parsing
     parser = argparse.ArgumentParser(description='Equivariant Assembly Pytorch Implementation')
-    parser.add_argument('--datapath', type=str, default='../../data/bbad_v2')
+    parser.add_argument('--datapath', type=str, default='../../../../../hdd/junhong/data/bbad_v2')
     parser.add_argument('--data_category', type=str, default='everyday', choices=['everyday', 'artifact', 'synthetic'])
     parser.add_argument('--sub_category', type=str, default='all')
     parser.add_argument('--n_pts', type=int, default=5000)

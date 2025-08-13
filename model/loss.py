@@ -129,33 +129,56 @@ class PointMatchingLoss(nn.Module):
 
         return loss
 
+# class OrientationLoss(nn.Module):
+#     def __init__(self):
+#         super(OrientationLoss, self).__init__()
+#         self.eps = 1e-7
+
+#     def inter_loss(self, src_ori, trg_ori, correspondence, src_gt_rot, trg_gt_rot):
+#         src_ori = src_ori[:, correspondence[:,0]] 
+#         trg_ori = trg_ori[:, correspondence[:,1]]
+
+#         src_ori = torch.matmul(src_ori, src_gt_rot)
+#         trg_ori = torch.matmul(trg_ori, trg_gt_rot)
+
+#         diff = src_ori - trg_ori
+#         f_norm = torch.norm(diff, p='fro', dim=(2, 3))
+#         inter_loss = torch.mean(f_norm)
+        
+#         return inter_loss
+
+#     def forward(self, src_ori, trg_ori, correspondence, gt_rot):
+#         if len(correspondence) == 0:
+#             return torch.tensor(0.).to(src_ori.device)
+
+#         src_gt_rot = gt_rot[0]
+#         trg_gt_rot = gt_rot[1]
+#         ori_loss = self.inter_loss(src_ori, trg_ori, correspondence, src_gt_rot, trg_gt_rot)
+
+#         return ori_loss
+
 class OrientationLoss(nn.Module):
     def __init__(self):
         super(OrientationLoss, self).__init__()
         self.eps = 1e-7
 
-    def inter_loss(self, src_ori, trg_ori, correspondence, src_gt_rot, trg_gt_rot):
-        src_ori = src_ori[:, correspondence[:,0]] 
-        trg_ori = trg_ori[:, correspondence[:,1]]
-
-        src_ori = torch.matmul(src_ori, src_gt_rot)
-        trg_ori = torch.matmul(trg_ori, trg_gt_rot)
-
-        diff = src_ori - trg_ori
-        f_norm = torch.norm(diff, p='fro', dim=(2, 3))
-        inter_loss = torch.mean(f_norm)
-        
+    def inter_loss(self, orientation, normal):
+        # Smooth L1 loss
+        loss_fn = nn.SmoothL1Loss(beta=0.1, reduction='mean')
+        inter_loss = loss_fn(orientation, normal)
         return inter_loss
 
-    def forward(self, src_ori, trg_ori, correspondence, gt_rot):
-        if len(correspondence) == 0:
-            return torch.tensor(0.).to(src_ori.device)
+    def forward(self, src_ori, trg_ori, gt_normals):
+        src_ori = src_ori.squeeze() # (1, N, 1, 3) --> (N, 3)
+        trg_ori = trg_ori.squeeze() # (1, M, 1, 3) --> (M, 3)
 
-        src_gt_rot = gt_rot[0]
-        trg_gt_rot = gt_rot[1]
-        ori_loss = self.inter_loss(src_ori, trg_ori, correspondence, src_gt_rot, trg_gt_rot)
+        src_normals = gt_normals[0].squeeze() # (1, N, 3) --> (N, 3)
+        trg_normals = gt_normals[1].squeeze() # (1, M, 3) --> (M, 3)
 
-        return ori_loss
+        src_ori_loss = self.inter_loss(src_ori, src_normals)
+        trg_ori_loss = self.inter_loss(trg_ori, trg_normals)
+
+        return src_ori_loss + trg_ori_loss
 
 class OrientationLossGeodesic(nn.Module):
     def __init__(self):

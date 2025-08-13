@@ -60,8 +60,8 @@ def save_normal(
     fig = go.Figure()
 
     for i in range(2):
-        pts = point_tensors[i].cpu().numpy()
-        nml = normal_tensors[i].cpu().numpy()
+        pts = point_tensors[i].squeeze(0).cpu().numpy()
+        nml = normal_tensors[i].squeeze(0).cpu().numpy()
 
         # Add point scatter
         fig.add_trace(go.Scatter3d(
