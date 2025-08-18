@@ -305,34 +305,35 @@ class EquiAssem(pl.LightningModule):
         #     out_dict['estimated_rotat'] = estimated_transform[:3, :3].T
         #     out_dict['estimated_trans'] = -(estimated_transform[:3, :3].inverse() @ -estimated_transform[:3, 3])
 
-        # # 10. Calculate Loss
-        # gt_corr = in_dict['gt_correspondence'].squeeze(0)
-        
-        # # 9-1. circle loss
-        # loss['c_loss'] = self.circle_loss(src_pcd_raw, trg_pcd_raw, src_shape_feats.transpose(-2,-1), trg_shape_feats.transpose(-2,-1), gt_corr)
+        if mode == 'train':
+            # # 10. Calculate Loss
+            # gt_corr = in_dict['gt_correspondence'].squeeze(0)
+            
+            # # 9-1. circle loss
+            # loss['c_loss'] = self.circle_loss(src_pcd_raw, trg_pcd_raw, src_shape_feats.transpose(-2,-1), trg_shape_feats.transpose(-2,-1), gt_corr)
 
-        # # 9-2 point matching loss
-        # loss['p_loss'] = self.matching_loss(matching_scores, gt_corr, src_pcd_raw, trg_pcd_raw)
+            # # 9-2 point matching loss
+            # loss['p_loss'] = self.matching_loss(matching_scores, gt_corr, src_pcd_raw, trg_pcd_raw)
 
-        # 9-3. orientation loss
-        # loss['o_loss'] = self.orientation_loss(src_ori, trg_ori, gt_corr, in_dict['gt_rotat'])
-        loss['o_loss'] = self.orientation_loss(src_ori, trg_ori, in_dict['gt_normals'])
-        
-        # # 9-4. occupancy loss
-        # if self.occ_loss=='positive': 
-        #     loss['occ_loss'] = self.occupancy_loss(src_pcd_raw, trg_pcd_raw, src_occ_feats.transpose(-2,-1), trg_occ_feats.transpose(-2,-1), gt_corr)
-        # else:
-        #     loss['occ_loss'] = self.occupancy_loss(src_pcd_raw, trg_pcd_raw, src_occ_feats.transpose(-2,-1), -trg_occ_feats.transpose(-2,-1), gt_corr)
+            # 9-3. orientation loss
+            # loss['o_loss'] = self.orientation_loss(src_ori, trg_ori, gt_corr, in_dict['gt_rotat'])
+            loss['o_loss'] = self.orientation_loss(src_ori, trg_ori, in_dict['gt_normals'])
+            
+            # # 9-4. occupancy loss
+            # if self.occ_loss=='positive': 
+            #     loss['occ_loss'] = self.occupancy_loss(src_pcd_raw, trg_pcd_raw, src_occ_feats.transpose(-2,-1), trg_occ_feats.transpose(-2,-1), gt_corr)
+            # else:
+            #     loss['occ_loss'] = self.occupancy_loss(src_pcd_raw, trg_pcd_raw, src_occ_feats.transpose(-2,-1), -trg_occ_feats.transpose(-2,-1), gt_corr)
 
-        # 9-4. final loss
-        # loss['loss'] = self.c_loss_weight * loss['c_loss'] + self.p_loss_weight * loss['p_loss'] + self.o_loss_weight * loss['o_loss'] +  self.occ_loss_weight * loss['occ_loss']
-        loss['loss'] = loss['o_loss']
-        out_dict.update(loss)
-        
-        # # 10. Evaluation
-        # if mode in ['val', 'test']:
-        #     eval_dict = self.evaluate_prediction(in_dict, out_dict, gt_corr)
-        #     loss.update(eval_dict)
+            # 9-4. final loss
+            # loss['loss'] = self.c_loss_weight * loss['c_loss'] + self.p_loss_weight * loss['p_loss'] + self.o_loss_weight * loss['o_loss'] +  self.occ_loss_weight * loss['occ_loss']
+            loss['loss'] = loss['o_loss']
+            out_dict.update(loss)
+            
+            # # 10. Evaluation
+            # if mode in ['val', 'test']:
+            #     eval_dict = self.evaluate_prediction(in_dict, out_dict, gt_corr)
+            #     loss.update(eval_dict)
 
         # breakpoint()
 
@@ -356,11 +357,11 @@ class EquiAssem(pl.LightningModule):
             # vis_dict['gt_correspondence'] = in_dict['gt_correspondence'].squeeze(0).cpu().detach()
             # vis_dict['pred_corr'] = pred_corr.cpu().detach()
 
-            save_folder = './pickles/only_ori'
+            save_folder = './pickles/only_ori_full'
             os.makedirs(save_folder, exist_ok=True)
             with open(f'{save_folder}/{in_dict["eval_idx"]}_debug.pickle', 'wb') as f:
                 pickle.dump(vis_dict, f)
-            print("writing...")
+            print(f"writing...{in_dict['eval_idx']}")
 
         # in training we log for every step
         if mode == 'train':
@@ -368,6 +369,8 @@ class EquiAssem(pl.LightningModule):
             self.log_dict(log_dict, logger=True, sync_dist=True, rank_zero_only=True, on_step=False, on_epoch=True, batch_size=1)
             lr = self.trainer.optimizers[0].param_groups[0]['lr']
             self.log('learning_rate', lr, prog_bar=True, logger=True)
+        else:
+            torch.cuda.empty_cache()
         return out_dict, loss
 
     @torch.no_grad()

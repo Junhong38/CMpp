@@ -49,13 +49,13 @@ def save_pc(filename:str, pcd_tensors:list):
         combined_cloud += pcd
     o3d.io.write_point_cloud(filename, combined_cloud)
 
-def save_mesh(in_dict, out_dict):
+def save_mesh(in_dict):
     base_path = '../../../../../hdd/junhong/data/bbad_v2/'
     obj_paths = [os.path.join(base_path+in_dict['filepath'], x) for x in os.listdir(base_path+in_dict['filepath'])]
     mesh = [trimesh.load_mesh(x) for x in obj_paths]
     
     # Create directories if they don't exist
-    save_dir = os.path.join('vis', 'everyday_only_ori')
+    save_dir = os.path.join('vis', 'everyday_only_ori_full')
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
     save_path = os.path.join(save_dir, f'{in_dict["eval_idx"][0].item()}_{len(in_dict["gt_rotat"])}part_'+in_dict['filepath'].replace('/','_'))
@@ -172,7 +172,8 @@ def test(args):
                 'eval_idx': f'{idx}|{pair_idx0}-{pair_idx1}'
             }
             # Forward pass
-            out_dict[f'{pair_idx0}-{pair_idx1}'] = model.forward_pass(in_dict_pair, 'test')
+            _ = model.forward_pass(in_dict_pair, 'test')
+            # out_dict[f'{pair_idx0}-{pair_idx1}'], _ = model.forward_pass(in_dict_pair, 'test')
             torch.cuda.empty_cache(); gc.collect()
         
     #     # 2. Pose Graph Optimization
@@ -251,7 +252,7 @@ def test(args):
     #     pa = _part_accuracy(pcds_pred, pcds_grtr)
     #     pa_crd = _part_accuracy_crd(pcds_pred, pcds_grtr)
 
-        if args.visualize: save_mesh(in_dict, out_dict)
+        if args.visualize: save_mesh(in_dict)
         
     #     crd_list.append(crd)
     #     cd_list.append(cd)
