@@ -229,21 +229,24 @@ class EquiAssem(pl.LightningModule):
     def forward_pass(self, in_dict, mode):
 
         out_dict, loss = {}, {}
-        src_pcd_raw = in_dict['pcd'][0].squeeze(0)
-        trg_pcd_raw = in_dict['pcd'][1].squeeze(0)
-        src_pcd = in_dict['pcd_t'][0] # (1, N ,3)
-        trg_pcd = in_dict['pcd_t'][1] # (1, M ,3)
+        # src_pcd_raw = in_dict['pcd'][0].squeeze(0)
+        # trg_pcd_raw = in_dict['pcd'][1].squeeze(0)
+        # src_pcd = in_dict['pcd_t'][0] # (1, N ,3)
+        # trg_pcd = in_dict['pcd_t'][1] # (1, M ,3)
+
+        N = len(in_dict['pcd_t'])
         
         # 1. SO(3)-Equivariant Feature Extractor
-        src_equi_feats = self.backbone(src_pcd) # (1, 341, 3, N)
-        trg_equi_feats = self.backbone(trg_pcd) # (1, 341, 3, M)
+        equi_feats = []
+        for i in range(N):
+            equi_feats.append(self.backbone(in_dict['pcd_t'][i]))
 
-        out_dict['src_equi_feats'] = src_equi_feats
-        out_dict['trg_equi_feats'] = trg_equi_feats
+        out_dict['equi_feats'] = equi_feats
 
         # 2. Basis Vector Projection 
-        src_vecs = self.proj(src_equi_feats).permute(0, 3, 1, 2) # (1, 341, 3, N) -> (1, 1, 3, N) -> (1, N, 1, 3)
-        trg_vecs = self.proj(trg_equi_feats).permute(0, 3, 1, 2) # (1, 341, 3, M) -> (1, 1, 3, M) -> (1, M, 1, 3)
+        vecs = []
+        for i in range(N):
+            vecs.append(self.proj(equi_feats[i]).permute(0, 3, 1, 2)) # (1, 341, 3, N) -> (1, 1, 3, N) -> (1, N, 1, 3)
 
         # 3. Gram Schmidt & Cross-product
         # src_ori = ortho2rotation(src_vecs) # (1, N, 2, 3) -> (1, N, 3, 3)
@@ -251,8 +254,9 @@ class EquiAssem(pl.LightningModule):
 
         # 3. Normalization
         eps = 1e-8
-        src_ori = src_vecs / (torch.norm(src_vecs, dim=3, keepdim=True) + eps)
-        trg_ori = trg_vecs / (torch.norm(trg_vecs, dim=3, keepdim=True) + eps)
+        oris = []
+        for i in range(N):
+            oris.append(vecs[i] / (torch.norm(vecs[i], dim=3, keepdim=True) + eps))
 
         # # 4. Invariant Features
         # src_inv_feats = torch.matmul(src_equi_feats.permute(0, 3, 1, 2), src_ori.transpose(-2,-1)) # (1, N, 341, 3) x (1, N, 3, 1) -> (1, N, 341, 1)
@@ -305,62 +309,56 @@ class EquiAssem(pl.LightningModule):
         #     out_dict['estimated_rotat'] = estimated_transform[:3, :3].T
         #     out_dict['estimated_trans'] = -(estimated_transform[:3, :3].inverse() @ -estimated_transform[:3, 3])
 
-        # # 10. Calculate Loss
-        # gt_corr = in_dict['gt_correspondence'].squeeze(0)
-        
-        # # 9-1. circle loss
-        # loss['c_loss'] = self.circle_loss(src_pcd_raw, trg_pcd_raw, src_shape_feats.transpose(-2,-1), trg_shape_feats.transpose(-2,-1), gt_corr)
+        if mode == 'train':
+            # # 10. Calculate Loss
+            # gt_corr = in_dict['gt_correspondence'].squeeze(0)
+            
+            # # 9-1. circle loss
+            # loss['c_loss'] = self.circle_loss(src_pcd_raw, trg_pcd_raw, src_shape_feats.transpose(-2,-1), trg_shape_feats.transpose(-2,-1), gt_corr)
 
-        # # 9-2 point matching loss
-        # loss['p_loss'] = self.matching_loss(matching_scores, gt_corr, src_pcd_raw, trg_pcd_raw)
+            # # 9-2 point matching loss
+            # loss['p_loss'] = self.matching_loss(matching_scores, gt_corr, src_pcd_raw, trg_pcd_raw)
 
-        # 9-3. orientation loss
-        # loss['o_loss'] = self.orientation_loss(src_ori, trg_ori, gt_corr, in_dict['gt_rotat'])
-        loss['o_loss'] = self.orientation_loss(src_ori, trg_ori, in_dict['gt_normals'])
-        
-        # # 9-4. occupancy loss
-        # if self.occ_loss=='positive': 
-        #     loss['occ_loss'] = self.occupancy_loss(src_pcd_raw, trg_pcd_raw, src_occ_feats.transpose(-2,-1), trg_occ_feats.transpose(-2,-1), gt_corr)
-        # else:
-        #     loss['occ_loss'] = self.occupancy_loss(src_pcd_raw, trg_pcd_raw, src_occ_feats.transpose(-2,-1), -trg_occ_feats.transpose(-2,-1), gt_corr)
+            # 9-3. orientation loss
+            # loss['o_loss'] = self.orientation_loss(src_ori, trg_ori, gt_corr, in_dict['gt_rotat'])
+            loss['o_loss'] = self.orientation_loss(oris, in_dict['gt_normals'])
+            
+            # # 9-4. occupancy loss
+            # if self.occ_loss=='positive': 
+            #     loss['occ_loss'] = self.occupancy_loss(src_pcd_raw, trg_pcd_raw, src_occ_feats.transpose(-2,-1), trg_occ_feats.transpose(-2,-1), gt_corr)
+            # else:
+            #     loss['occ_loss'] = self.occupancy_loss(src_pcd_raw, trg_pcd_raw, src_occ_feats.transpose(-2,-1), -trg_occ_feats.transpose(-2,-1), gt_corr)
 
-        # 9-4. final loss
-        # loss['loss'] = self.c_loss_weight * loss['c_loss'] + self.p_loss_weight * loss['p_loss'] + self.o_loss_weight * loss['o_loss'] +  self.occ_loss_weight * loss['occ_loss']
-        loss['loss'] = loss['o_loss']
-        out_dict.update(loss)
-        
-        # # 10. Evaluation
-        # if mode in ['val', 'test']:
-        #     eval_dict = self.evaluate_prediction(in_dict, out_dict, gt_corr)
-        #     loss.update(eval_dict)
+            # 9-4. final loss
+            # loss['loss'] = self.c_loss_weight * loss['c_loss'] + self.p_loss_weight * loss['p_loss'] + self.o_loss_weight * loss['o_loss'] +  self.occ_loss_weight * loss['occ_loss']
+            loss['loss'] = loss['o_loss']
+            out_dict.update(loss)
+            
+            # # 10. Evaluation
+            # if mode in ['val', 'test']:
+            #     eval_dict = self.evaluate_prediction(in_dict, out_dict, gt_corr)
+            #     loss.update(eval_dict)
 
-        # breakpoint()
+            # breakpoint()
 
         if self.debug:
             # if min(src_pcd.size(1), trg_pcd.size(1))>1000:
             vis_dict = {}
-            # vis_dict['src_shape_feats'] = src_shape_feats.squeeze(0).cpu().detach()
-            # vis_dict['src_occ_feats'] = src_occ_feats.squeeze(0).cpu().detach()
-            # vis_dict['trg_shape_feats'] = trg_shape_feats.squeeze(0).cpu().detach()
-            # vis_dict['trg_occ_feats'] = trg_occ_feats.squeeze(0).cpu().detach()
-            vis_dict['src_vec'] = src_vecs.squeeze(0).cpu().detach()
-            vis_dict['trg_vec'] = trg_vecs.squeeze(0).cpu().detach()
-            vis_dict['src_ori'] = src_ori.squeeze(0).cpu().detach()
-            vis_dict['trg_ori'] = trg_ori.squeeze(0).cpu().detach()
-            # vis_dict['src_pcd'] = src_pcd.squeeze(0).cpu().detach()
-            # vis_dict['trg_pcd'] = trg_pcd.squeeze(0).cpu().detach()
-            vis_dict['src_pcd_raw'] = src_pcd_raw.squeeze(0).cpu().detach()
-            vis_dict['trg_pcd_raw'] = trg_pcd_raw.squeeze(0).cpu().detach()
-            vis_dict['src_gt_rot'] = in_dict['gt_rotat'][0].squeeze(0).cpu().detach()
-            vis_dict['trg_gt_rot'] = in_dict['gt_rotat'][1].squeeze(0).cpu().detach()
-            # vis_dict['gt_correspondence'] = in_dict['gt_correspondence'].squeeze(0).cpu().detach()
-            # vis_dict['pred_corr'] = pred_corr.cpu().detach()
+            vis_dict['vecs']=[]
+            vis_dict['oris']=[]
+            vis_dict['pcd_raw']=[]
+            vis_dict['gt_rot']=[]
+            for i in range(N):
+                vis_dict['vecs'].append(vecs[i].squeeze(0).cpu().detach())
+                vis_dict['oris'].append(oris[i].squeeze(0).cpu().detach())
+                vis_dict['pcd_raw'].append(in_dict['pcd'][i].squeeze(0).cpu().detach())
+                vis_dict['gt_rot'].append(in_dict['gt_rotat'][i].squeeze(0).cpu().detach())
 
-            save_folder = './pickles/only_ori'
+            save_folder = './pickles/onetime_only_ori_full'
             os.makedirs(save_folder, exist_ok=True)
-            with open(f'{save_folder}/{in_dict["eval_idx"]}_debug.pickle', 'wb') as f:
+            with open(f'{save_folder}/{in_dict["eval_idx"][0].item()}_debug.pickle', 'wb') as f:
                 pickle.dump(vis_dict, f)
-            print("writing...")
+            print(f"writing...{in_dict['eval_idx'][0].item()}")
 
         # in training we log for every step
         if mode == 'train':

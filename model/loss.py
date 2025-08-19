@@ -164,21 +164,20 @@ class OrientationLoss(nn.Module):
 
     def inter_loss(self, orientation, normal):
         # Smooth L1 loss
-        loss_fn = nn.SmoothL1Loss(beta=0.1, reduction='mean')
+        loss_fn = nn.SmoothL1Loss(beta=1.0, reduction='mean')
         inter_loss = loss_fn(orientation, normal)
         return inter_loss
 
-    def forward(self, src_ori, trg_ori, gt_normals):
-        src_ori = src_ori.squeeze() # (1, N, 1, 3) --> (N, 3)
-        trg_ori = trg_ori.squeeze() # (1, M, 1, 3) --> (M, 3)
+    def forward(self, oris, gt_normals):
+        total_loss = 0
+        for i in range(len(oris)):
+            ori = oris[i].squeeze() # (1, N, 1, 3) --> (N, 3)
+            normal = gt_normals[i].squeeze() # (1, N, 3) --> (N, 3)
 
-        src_normals = gt_normals[0].squeeze() # (1, N, 3) --> (N, 3)
-        trg_normals = gt_normals[1].squeeze() # (1, M, 3) --> (M, 3)
+            ori_loss = self.inter_loss(ori, normal)
+            total_loss += ori_loss
 
-        src_ori_loss = self.inter_loss(src_ori, src_normals)
-        trg_ori_loss = self.inter_loss(trg_ori, trg_normals)
-
-        return src_ori_loss + trg_ori_loss
+        return total_loss
 
 class OrientationLossGeodesic(nn.Module):
     def __init__(self):

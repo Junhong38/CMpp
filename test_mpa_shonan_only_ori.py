@@ -49,13 +49,13 @@ def save_pc(filename:str, pcd_tensors:list):
         combined_cloud += pcd
     o3d.io.write_point_cloud(filename, combined_cloud)
 
-def save_mesh(in_dict, out_dict):
-    base_path = '../../../../../hdd/junhong/data/bbad_v2/'
+def save_mesh(in_dict):
+    base_path = '../../data/bbad_v2/'
     obj_paths = [os.path.join(base_path+in_dict['filepath'], x) for x in os.listdir(base_path+in_dict['filepath'])]
     mesh = [trimesh.load_mesh(x) for x in obj_paths]
     
     # Create directories if they don't exist
-    save_dir = os.path.join('vis', 'everyday_only_ori')
+    save_dir = os.path.join('vis', 'everyday_onetime_only_ori_full')
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
     save_path = os.path.join(save_dir, f'{in_dict["eval_idx"][0].item()}_{len(in_dict["gt_rotat"])}part_'+in_dict['filepath'].replace('/','_'))
@@ -153,27 +153,32 @@ def test(args):
     for idx, in_dict in enumerate(dataloader_test):
         # 1. Network forward pass: Pairwise matching & assembly
         in_dict = utils.to_cuda(in_dict)
-        pair_indices = list(itertools.permutations([i for i in range(in_dict['n_frac'])], 2))
-        out_dict, corr_scores = {}, {}
-        for pair_idx in pair_indices:
-            # Initialize pairwise input
-            pair_idx0, pair_idx1 = pair_idx
-            in_dict_pair = {
-                'filepath': in_dict['filepath'], 'obj_class': in_dict['obj_class'],
-                'pcd_t': [in_dict['pcd_t'][pair_idx0], in_dict['pcd_t'][pair_idx1]],
-                'pcd': [in_dict['pcd'][pair_idx0], in_dict['pcd'][pair_idx1]],
-                'n_frac': 2, # Pairwise matching
-                'gt_trans': [in_dict['gt_trans'][pair_idx0], in_dict['gt_trans'][pair_idx1]],
-                'gt_rotat': [in_dict['gt_rotat'][pair_idx0], in_dict['gt_rotat'][pair_idx1]],
-                'gt_rotat_inv': [in_dict['gt_rotat_inv'][pair_idx0], in_dict['gt_rotat_inv'][pair_idx1]],
-                'gt_trans_inv': [in_dict['gt_trans_inv'][pair_idx0], in_dict['gt_trans_inv'][pair_idx1]],
-                'relative_trsfm': {f'{pair_idx0}-{pair_idx1}': in_dict['relative_trsfm'][f'{pair_idx0}-{pair_idx1}']},
-                'gt_normals': [in_dict['gt_normals'][pair_idx0], in_dict['gt_normals'][pair_idx1]],
-                'eval_idx': f'{idx}|{pair_idx0}-{pair_idx1}'
-            }
-            # Forward pass
-            out_dict[f'{pair_idx0}-{pair_idx1}'] = model.forward_pass(in_dict_pair, 'test')
-            torch.cuda.empty_cache(); gc.collect()
+        
+        _ = model.forward_pass(in_dict, 'test')
+        torch.cuda.empty_cache(); gc.collect()
+
+        # pair_indices = list(itertools.permutations([i for i in range(in_dict['n_frac'])], 2))
+        # out_dict, corr_scores = {}, {}
+        # for pair_idx in pair_indices:
+        #     # Initialize pairwise input
+        #     pair_idx0, pair_idx1 = pair_idx
+        #     in_dict_pair = {
+        #         'filepath': in_dict['filepath'], 'obj_class': in_dict['obj_class'],
+        #         'pcd_t': [in_dict['pcd_t'][pair_idx0], in_dict['pcd_t'][pair_idx1]],
+        #         'pcd': [in_dict['pcd'][pair_idx0], in_dict['pcd'][pair_idx1]],
+        #         'n_frac': 2, # Pairwise matching
+        #         'gt_trans': [in_dict['gt_trans'][pair_idx0], in_dict['gt_trans'][pair_idx1]],
+        #         'gt_rotat': [in_dict['gt_rotat'][pair_idx0], in_dict['gt_rotat'][pair_idx1]],
+        #         'gt_rotat_inv': [in_dict['gt_rotat_inv'][pair_idx0], in_dict['gt_rotat_inv'][pair_idx1]],
+        #         'gt_trans_inv': [in_dict['gt_trans_inv'][pair_idx0], in_dict['gt_trans_inv'][pair_idx1]],
+        #         'relative_trsfm': {f'{pair_idx0}-{pair_idx1}': in_dict['relative_trsfm'][f'{pair_idx0}-{pair_idx1}']},
+        #         'gt_normals': [in_dict['gt_normals'][pair_idx0], in_dict['gt_normals'][pair_idx1]],
+        #         'eval_idx': f'{idx}|{pair_idx0}-{pair_idx1}'
+        #     }
+        #     # Forward pass
+        #     _ = model.forward_pass(in_dict_pair, 'test')
+        #     # out_dict[f'{pair_idx0}-{pair_idx1}'] = model.forward_pass(in_dict_pair, 'test')
+        #     torch.cuda.empty_cache(); gc.collect()
         
     #     # 2. Pose Graph Optimization
     #     params = gtsam.ShonanAveragingParameters3(gtsam.LevenbergMarquardtParams.CeresDefaults())
@@ -251,7 +256,7 @@ def test(args):
     #     pa = _part_accuracy(pcds_pred, pcds_grtr)
     #     pa_crd = _part_accuracy_crd(pcds_pred, pcds_grtr)
 
-        if args.visualize: save_mesh(in_dict, out_dict)
+        if args.visualize: save_mesh(in_dict)
         
     #     crd_list.append(crd)
     #     cd_list.append(cd)
@@ -274,7 +279,7 @@ def test(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Equivariant Assembly Pytorch Implementation')
-    parser.add_argument('--datapath', type=str, default='../../../../../hdd/junhong/data/bbad_v2')
+    parser.add_argument('--datapath', type=str, default='../../data/bbad_v2')
     parser.add_argument('--data_category', type=str, default='everyday', choices=['everyday', 'artifact', 'synthetic'])
     parser.add_argument('--sub_category', type=str, default='all')
     parser.add_argument('--n_pts', type=int, default=5000)

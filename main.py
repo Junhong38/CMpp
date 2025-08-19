@@ -167,7 +167,7 @@ def main(args):
 if __name__ == '__main__':
     # Arguments parsing
     parser = argparse.ArgumentParser(description='Equivariant Assembly Pytorch Implementation')
-    parser.add_argument('--datapath', type=str, default='../../../../../hdd/junhong/data/bbad_v2')
+    parser.add_argument('--datapath', type=str, default='../../data/bbad_v2')
     parser.add_argument('--data_category', type=str, default='everyday', choices=['everyday', 'artifact', 'synthetic'])
     parser.add_argument('--sub_category', type=str, default='all')
     parser.add_argument('--n_pts', type=int, default=5000)
@@ -209,6 +209,6 @@ if __name__ == '__main__':
         args.parallel_strategy = DDPStrategy(find_unused_parameters=False)
         args.lr = len(args.gpus) * args.lr
         args.n_worker = len(args.gpus) * 4
-    else: args.parallel_strategy = None
+    else: args.parallel_strategy = "auto"
 
     main(args)
