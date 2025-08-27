@@ -8,7 +8,7 @@ lib/pointops/dist/*
 vis/
 .ipynb_checkpoints/
 *.pickle
-*.txt
+# *.txt
 *.sh
 *.ipynb
 *.pcd
