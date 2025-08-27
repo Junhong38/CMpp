@@ -33,6 +33,7 @@ class DatasetBreakingBad(Dataset):
         self.anchor_idx = 0
 
         if self.mpa and self.split in ['train', 'val']:
+            # filepaths = join('./data/data_list', f"mpa_{data_category}_{split}.txt")
             filepaths = join('./data/data_list', f"mpa_{data_category}_{split}.txt")
         else:
             if self.split == 'test': split = 'val'
@@ -106,14 +107,24 @@ class DatasetBreakingBad(Dataset):
         logger.setLevel(logging.ERROR)
         mesh, pcd, face = self.read_obj_data(idx)
         
+        pair_indices = list(itertools.permutations([i for i in range(self.n_frac[idx])], 2))
+        
         # Get ground-truth correspondences
-        matching_inds = get_correspondences(to_o3d_pcd(pcd[0]), to_o3d_pcd(pcd[1]), self.overlap_radius)
+        if self.split in ['train', 'val']:
+            matching_inds = get_correspondences(to_o3d_pcd(pcd[0]), to_o3d_pcd(pcd[1]), self.overlap_radius)
+        else:
+            matching_inds = {}
+            for pair_idx in pair_indices:
+                pair_idx0, pair_idx1 = pair_idx
+                matching_inds[f'{pair_idx0}-{pair_idx1}'] = get_correspondences(to_o3d_pcd(pcd[pair_idx0]), to_o3d_pcd(pcd[pair_idx1]), self.overlap_radius)
+            matching_inds = [matching_inds]
         
         # Apply random transformation to sampled points
         pcd_t, mesh_t, gt_trans = self._translate(mesh, pcd)
         pcd_t, mesh_t, gt_rotat = self._rotate(mesh_t, pcd_t)
         gt_relative_trsfm = self._compute_relative_transform(gt_trans, gt_rotat)
 
+        # Get ground-truth normals
         gt_normals = [
             mesh_t[i].face_normals[face_i] for i, face_i in enumerate(face)
         ]

@@ -15,7 +15,7 @@ from scipy.spatial.transform import Rotation
 
 import pytorch_lightning as pl
 from pytorch_lightning.loggers import WandbLogger
-from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor
+from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor, EarlyStopping
 
 from data.dataset import GADataset
 from common import utils
@@ -42,21 +42,24 @@ def main(args):
                         no_ori=args.no_ori,
                         attention=args.attention,
                         visualize=args.visualize,
-                        debug=args.debug)
+                        debug=args.debug,
+                        reverse_normal=args.reverse_normal)
     elif args.model == 'shape_only':
         model = EquiAssem_shape(lr=args.lr,
                         backbone=args.backbone,
                         shape_loss=args.shape_loss, 
                         no_ori=args.no_ori,
                         visualize=args.visualize,
-                        debug=args.debug)
+                        debug=args.debug,
+                        reverse_normal=args.reverse_normal)
     elif args.model == 'occ_only':
         model = EquiAssem_occ(lr=args.lr,
                         backbone=args.backbone,
                         occ_loss=args.occ_loss, 
                         no_ori=args.no_ori,
                         visualize=args.visualize,
-                        debug=args.debug)
+                        debug=args.debug,
+                        reverse_normal=args.reverse_normal)
 
     # Dataset initialization
     GADataset.initialize(args.datapath, args.data_category, args.sub_category, args.min_part, args.max_part, args.n_pts, args.scale)
@@ -96,21 +99,23 @@ def main(args):
         logger_id = None
     
     # configure callbacks
-    # checkpoint_callback_crd = ModelCheckpoint(dirpath=ckp_dir, filename='model-crd-{epoch:03d}', monitor='val/crd', save_top_k=1, mode='min')
-    # checkpoint_callback_cd = ModelCheckpoint(dirpath=ckp_dir, filename='model-cd-{epoch:03d}', monitor='val/cd', save_top_k=1, mode='min')
-    # checkpoint_callback_rrmse = ModelCheckpoint(dirpath=ckp_dir, filename='model-rrmse-{epoch:03d}', monitor='val/rrmse', save_top_k=1, mode='min')
-    # checkpoint_callback_trmse = ModelCheckpoint(dirpath=ckp_dir, filename='model-trmse-{epoch:03d}', monitor='val/trmse', save_top_k=1, mode='min')
+    checkpoint_callback_crd = ModelCheckpoint(dirpath=ckp_dir, filename='model-crd-{epoch:03d}', monitor='val/crd', save_top_k=1, mode='min')
+    checkpoint_callback_cd = ModelCheckpoint(dirpath=ckp_dir, filename='model-cd-{epoch:03d}', monitor='val/cd', save_top_k=1, mode='min')
+    checkpoint_callback_rrmse = ModelCheckpoint(dirpath=ckp_dir, filename='model-rrmse-{epoch:03d}', monitor='val/rrmse', save_top_k=1, mode='min')
+    checkpoint_callback_trmse = ModelCheckpoint(dirpath=ckp_dir, filename='model-trmse-{epoch:03d}', monitor='val/trmse', save_top_k=1, mode='min')
     checkpoint_callback_Oloss = ModelCheckpoint(dirpath=ckp_dir, filename='model-Oloss-{epoch:03d}', monitor='val/o_loss', save_top_k=1, mode='min')
     latest_checkpoint_callback = ModelCheckpoint(dirpath=ckp_dir, filename='model-latest', save_last=True)
+    early = EarlyStopping(monitor="val/loss", mode="min", patience=20, min_delta=1e-4, verbose=True)
 
     callbacks = [
         LearningRateMonitor('epoch'),
-        # checkpoint_callback_crd,
-        # checkpoint_callback_cd,
-        # checkpoint_callback_rrmse,
-        # checkpoint_callback_trmse,
+        checkpoint_callback_crd,
+        checkpoint_callback_cd,
+        checkpoint_callback_rrmse,
+        checkpoint_callback_trmse,
         checkpoint_callback_Oloss,
         latest_checkpoint_callback,
+        early,
     ]
 
     logger = WandbLogger(
@@ -191,6 +196,7 @@ if __name__ == '__main__':
     parser.add_argument('--occ_loss', type=str, default='negative', choices=['positive', 'negative'])
     parser.add_argument('--no_ori', action='store_true')
     parser.add_argument('--attention', type=str, default='channel', choices=['channel', 'none'])
+    parser.add_argument('--reverse_normal', action='store_true')
     
     # Additional experiments
     parser.add_argument('--visualize', action='store_true')
@@ -201,7 +207,7 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    args.epochs = 90 if args.data_category == 'everyday' else 120
+    args.epochs = 200 if args.data_category == 'everyday' else 250
     args.epochs = 300 if args.max_part > 2 else args.epochs
     
     if len(args.gpus) > 1: 

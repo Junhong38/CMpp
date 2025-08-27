@@ -16,6 +16,7 @@ from scipy.spatial.distance import cdist
 
 from common.rotation import ortho2rotation
 from chamfer_distance import ChamferDistance as chamfer_dist
+from pytorch3d.ops import iterative_closest_point
 
 
 from model.backbone.vn_dgcnn import EQCNN_equi_unet
@@ -69,15 +70,26 @@ class ChannelAttentionModule(nn.Module):
         return attention
 
 class EquiAssem(pl.LightningModule):
-    def __init__(self, lr, backbone='vn_unet', shape_loss='positive', occ_loss='negative', no_ori=False, attention='channel', visualize=False, debug=False):
+    def __init__(
             # self, 
-            # lr, backbone='vn_unet', shape_loss='positive', occ_loss='negative', 
-            # no_ori=False, attention='channel', registration='ransac', match_selection_str='injective', 
-            # visualize=False, debug=False, inlier_threshold=0.01, score_threshold=0, 
-            # auto_score_threshold=False, ori_threshold=-1, weighted_voting=False,
-            # gt_normal_threshold=-1, gt_mating_surface=False,
-            # score_comb='intersection'
+            # lr, 
+            # backbone='vn_unet', 
+            # shape_loss='positive', 
+            # occ_loss='negative', 
+            # no_ori=False, 
+            # attention='channel', 
+            # visualize=False, 
+            # debug=False,
+            # reverse_normal=False
             # ):
+            self, 
+            lr, backbone='vn_unet', shape_loss='positive', occ_loss='negative', 
+            no_ori=False, attention='channel', registration='wsvd', match_selection_str='injective', 
+            visualize=False, debug=False, inlier_threshold=0.01, score_threshold=0, 
+            auto_score_threshold=False, ori_threshold=-1, weighted_voting=False,
+            gt_normal_threshold=-1, gt_mating_surface=False,
+            score_comb='intersection', reverse_normal=False
+            ):
         super(EquiAssem, self).__init__()
 
         self.lr = lr
@@ -86,8 +98,8 @@ class EquiAssem(pl.LightningModule):
         self.no_ori = no_ori
         self.attention = attention
         
-        # self.registration = registration
-        # self.match_selection = match_selection_str
+        self.registration = registration
+        self.match_selection = match_selection_str
 
         # Output feature dimension of Feature Extractor
         self.feat_dim = 1024
@@ -106,76 +118,78 @@ class EquiAssem(pl.LightningModule):
         # self.proj = VNLinear(self.feat_dim//3, 2)
         self.proj = VNLinear(self.feat_dim, 1)
 
-        # # Channel Attention
-        # if attention == 'channel':
-        #     self.c_attn = ChannelAttentionModule(self.feat_dim, self.feat_dim, ratio=4)
+        # Channel Attention
+        if attention == 'channel':
+            self.c_attn = ChannelAttentionModule(self.feat_dim, self.feat_dim, ratio=4)
         
-        # # Shape Descriptor
-        # self.shape_mlp = nn.Sequential(nn.Conv1d(self.feat_dim, self.feat_dim//2, kernel_size=1, bias=False),
-        #                         nn.InstanceNorm1d(self.feat_dim//2),
-        #                         nn.LeakyReLU(negative_slope=0.2),
-        #                         nn.Conv1d(self.feat_dim//2, self.feat_dim//2, kernel_size=1, bias=False),
-        #                         nn.InstanceNorm1d(self.feat_dim//2),
-        #                         nn.LeakyReLU(negative_slope=0.2),
-        #                         nn.Conv1d(self.feat_dim//2, self.feat_dim//2, kernel_size=1, bias=False),
-        #                         nn.InstanceNorm1d(self.feat_dim//2),
-        #                         nn.LeakyReLU(negative_slope=0.2),
-        #                         )
+        # Shape Descriptor
+        self.shape_mlp = nn.Sequential(nn.Conv1d(self.feat_dim, self.feat_dim//2, kernel_size=1, bias=False),
+                                nn.InstanceNorm1d(self.feat_dim//2),
+                                nn.LeakyReLU(negative_slope=0.2),
+                                nn.Conv1d(self.feat_dim//2, self.feat_dim//2, kernel_size=1, bias=False),
+                                nn.InstanceNorm1d(self.feat_dim//2),
+                                nn.LeakyReLU(negative_slope=0.2),
+                                nn.Conv1d(self.feat_dim//2, self.feat_dim//2, kernel_size=1, bias=False),
+                                nn.InstanceNorm1d(self.feat_dim//2),
+                                nn.LeakyReLU(negative_slope=0.2),
+                                )
         
-        # # Occupancy Descriptor
-        # self.occ_mlp = nn.Sequential(nn.Conv1d(self.feat_dim, self.feat_dim//2, kernel_size=1, bias=False),
-        #                         nn.InstanceNorm1d(self.feat_dim//2),
-        #                         nn.LeakyReLU(negative_slope=0.2),
-        #                         nn.Conv1d(self.feat_dim//2, self.feat_dim//2, kernel_size=1, bias=False),
-        #                         nn.InstanceNorm1d(self.feat_dim//2),
-        #                         nn.LeakyReLU(negative_slope=0.2),
-        #                         nn.Conv1d(self.feat_dim//2, self.feat_dim//2, kernel_size=1, bias=False),
-        #                         nn.InstanceNorm1d(self.feat_dim//2),
-        #                         nn.Tanh()
-        #                         )
+        # Occupancy Descriptor
+        self.occ_mlp = nn.Sequential(nn.Conv1d(self.feat_dim, self.feat_dim//2, kernel_size=1, bias=False),
+                                nn.InstanceNorm1d(self.feat_dim//2),
+                                nn.LeakyReLU(negative_slope=0.2),
+                                nn.Conv1d(self.feat_dim//2, self.feat_dim//2, kernel_size=1, bias=False),
+                                nn.InstanceNorm1d(self.feat_dim//2),
+                                nn.LeakyReLU(negative_slope=0.2),
+                                nn.Conv1d(self.feat_dim//2, self.feat_dim//2, kernel_size=1, bias=False),
+                                nn.InstanceNorm1d(self.feat_dim//2),
+                                nn.Tanh()
+                                )
         
-        # # Optimal Transport
-        # self.optimal_transport = LearnableLogOptimalTransport(num_iterations=100)
+        # Optimal Transport
+        self.optimal_transport = LearnableLogOptimalTransport(num_iterations=100)
 
-        # # LGR
-        # self.fine_matching = LocalGlobalRegistration(
-        #     k=3,
-        #     acceptance_radius=0.1,
-        #     mutual=True,
-        #     confidence_threshold=0.05,
-        #     use_dustbin=False,
-        #     use_global_score=False,
-        #     correspondence_threshold=3,
-        #     correspondence_limit=None,
-        #     num_refinement_steps=5,
-        # )
+        # LGR
+        self.fine_matching = LocalGlobalRegistration(
+            k=3,
+            acceptance_radius=0.1,
+            mutual=True,
+            confidence_threshold=0.05,
+            use_dustbin=False,
+            use_global_score=False,
+            correspondence_threshold=3,
+            correspondence_limit=None,
+            num_refinement_steps=5,
+        )
         
         # Objectives
-        # self.circle_loss = CircleLoss()
-        # self.matching_loss = PointMatchingLoss()
+        self.matching_loss = PointMatchingLoss()
         self.orientation_loss = OrientationLoss()
-        # self.occupancy_loss = CircleLoss()
+        self.shape_loss = CircleLoss()
+        self.occupancy_loss = CircleLoss()
 
-        # # Weights for losses
-        # self.c_loss_weight = 0.5 
-        # self.occ_loss_weight = 0.5
-        # self.p_loss_weight = 1.0
-        # self.o_loss_weight = 0 if no_ori else 0.1
+        # Weights for losses
+        self.s_loss_weight = 0.5 
+        self.occ_loss_weight = 0.5
+        self.p_loss_weight = 1.0
+        self.o_loss_weight = 0 if no_ori else 1.0 #0.1
 
         self.debug = debug
         self.visualize = visualize
 
+        self.reverse_normal = reverse_normal
+
         self.validation_step_outputs = []
         self.test_step_outputs = []
 
-        # self.inlier_threshold = inlier_threshold
-        # self.score_threshold = score_threshold
-        # self.auto_score_threshold = auto_score_threshold
-        # self.ori_threshold = ori_threshold
-        # self.weighted_voting = weighted_voting
-        # self.gt_normal_threshold = gt_normal_threshold
-        # self.gt_mating_surface = gt_mating_surface
-        # self.score_comb = score_comb
+        self.inlier_threshold = inlier_threshold
+        self.score_threshold = score_threshold
+        self.auto_score_threshold = auto_score_threshold
+        self.ori_threshold = ori_threshold
+        self.weighted_voting = weighted_voting
+        self.gt_normal_threshold = gt_normal_threshold
+        self.gt_mating_surface = gt_mating_surface
+        self.score_comb = score_comb
         
     def configure_optimizers(self):
         """Build optimizer and lr scheduler."""
@@ -235,15 +249,15 @@ class EquiAssem(pl.LightningModule):
         trg_pcd = in_dict['pcd_t'][1] # (1, M ,3)
         
         # 1. SO(3)-Equivariant Feature Extractor
-        src_equi_feats = self.backbone(src_pcd) # (1, 341, 3, N)
-        trg_equi_feats = self.backbone(trg_pcd) # (1, 341, 3, M)
+        src_equi_feats = self.backbone(src_pcd) # (1, 1024, 3, N)
+        trg_equi_feats = self.backbone(trg_pcd) # (1, 1024, 3, M)
 
         out_dict['src_equi_feats'] = src_equi_feats
         out_dict['trg_equi_feats'] = trg_equi_feats
 
         # 2. Basis Vector Projection 
-        src_vecs = self.proj(src_equi_feats).permute(0, 3, 1, 2) # (1, 341, 3, N) -> (1, 1, 3, N) -> (1, N, 1, 3)
-        trg_vecs = self.proj(trg_equi_feats).permute(0, 3, 1, 2) # (1, 341, 3, M) -> (1, 1, 3, M) -> (1, M, 1, 3)
+        src_vecs = self.proj(src_equi_feats).permute(0, 3, 1, 2) # (1, 1024, 3, N) -> (1, 1, 3, N) -> (1, N, 1, 3)
+        trg_vecs = self.proj(trg_equi_feats).permute(0, 3, 1, 2) # (1, 1024, 3, M) -> (1, 1, 3, M) -> (1, M, 1, 3)
 
         # 3. Gram Schmidt & Cross-product
         # src_ori = ortho2rotation(src_vecs) # (1, N, 2, 3) -> (1, N, 3, 3)
@@ -254,86 +268,86 @@ class EquiAssem(pl.LightningModule):
         src_ori = src_vecs / (torch.norm(src_vecs, dim=3, keepdim=True) + eps)
         trg_ori = trg_vecs / (torch.norm(trg_vecs, dim=3, keepdim=True) + eps)
 
-        # # 4. Invariant Features
-        # src_inv_feats = torch.matmul(src_equi_feats.permute(0, 3, 1, 2), src_ori.transpose(-2,-1)) # (1, N, 341, 3) x (1, N, 3, 1) -> (1, N, 341, 1)
-        # trg_inv_feats = torch.matmul(trg_equi_feats.permute(0, 3, 1, 2), trg_ori.transpose(-2,-1)) # (1, M, 341, 3) x (1, M, 3, 1) -> (1, M, 341, 1)
-        # src_inv_feats = rearrange(src_inv_feats, 'b n c r -> b (c r) n') # (1, N, 341, 3) -> (1, 1024, N)
-        # trg_inv_feats = rearrange(trg_inv_feats, 'b n c r -> b (c r) n') # (1, M, 341, 3) -> (1, 1024, M)
+        # 4. Invariant Features
+        direction = -1 if self.reverse_normal else 1
+        src_inv_feats = torch.matmul(src_equi_feats.permute(0, 3, 1, 2), direction * src_ori.transpose(-2,-1)) # (1, N, 1024, 3) x (1, N, 3, 1) -> (1, N, 1024, 1)
+        trg_inv_feats = torch.matmul(trg_equi_feats.permute(0, 3, 1, 2), trg_ori.transpose(-2,-1)) # (1, M, 1024, 3) x (1, M, 3, 1) -> (1, M, 1024, 1)
+        src_inv_feats = rearrange(src_inv_feats, 'b n c r -> b (c r) n') # (1, N, 1024, 3) -> (1, 1024, N)
+        trg_inv_feats = rearrange(trg_inv_feats, 'b n c r -> b (c r) n') # (1, M, 1024, 3) -> (1, 1024, M)
         
-        # # 5. Chaneel Attention Map
-        # if self.attention == 'channel':
-        #     inv_feats = torch.cat([src_inv_feats, trg_inv_feats], dim=-1)  # (1, 1024, N+M)
-        #     attention = self.c_attn(inv_feats) # (1, 1024, N+M) -> (1, 1024, N+M)
+        # 5. Chaneel Attention Map
+        if self.attention == 'channel':
+            inv_feats = torch.cat([src_inv_feats, trg_inv_feats], dim=-1)  # (1, 1024, N+M)
+            attention = self.c_attn(inv_feats) # (1, 1024, N+M) -> (1, 1024, N+M)
             
-        #     shape_attention, occ_attention = attention[:, :512], attention[:, 512:]
-        #     loss['shape_attn_ratio'] = shape_attention.sum() / (shape_attention.sum()+occ_attention.sum())
-        #     loss['occ_attn_ratio'] = occ_attention.sum() / (shape_attention.sum()+occ_attention.sum())
+            shape_attention, occ_attention = attention[:, :512], attention[:, 512:]
+            loss['shape_attn_ratio'] = shape_attention.sum() / (shape_attention.sum()+occ_attention.sum())
+            loss['occ_attn_ratio'] = occ_attention.sum() / (shape_attention.sum()+occ_attention.sum())
         
-        # #### 6. SHAPE DESCRIPTOR ####
-        # src_shape_feats = self.shape_mlp(src_inv_feats) # (1, 1024, M) -> (1, 512, M)
-        # if self.attention == 'channel': src_shape_feats = src_shape_feats * shape_attention
-        # trg_shape_feats = self.shape_mlp(trg_inv_feats) # (1, 1024, M) -> (1, 512, M)
-        # if self.attention == 'channel': trg_shape_feats = trg_shape_feats * shape_attention
-        # #### 6. SHAPE DESCRIPTOR ####
+        #### 6. SHAPE DESCRIPTOR ####
+        src_shape_feats = self.shape_mlp(src_inv_feats) # (1, 1024, M) -> (1, 512, M)
+        if self.attention == 'channel': src_shape_feats = src_shape_feats * shape_attention
+        trg_shape_feats = self.shape_mlp(trg_inv_feats) # (1, 1024, M) -> (1, 512, M)
+        if self.attention == 'channel': trg_shape_feats = trg_shape_feats * shape_attention
+        #### 6. SHAPE DESCRIPTOR ####
 
-        # #### 7. OCCUPANCY DESCRIPTOR ####
-        # src_occ_feats = self.occ_mlp(src_inv_feats) # (1, 1024, N) -> (1, 512, N)
-        # if self.attention == 'channel': src_occ_feats = src_occ_feats * occ_attention
-        # trg_occ_feats = self.occ_mlp(trg_inv_feats) # (1, 1024, M) -> (1, 512, M)
-        # if self.attention == 'channel': trg_occ_feats = trg_occ_feats * occ_attention
-        # #### 7. OCCUPANCY DESCRIPTOR ####
+        #### 7. OCCUPANCY DESCRIPTOR ####
+        src_occ_feats = self.occ_mlp(src_inv_feats) # (1, 1024, N) -> (1, 512, N)
+        if self.attention == 'channel': src_occ_feats = src_occ_feats * occ_attention
+        trg_occ_feats = self.occ_mlp(trg_inv_feats) # (1, 1024, M) -> (1, 512, M)
+        if self.attention == 'channel': trg_occ_feats = trg_occ_feats * occ_attention
+        #### 7. OCCUPANCY DESCRIPTOR ####
 
-        # # 8. Optimal Transport
-        # shape_matching_scores = torch.einsum('b c n , b c m -> b n m', src_shape_feats, trg_shape_feats) # (1, N, M)
-        # shape_matching_scores = shape_matching_scores / src_shape_feats.shape[1] ** 0.5
+        # 8. Optimal Transport
+        shape_matching_scores = torch.einsum('b c n , b c m -> b n m', src_shape_feats, trg_shape_feats) # (1, N, M)
+        shape_matching_scores = shape_matching_scores / src_shape_feats.shape[1] ** 0.5
 
-        # if self.occ_loss=='positive': 
-        #     occ_matching_scores = torch.einsum('b c n , b c m -> b n m', src_occ_feats, trg_occ_feats) # (1, N, M)
-        # else: 
-        #     occ_matching_scores = -torch.einsum('b c n , b c m -> b n m', src_occ_feats, trg_occ_feats) # (1, N, M)
-        # occ_matching_scores = occ_matching_scores / src_occ_feats.shape[1] ** 0.5
+        if self.occ_loss=='positive': 
+            occ_matching_scores = torch.einsum('b c n , b c m -> b n m', src_occ_feats, trg_occ_feats) # (1, N, M)
+        else: 
+            occ_matching_scores = -torch.einsum('b c n , b c m -> b n m', src_occ_feats, trg_occ_feats) # (1, N, M)
+        occ_matching_scores = occ_matching_scores / src_occ_feats.shape[1] ** 0.5
 
-        # matching_scores = self.optimal_transport(shape_matching_scores + occ_matching_scores) # (1, N, M) -> (1, N+1, M+1)
-        # matching_scores_drop = matching_scores[:,:-1,:-1]
+        matching_scores = self.optimal_transport(shape_matching_scores + occ_matching_scores) # (1, N, M) -> (1, N+1, M+1)
+        matching_scores_drop = matching_scores[:,:-1,:-1]
 
-        # # 9. Weighted SVD with top-k correspondence selections
-        # if mode in ['val', 'test']:
-        #     with torch.no_grad():
-        #         src_corr_pts, trg_corr_pts, corr_scores, estimated_transform, pred_corr = self.fine_matching(
-        #             src_pcd, trg_pcd, matching_scores_drop, k=128)
+        # 9. Weighted SVD with top-k correspondence selections
+        if mode in ['val', 'test']:
+            with torch.no_grad():
+                src_corr_pts, trg_corr_pts, corr_scores, estimated_transform, pred_corr = self.fine_matching(
+                    src_pcd, trg_pcd, matching_scores_drop, k=128)
 
-        #     out_dict['estimated_rotat'] = estimated_transform[:3, :3].T
-        #     out_dict['estimated_trans'] = -(estimated_transform[:3, :3].inverse() @ -estimated_transform[:3, 3])
+            out_dict['estimated_rotat'] = estimated_transform[:3, :3].T
+            out_dict['estimated_trans'] = -(estimated_transform[:3, :3].inverse() @ -estimated_transform[:3, 3])
 
-        if mode == 'train':
-            # # 10. Calculate Loss
-            # gt_corr = in_dict['gt_correspondence'].squeeze(0)
-            
-            # # 9-1. circle loss
-            # loss['c_loss'] = self.circle_loss(src_pcd_raw, trg_pcd_raw, src_shape_feats.transpose(-2,-1), trg_shape_feats.transpose(-2,-1), gt_corr)
+        # 10. Calculate Loss
+        gt_corr = in_dict['gt_correspondence'].squeeze(0)
+        
+        # 9-1. shape loss
+        loss['s_loss'] = self.shape_loss(src_pcd_raw, trg_pcd_raw, src_shape_feats.transpose(-2,-1), trg_shape_feats.transpose(-2,-1), gt_corr)
 
-            # # 9-2 point matching loss
-            # loss['p_loss'] = self.matching_loss(matching_scores, gt_corr, src_pcd_raw, trg_pcd_raw)
+        # 9-2 point matching loss
+        loss['p_loss'] = self.matching_loss(matching_scores, gt_corr, src_pcd_raw, trg_pcd_raw)
 
-            # 9-3. orientation loss
-            # loss['o_loss'] = self.orientation_loss(src_ori, trg_ori, gt_corr, in_dict['gt_rotat'])
-            loss['o_loss'] = self.orientation_loss(src_ori, trg_ori, in_dict['gt_normals'])
-            
-            # # 9-4. occupancy loss
-            # if self.occ_loss=='positive': 
-            #     loss['occ_loss'] = self.occupancy_loss(src_pcd_raw, trg_pcd_raw, src_occ_feats.transpose(-2,-1), trg_occ_feats.transpose(-2,-1), gt_corr)
-            # else:
-            #     loss['occ_loss'] = self.occupancy_loss(src_pcd_raw, trg_pcd_raw, src_occ_feats.transpose(-2,-1), -trg_occ_feats.transpose(-2,-1), gt_corr)
+        # 9-3. orientation loss
+        # loss['o_loss'] = self.orientation_loss(src_ori, trg_ori, gt_corr, in_dict['gt_rotat'])
+        loss['o_loss'] = self.orientation_loss(src_ori, trg_ori, in_dict['gt_normals'])
+        
+        # 9-4. occupancy loss
+        if self.occ_loss=='positive': 
+            loss['occ_loss'] = self.occupancy_loss(src_pcd_raw, trg_pcd_raw, src_occ_feats.transpose(-2,-1), trg_occ_feats.transpose(-2,-1), gt_corr)
+        else:
+            loss['occ_loss'] = self.occupancy_loss(src_pcd_raw, trg_pcd_raw, src_occ_feats.transpose(-2,-1), -trg_occ_feats.transpose(-2,-1), gt_corr)
 
-            # 9-4. final loss
-            # loss['loss'] = self.c_loss_weight * loss['c_loss'] + self.p_loss_weight * loss['p_loss'] + self.o_loss_weight * loss['o_loss'] +  self.occ_loss_weight * loss['occ_loss']
-            loss['loss'] = loss['o_loss']
-            out_dict.update(loss)
-            
-            # # 10. Evaluation
-            # if mode in ['val', 'test']:
-            #     eval_dict = self.evaluate_prediction(in_dict, out_dict, gt_corr)
-            #     loss.update(eval_dict)
+        # 9-4. final loss
+        loss['loss'] = self.p_loss_weight * loss['p_loss'] + self.o_loss_weight * loss['o_loss'] + self.s_loss_weight * loss['s_loss'] + self.occ_loss_weight * loss['occ_loss']
+        # loss['loss'] = loss['o_loss']
+        out_dict.update(loss)
+        
+        # 10. Evaluation
+        if mode in ['val', 'test']:
+            eval_dict = self.evaluate_prediction(in_dict, out_dict, gt_corr)
+            loss.update(eval_dict)
 
         # breakpoint()
 
@@ -392,6 +406,7 @@ class EquiAssem(pl.LightningModule):
         eval_result['cd'] = self._chamfer_distance(assm_pred, assm_grtr, is_trg_larger)
 
         # (b) Compute MSE between prediction & ground-truth for rotation (in degree) and translation
+        # eval_result['rrmse'], eval_result['trmse'] = self._transformation_error(pcds_pred, pcds_grtr, multi_part) # geodesic distance via Rodrigues formula following Rectified-Point-Flow
         eval_result['rrmse'], eval_result['trmse'] = self._transformation_error(pred_relative_trsfm, grtr_relative_trsfm, multi_part)
 
         # (c) Compute CoRrespondence Distance (CRD) betwween prediction & ground-truth
@@ -492,6 +507,35 @@ class EquiAssem(pl.LightningModule):
         dist1, dist2, idx1, idx2 = chd(assm1.unsqueeze(0), assm2.unsqueeze(0))
         cd = (dist1.mean(dim=-1) + dist2.mean(dim=-1)) * scaling
         return cd
+
+    # def _transformation_error(self, pcds_pred, pcds_grtr, multi_part):
+    #     if multi_part:
+    #         breakpoint()
+        
+    #     rrmse, trmse = 0., 0.
+    #     N = len(pcds_grtr)
+    #     for i in range(N):
+    #         if i == 0: continue
+    #         error = iterative_closest_point(pcds_pred[i].unsqueeze(0), pcds_grtr[i].unsqueeze(0)).RTs
+    #         rrmse += torch.rad2deg(torch.acos(torch.clamp(0.5 * (torch.trace(error.R[0]) - 1), -1, 1)))
+    #         trmse += torch.norm(error.T[0]) * 100 # m -> cm
+    #         breakpoint()
+    #     return rrmse / (N-1), trmse / (N-1)
+
+    # def _transformation_error(self, trnsf1, trnsf2, multi_part):
+    #     if multi_part:
+    #         rotat1, trans1 = trnsf1
+    #         rotat2, trans2 = trnsf2
+    #     else:
+    #         rotat1, trans1 = [trnsf1[0]], [trnsf1[1]]
+    #         rotat2, trans2 = [trnsf2[0]], [trnsf2[1]]
+    #     rrmse, trmse = 0., 0.
+    #     for r1, r2, t1, t2 in zip(rotat1, rotat2, trans1, trans2):
+    #         rrmse += torch.rad2deg(torch.acos(torch.clamp(0.5 * (torch.trace(r1 * r2.T) - 1), -1, 1)))
+    #         trmse += torch.norm(t1 - t2) * 100
+    #         breakpoint()
+    #     div = len(rotat1) if multi_part else 1
+    #     return rrmse / div, trmse / div
     
     def _transformation_error(self, trnsf1, trnsf2, multi_part, rrmse_scaling=100):
         if multi_part:
@@ -536,22 +580,28 @@ class EquiAssem(pl.LightningModule):
         trg_pcd = in_dict['pcd_t'][1] # (1, M ,3)
 
         # 1. SO(3)-Equivariant Feature Extractor
-        src_equi_feats = self.backbone(src_pcd) # (1, 341, 3, N)
-        trg_equi_feats = self.backbone(trg_pcd) # (1, 341, 3, M)
+        src_equi_feats = self.backbone(src_pcd) # (1, 1024, 3, N)
+        trg_equi_feats = self.backbone(trg_pcd) # (1, 1024, 3, M)
 
         # 2. Basis Vector Projection 
-        src_vecs = self.proj(src_equi_feats).permute(0, 3, 1, 2) # (1, 341, 3, N) -> (1, 2, 3, N) -> (1, N, 2, 3)
-        trg_vecs = self.proj(trg_equi_feats).permute(0, 3, 1, 2) # (1, 341, 3, M) -> (1, 2, 3, M) -> (1, M, 2, 3)
+        src_vecs = self.proj(src_equi_feats).permute(0, 3, 1, 2) # (1, 1024, 3, N) -> (1, 2, 3, N) -> (1, N, 1, 3)
+        trg_vecs = self.proj(trg_equi_feats).permute(0, 3, 1, 2) # (1, 1024, 3, M) -> (1, 2, 3, M) -> (1, M, 1, 3)
 
         # 3. Gram Schmidt & Cross-product
-        src_ori = ortho2rotation(src_vecs) # (1, N, 2, 3) -> (1, N, 3, 3)
-        trg_ori = ortho2rotation(trg_vecs) # (1, M, 2, 3) -> (1, M, 3, 3)
+        # src_ori = ortho2rotation(src_vecs) # (1, N, 2, 3) -> (1, N, 3, 3)
+        # trg_ori = ortho2rotation(trg_vecs) # (1, M, 2, 3) -> (1, M, 3, 3)
+
+        # 3. Normalization
+        eps = 1e-8
+        src_ori = src_vecs / (torch.norm(src_vecs, dim=3, keepdim=True) + eps)
+        trg_ori = trg_vecs / (torch.norm(trg_vecs, dim=3, keepdim=True) + eps)
 
         # 4. Invariant Features
-        src_inv_feats = torch.matmul(src_equi_feats.permute(0, 3, 1, 2), src_ori.transpose(-2,-1)) # (1, N, 341, 3) x (1, N, 3, 3) -> (1, N, 341, 3)
-        trg_inv_feats = torch.matmul(trg_equi_feats.permute(0, 3, 1, 2), trg_ori.transpose(-2,-1)) # (1, M, 341, 3) x (1, M, 3, 3) -> (1, M, 341, 3)
-        src_inv_feats = rearrange(src_inv_feats, 'b n c r -> b (c r) n') # (1, N, 341, 3) -> (1, 1024, N)
-        trg_inv_feats = rearrange(trg_inv_feats, 'b n c r -> b (c r) n') # (1, M, 341, 3) -> (1, 1024, M)
+        direction = -1 if self.reverse_normal else 1
+        src_inv_feats = torch.matmul(src_equi_feats.permute(0, 3, 1, 2), src_ori.transpose(-2,-1)) # (1, N, 1024, 3) x (1, N, 3, 1) -> (1, N, 1024, 1)
+        trg_inv_feats = torch.matmul(trg_equi_feats.permute(0, 3, 1, 2), trg_ori.transpose(-2,-1)) # (1, M, 1024, 3) x (1, M, 3, 1) -> (1, M, 1024, 1)
+        src_inv_feats = rearrange(src_inv_feats, 'b n c r -> b (c r) n') # (1, N, 1024, 1) -> (1, 1024, N)
+        trg_inv_feats = rearrange(trg_inv_feats, 'b n c r -> b (c r) n') # (1, M, 1024, 1) -> (1, 1024, M)
         
         # 5. Chaneel Attention Map
         if self.attention == 'channel':
@@ -598,12 +648,14 @@ class EquiAssem(pl.LightningModule):
             # vis_dict['trg_occ_feats'] = trg_occ_feats.squeeze(0).cpu().detach()
             vis_dict['src_vec'] = src_vecs.squeeze(0).cpu().detach()
             vis_dict['trg_vec'] = trg_vecs.squeeze(0).cpu().detach()
-            src_ori_vec = torch.matmul(src_ori, in_dict['gt_rotat'][0].squeeze(0))
-            trg_ori_vec = torch.matmul(trg_ori, in_dict['gt_rotat'][1].squeeze(0))
-            src_ori_vec = src_ori_vec.squeeze(0).cpu().detach()
-            trg_ori_vec = trg_ori_vec.squeeze(0).cpu().detach()
-            vis_dict['src_ori'] = src_ori_vec
-            vis_dict['trg_ori'] = trg_ori_vec
+            # src_ori_vec = torch.matmul(src_ori, in_dict['gt_rotat'][0].squeeze(0))
+            # trg_ori_vec = torch.matmul(trg_ori, in_dict['gt_rotat'][1].squeeze(0))
+            # src_ori_vec = src_ori_vec.squeeze(0).cpu().detach()
+            # trg_ori_vec = trg_ori_vec.squeeze(0).cpu().detach()
+            # vis_dict['src_ori'] = src_ori_vec
+            # vis_dict['trg_ori'] = trg_ori_vec
+            vis_dict['src_ori'] = src_ori.squeeze(0).cpu().detach()
+            vis_dict['trg_ori'] = trg_ori.squeeze(0).cpu().detach()
             # vis_dict['src_pcd'] = src_pcd.squeeze(0).cpu().detach()
             # vis_dict['trg_pcd'] = trg_pcd.squeeze(0).cpu().detach()
             vis_dict['src_pcd_raw'] = src_pcd_raw.squeeze(0).cpu().detach()
@@ -616,7 +668,9 @@ class EquiAssem(pl.LightningModule):
             if len(gt_correspond.shape) == 2:
                 print(f"ori_loss: {torch.mean(torch.norm((src_ori_vec[gt_correspond[:,0],:,:] - trg_ori_vec[gt_correspond[:,1],:,:]), p='fro', dim=(1,2)))}")
 
-            with open(f'./orientation_visualization_train/{in_dict["pair_idx"]}_debug.pickle', 'wb') as f:
+            save_dir = './pickles/reverse_normal_overfitting'
+            os.makedirs(save_dir, exist_ok=True)
+            with open(f'{save_dir}/{in_dict["eval_idx"]}_debug.pickle', 'wb') as f:
                 pickle.dump(vis_dict, f)
 
         # 9. Registration

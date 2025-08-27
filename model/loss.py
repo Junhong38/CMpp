@@ -164,7 +164,7 @@ class OrientationLoss(nn.Module):
 
     def inter_loss(self, orientation, normal):
         # Smooth L1 loss
-        loss_fn = nn.SmoothL1Loss(beta=0.1, reduction='mean')
+        loss_fn = nn.SmoothL1Loss(beta=1.0, reduction='mean')
         inter_loss = loss_fn(orientation, normal)
         return inter_loss
 

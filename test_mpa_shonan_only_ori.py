@@ -55,7 +55,7 @@ def save_mesh(in_dict):
     mesh = [trimesh.load_mesh(x) for x in obj_paths]
     
     # Create directories if they don't exist
-    save_dir = os.path.join('vis', 'everyday_only_ori_full')
+    save_dir = os.path.join('vis', 'everyday_reverse_normal_overfitting')
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
     save_path = os.path.join(save_dir, f'{in_dict["eval_idx"][0].item()}_{len(in_dict["gt_rotat"])}part_'+in_dict['filepath'].replace('/','_'))
@@ -131,7 +131,8 @@ def test(args):
                         no_ori=args.no_ori,
                         attention=args.attention,
                         visualize=args.visualize,
-                        debug=args.debug)
+                        debug=args.debug,
+                        reverse_normal=args.reverse_normal)
     print(model)
 
     model.to(torch.device('cuda:0'))
@@ -169,109 +170,110 @@ def test(args):
                 'gt_trans_inv': [in_dict['gt_trans_inv'][pair_idx0], in_dict['gt_trans_inv'][pair_idx1]],
                 'relative_trsfm': {f'{pair_idx0}-{pair_idx1}': in_dict['relative_trsfm'][f'{pair_idx0}-{pair_idx1}']},
                 'gt_normals': [in_dict['gt_normals'][pair_idx0], in_dict['gt_normals'][pair_idx1]],
-                'eval_idx': f'{idx}|{pair_idx0}-{pair_idx1}'
+                'eval_idx': f'{idx}|{pair_idx0}-{pair_idx1}',
+                'gt_correspondence': in_dict['gt_correspondence'][f'{pair_idx0}-{pair_idx1}']
             }
             # Forward pass
-            _ = model.forward_pass(in_dict_pair, 'test')
-            # out_dict[f'{pair_idx0}-{pair_idx1}'], _ = model.forward_pass(in_dict_pair, 'test')
+            # _ = model.forward_pass(in_dict_pair, 'test')
+            out_dict[f'{pair_idx0}-{pair_idx1}'] = model.forward_mpa(in_dict_pair)
             torch.cuda.empty_cache(); gc.collect()
         
-    #     # 2. Pose Graph Optimization
-    #     params = gtsam.ShonanAveragingParameters3(gtsam.LevenbergMarquardtParams.CeresDefaults())
-    #     factors = gtsam.BetweenFactorPose3s()
+        # 2. Pose Graph Optimization
+        params = gtsam.ShonanAveragingParameters3(gtsam.LevenbergMarquardtParams.CeresDefaults())
+        factors = gtsam.BetweenFactorPose3s()
 
-    #     # 2-1. Add factors(relative transformations)
-    #     for pair_idx in pair_indices:
-    #         pair_idx0, pair_idx1 = pair_idx
-    #         relative_rotat = Rotation.from_matrix(out_dict[f'{pair_idx0}-{pair_idx1}']['estimated_rotat'].cpu().numpy()).as_quat()
-    #         relative_trans = -out_dict[f'{pair_idx0}-{pair_idx1}']['estimated_trans'].cpu().numpy()
-    #         pose = gtsam.Pose3(gtsam.Rot3.Quaternion(relative_rotat[3], relative_rotat[0], relative_rotat[1], relative_rotat[2]), gtsam.Point3(relative_trans))
-    #         # Load matching score
-    #         score = (torch.pow(out_dict[f'{pair_idx0}-{pair_idx1}']['corr_scores'], 2)).detach().cpu().mean()
-    #         factors.append(gtsam.BetweenFactorPose3(pair_idx0, pair_idx1, pose, gtsam.noiseModel.Diagonal.Information((1/score) * np.eye(6))))
+        # 2-1. Add factors(relative transformations)
+        for pair_idx in pair_indices:
+            pair_idx0, pair_idx1 = pair_idx
+            relative_rotat = Rotation.from_matrix(out_dict[f'{pair_idx0}-{pair_idx1}']['estimated_rotat'].cpu().numpy()).as_quat()
+            relative_trans = -out_dict[f'{pair_idx0}-{pair_idx1}']['estimated_trans'].cpu().numpy()
+            pose = gtsam.Pose3(gtsam.Rot3.Quaternion(relative_rotat[3], relative_rotat[0], relative_rotat[1], relative_rotat[2]), gtsam.Point3(relative_trans))
+            # Load matching score
+            score = (torch.pow(out_dict[f'{pair_idx0}-{pair_idx1}']['corr_scores'], 2)).detach().cpu().mean()
+            factors.append(gtsam.BetweenFactorPose3(pair_idx0, pair_idx1, pose, gtsam.noiseModel.Diagonal.Information((1/score) * np.eye(6))))
 
-    #     # 2-2. Run shonan averaging
-    #     sa3 = gtsam.ShonanAveraging3(factors, params)
-    #     initial = sa3.initializeRandomly()
-    #     pMax = 20
-    #     shonan_fail = False
-    #     while True:
-    #         pMax += 20
-    #         if pMax == 60:
-    #             shonan_fail = True; print("shonan failed")
-    #             break
-    #         try: 
-    #             abs_rotat, _ = sa3.run(initial, 3, pMax)
-    #             break
-    #         except RuntimeError as e:
-    #             print(f"An error occurred during Shonan::run: with pMax {pMax}")
-    #             continue
+        # 2-2. Run shonan averaging
+        sa3 = gtsam.ShonanAveraging3(factors, params)
+        initial = sa3.initializeRandomly()
+        pMax = 20
+        shonan_fail = False
+        while True:
+            pMax += 20
+            if pMax == 60:
+                shonan_fail = True; print("shonan failed")
+                break
+            try: 
+                abs_rotat, _ = sa3.run(initial, 3, pMax)
+                break
+            except RuntimeError as e:
+                print(f"An error occurred during Shonan::run: with pMax {pMax}")
+                continue
             
-    #     # Align predicted rotation to anchor fracture
-    #     anchor_idx = in_dict['anchor_idx']
-    #     if not shonan_fail:
-    #         aligned_pred_rotat, aligned_pred_trans = [], []
-    #         abs_anchor_R = abs_rotat.atRot3(anchor_idx)
-    #         # Align rotations
-    #         for j in range(abs_rotat.size()):
-    #             aligned_pred_rotat.append(torch.tensor(abs_anchor_R.between(abs_rotat.atRot3(j)).matrix()).to(torch.float32).cuda())
-    #     else:
-    #         aligned_pred_rotat = []
-    #         for i in range(0, in_dict['n_frac']):
-    #             if i == anchor_idx: aligned_pred_rotat.append(torch.eye(3).to(torch.float32).cuda())
-    #             else: aligned_pred_rotat.append(out_dict[f'{anchor_idx}-{i}']['estimated_rotat'].squeeze(0))
+        # Align predicted rotation to anchor fracture
+        anchor_idx = in_dict['anchor_idx']
+        if not shonan_fail:
+            aligned_pred_rotat, aligned_pred_trans = [], []
+            abs_anchor_R = abs_rotat.atRot3(anchor_idx)
+            # Align rotations
+            for j in range(abs_rotat.size()):
+                aligned_pred_rotat.append(torch.tensor(abs_anchor_R.between(abs_rotat.atRot3(j)).matrix()).to(torch.float32).cuda())
+        else:
+            aligned_pred_rotat = []
+            for i in range(0, in_dict['n_frac']):
+                if i == anchor_idx: aligned_pred_rotat.append(torch.eye(3).to(torch.float32).cuda())
+                else: aligned_pred_rotat.append(out_dict[f'{anchor_idx}-{i}']['estimated_rotat'].squeeze(0))
         
-    #     # Align predicted rotation to anchor fracture
-    #     for i in range(0, in_dict['n_frac']):
-    #         if i == anchor_idx: aligned_pred_trans.append(torch.tensor([0,0,0]).to(torch.float32).cuda())
-    #         else: aligned_pred_trans.append(out_dict[f'{anchor_idx}-{i}']['estimated_trans'])
-    #         # else: aligned_pred_trans.append(torch.tensor((abs_trans.atPoint3(i) - abs_trans.atPoint3(anchor_idx))).to(torch.float32).cuda())
+        # Align predicted rotation to anchor fracture
+        for i in range(0, in_dict['n_frac']):
+            if i == anchor_idx: aligned_pred_trans.append(torch.tensor([0,0,0]).to(torch.float32).cuda())
+            else: aligned_pred_trans.append(out_dict[f'{anchor_idx}-{i}']['estimated_trans'])
+            # else: aligned_pred_trans.append(torch.tensor((abs_trans.atPoint3(i) - abs_trans.atPoint3(anchor_idx))).to(torch.float32).cuda())
 
-    #     # Align GT transformation to anchor fracture
-    #     aligned_gt_rotat, aligned_gt_trans = [], []
-    #     for i in range(0, in_dict['n_frac']):
-    #         if i == anchor_idx:
-    #             aligned_gt_rotat.append(torch.eye(3).to(torch.float32).cuda())
-    #             aligned_gt_trans.append(torch.tensor([0,0,0]).to(torch.float32).cuda())
-    #         else:
-    #             aligned_gt_rotat.append(in_dict['relative_trsfm'][f'{anchor_idx}-{i}'][0].squeeze(0))
-    #             aligned_gt_trans.append(in_dict['relative_trsfm'][f'{anchor_idx}-{i}'][1].squeeze(0))
+        # Align GT transformation to anchor fracture
+        aligned_gt_rotat, aligned_gt_trans = [], []
+        for i in range(0, in_dict['n_frac']):
+            if i == anchor_idx:
+                aligned_gt_rotat.append(torch.eye(3).to(torch.float32).cuda())
+                aligned_gt_trans.append(torch.tensor([0,0,0]).to(torch.float32).cuda())
+            else:
+                aligned_gt_rotat.append(in_dict['relative_trsfm'][f'{anchor_idx}-{i}'][0].squeeze(0))
+                aligned_gt_trans.append(in_dict['relative_trsfm'][f'{anchor_idx}-{i}'][1].squeeze(0))
 
-    #     # Save aligned transformations
-    #     in_dict['aligned_gt_trans'] = aligned_gt_trans
-    #     in_dict['aligned_gt_rotat'] = aligned_gt_rotat
-    #     out_dict['aligned_pred_trans'] = aligned_pred_trans
-    #     out_dict['aligned_pred_rotat'] = aligned_pred_rotat
-    #     assm_pred, pcds_pred = _multi_part_assemble(in_dict['pcd_t'], aligned_pred_rotat, aligned_pred_trans)
-    #     assm_grtr, pcds_grtr = _multi_part_assemble(in_dict['pcd_t'], aligned_gt_rotat, aligned_gt_trans)
+        # Save aligned transformations
+        in_dict['aligned_gt_trans'] = aligned_gt_trans
+        in_dict['aligned_gt_rotat'] = aligned_gt_rotat
+        out_dict['aligned_pred_trans'] = aligned_pred_trans
+        out_dict['aligned_pred_rotat'] = aligned_pred_rotat
+        assm_pred, pcds_pred = _multi_part_assemble(in_dict['pcd_t'], aligned_pred_rotat, aligned_pred_trans)
+        assm_grtr, pcds_grtr = _multi_part_assemble(in_dict['pcd_t'], aligned_gt_rotat, aligned_gt_trans)
 
-    #     cd = _chamfer_distance(assm_pred, assm_grtr).item()
-    #     crd = _correspondence_distance(assm_pred, assm_grtr).item()
-    #     rrmse, trmse = _transformation_error(aligned_pred_rotat, aligned_gt_rotat, aligned_pred_trans, aligned_gt_trans)
-    #     rrmse, trmse = rrmse.item(), trmse.item()
-    #     pa = _part_accuracy(pcds_pred, pcds_grtr)
-    #     pa_crd = _part_accuracy_crd(pcds_pred, pcds_grtr)
+        cd = _chamfer_distance(assm_pred, assm_grtr).item()
+        crd = _correspondence_distance(assm_pred, assm_grtr).item()
+        rrmse, trmse = _transformation_error(aligned_pred_rotat, aligned_gt_rotat, aligned_pred_trans, aligned_gt_trans)
+        rrmse, trmse = rrmse.item(), trmse.item()
+        pa = _part_accuracy(pcds_pred, pcds_grtr)
+        pa_crd = _part_accuracy_crd(pcds_pred, pcds_grtr)
 
         if args.visualize: save_mesh(in_dict)
         
-    #     crd_list.append(crd)
-    #     cd_list.append(cd)
-    #     rrmse_list.append(rrmse)
-    #     trsme_list.append(trmse)
-    #     pa_list.append(pa)
-    #     pa_crd_list.append(pa_crd)
+        crd_list.append(crd)
+        cd_list.append(cd)
+        rrmse_list.append(rrmse)
+        trsme_list.append(trmse)
+        pa_list.append(pa)
+        pa_crd_list.append(pa_crd)
 
-    #     print(f'{idx}/{total} | #-Part: {len(pcds_pred)} | CRD: {round(crd,2)} | CD: {round(cd,2)} | RRMSE: {round(rrmse,2)} | TRMSE: {round(trmse,2)} | PA(cd): {round(pa,2)} | PA(crd): {round(pa_crd,2)}')
-    #     # save_pc(f"./vis/mpa_everyday_vis/{len(pcds_pred)}part_crd{round(crd,2)}_rrmse{round(rrmse,1)}_trmse{round(trmse,2)}_cd{round(cd,2)}_pred_{in_dict['filepath'].replace('/','_')}.pcd", pcds_pred)
-    #     # save_pc(f"./vis/mpa_everyday_vis/{len(pcds_pred)}part_crd{round(crd,2)}_rrmse{round(rrmse,1)}_trmse{round(trmse,2)}_cd{round(cd,2)}_grtr_{in_dict['filepath'].replace('/','_')}.pcd", pcds_grtr)
+        print(f'{idx}/{total} | #-Part: {len(pcds_pred)} | CRD: {round(crd,2)} | CD: {round(cd,2)} | RRMSE: {round(rrmse,2)} | TRMSE: {round(trmse,2)} | PA(cd): {round(pa,2)} | PA(crd): {round(pa_crd,2)}')
+        save_pc(f"./vis/everyday_reverse_normal_overfitting/{len(pcds_pred)}part_crd{round(crd,2)}_rrmse{round(rrmse,1)}_trmse{round(trmse,2)}_cd{round(cd,2)}_pred_{in_dict['filepath'].replace('/','_')}.pcd", pcds_pred)
+        save_pc(f"./vis/everyday_reverse_normal_overfitting/{len(pcds_pred)}part_crd{round(crd,2)}_rrmse{round(rrmse,1)}_trmse{round(trmse,2)}_cd{round(cd,2)}_grtr_{in_dict['filepath'].replace('/','_')}.pcd", pcds_grtr)
     
-    # print('====MULTI PART ASSEMBLY RESULTS====')
-    # print('CRD: ', sum(crd_list)/len(crd_list))
-    # print('CD: ', sum(cd_list)/len(cd_list))
-    # print('RRMSE: ', sum(rrmse_list)/len(rrmse_list))
-    # print('TRMSE: ', sum(trsme_list)/len(trsme_list))
-    # print('PA(CD): ', sum(pa_list)/len(pa_list))
-    # print('PA(CRD): ', sum(pa_crd_list)/len(pa_crd_list))
+    print('====MULTI PART ASSEMBLY RESULTS====')
+    print('CRD: ', sum(crd_list)/len(crd_list))
+    print('CD: ', sum(cd_list)/len(cd_list))
+    print('RRMSE: ', sum(rrmse_list)/len(rrmse_list))
+    print('TRMSE: ', sum(trsme_list)/len(trsme_list))
+    print('PA(CD): ', sum(pa_list)/len(pa_list))
+    print('PA(CRD): ', sum(pa_crd_list)/len(pa_crd_list))
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Equivariant Assembly Pytorch Implementation')
@@ -297,6 +299,7 @@ if __name__ == '__main__':
     parser.add_argument('--occ_loss', type=str, default='negative', choices=['positive', 'negative'])
     parser.add_argument('--no_ori', action='store_true')
     parser.add_argument('--attention', type=str, default='channel', choices=['channel', 'none'])
+    parser.add_argument('--reverse_normal', action='store_true')
 
     parser.add_argument('--visualize', action='store_true')
     parser.add_argument('--debug', action='store_true')
