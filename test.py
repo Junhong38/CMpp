@@ -44,7 +44,8 @@ def test(args):
                         no_ori=args.no_ori,
                         attention=args.attention,
                         visualize=args.visualize,
-                        debug=args.debug)
+                        debug=args.debug,
+                        reverse_normal=args.reverse_normal)
     elif args.model == 'shape_only':
         model = EquiAssem_shape(lr=args.lr,
                         backbone=args.backbone,
@@ -76,7 +77,7 @@ def test(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Equivariant Assembly Pytorch Implementation')
-    parser.add_argument('--datapath', type=str, default='../../../../../hdd/junhong/data/bbad_v2')
+    parser.add_argument('--datapath', type=str, default='../../../data/bbad_v2')
     parser.add_argument('--data_category', type=str, default='everyday', choices=['everyday', 'artifact', 'synthetic', 'fantastic'])
     parser.add_argument('--sub_category', type=str, default='all')
     parser.add_argument('--n_pts', type=int, default=5000)
@@ -98,6 +99,7 @@ if __name__ == '__main__':
     parser.add_argument('--occ_loss', type=str, default='negative', choices=['positive', 'negative'])
     parser.add_argument('--no_ori', action='store_false')
     parser.add_argument('--attention', type=str, default='channel', choices=['channel', 'none'])
+    parser.add_argument('--reverse_normal', action='store_true')
 
     parser.add_argument('--visualize', action='store_true')
     parser.add_argument('--debug', action='store_true')

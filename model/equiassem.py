@@ -172,7 +172,7 @@ class EquiAssem(pl.LightningModule):
         self.s_loss_weight = 0.5 
         self.occ_loss_weight = 0.5
         self.p_loss_weight = 1.0
-        self.o_loss_weight = 0 if no_ori else 1.0 #0.1
+        self.o_loss_weight = 0 if no_ori else 0.1
 
         self.debug = debug
         self.visualize = visualize
@@ -554,7 +554,8 @@ class EquiAssem(pl.LightningModule):
             rrmse += diff.pow(2).mean().pow(0.5)
             trmse += (t1 - t2).pow(2).mean().pow(0.5) * rrmse_scaling
         div = len(rotat1) if multi_part else 1
-        return rrmse / div, trmse / div
+        return (rrmse / div).to(trmse.device), trmse / div
+        # return rrmse / div, trmse / div
 
     def _part_accuracy(self, assm_pts1, assm_pts2, scaling=100):
         success = 0
