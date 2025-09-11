@@ -168,17 +168,17 @@ class OrientationLoss(nn.Module):
         inter_loss = loss_fn(orientation, normal)
         return inter_loss
 
-    def forward(self, src_ori, trg_ori, gt_normals):
-        src_ori = src_ori.squeeze() # (1, N, 1, 3) --> (N, 3)
-        trg_ori = trg_ori.squeeze() # (1, M, 1, 3) --> (M, 3)
+    def forward(self, src_vec, trg_vec, gt_normals):
+        src_vec = src_vec.squeeze() # (1, N, 3) --> (N, 3)
+        trg_vec = trg_vec.squeeze() # (1, M, 3) --> (M, 3)
 
-        src_normals = gt_normals[0].squeeze() # (1, N, 3) --> (N, 3)
-        trg_normals = gt_normals[1].squeeze() # (1, M, 3) --> (M, 3)
+        src_normals = gt_normals[0].squeeze().to(torch.float32) # (1, N, 3) --> (N, 3)
+        trg_normals = gt_normals[1].squeeze().to(torch.float32) # (1, M, 3) --> (M, 3)
 
-        src_ori_loss = self.inter_loss(src_ori, src_normals)
-        trg_ori_loss = self.inter_loss(trg_ori, trg_normals)
+        src_vec_loss = self.inter_loss(src_vec, src_normals)
+        trg_vec_loss = self.inter_loss(trg_vec, trg_normals)
 
-        return src_ori_loss + trg_ori_loss
+        return src_vec_loss + trg_vec_loss
 
 class OrientationLossGeodesic(nn.Module):
     def __init__(self):

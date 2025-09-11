@@ -77,7 +77,7 @@ def test(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Equivariant Assembly Pytorch Implementation')
-    parser.add_argument('--datapath', type=str, default='../../../data/bbad_v2')
+    parser.add_argument('--datapath', type=str, default='../../../../hdd/junhong/data/bbad_v2')
     parser.add_argument('--data_category', type=str, default='everyday', choices=['everyday', 'artifact', 'synthetic', 'fantastic'])
     parser.add_argument('--sub_category', type=str, default='all')
     parser.add_argument('--n_pts', type=int, default=5000)

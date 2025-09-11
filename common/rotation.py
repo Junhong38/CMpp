@@ -135,6 +135,108 @@ def ortho2rotation(poses):
     z = z[:, :, :, None]
 
     return torch.cat((x, y, z), -1).transpose(2,3)
+
+def rotmat_to_rodrigues(R: torch.Tensor):
+    # 1. Compute theta
+    trace = torch.diagonal(R, dim1=-2, dim2=-1).sum(-1)
+    cos_theta = (trace - 1) / 2
+    cos_theta = torch.clamp(cos_theta, -1 + EPS, 1 - EPS)
+    theta = torch.acos(cos_theta)
+
+    # 2. Initialize Rodrigues vector
+    rodrigues = torch.zeros(R.shape[:-2] + (3,), device=R.device, dtype=R.dtype)
+
+    # 3. Case theta ~ 0 (no rotation)
+    mask0 = theta < EPS
+    # rodrigues[mask0] already zero
+
+    # 4. Case theta ~ pi (180 deg rotation)
+    mask_pi = (torch.abs(theta - torch.pi) < EPS)
+    if mask_pi.any():
+        R_pi = R[mask_pi]
+        # Compute axis: find eigenvector of (R + I)/2
+        # since R = I + 2*[u]_x^2 => (R + I)/2 = uu^T
+        M = (R_pi + torch.eye(3, device=R.device)) / 2
+        # choose largest diagonal component to avoid sign ambiguity
+        u = torch.zeros_like(M[..., 0])
+        # pick axis components from diagonal entries
+        u[..., 0] = torch.sqrt(torch.clamp(M[..., 0, 0], min=0))
+        u[..., 1] = torch.sqrt(torch.clamp(M[..., 1, 1], min=0))
+        u[..., 2] = torch.sqrt(torch.clamp(M[..., 2, 2], min=0))
+        # pick correct signs using off-diagonal entries
+        u[..., 1] = torch.sign(M[..., 0,1]) * u[..., 1]
+        u[..., 2] = torch.sign(M[..., 0,2]) * u[..., 2]
+        # Normalize axis
+        u = u / torch.linalg.norm(u, dim=-1, keepdim=True).clamp_min(EPS)
+        rodrigues[mask_pi] = theta[mask_pi][..., None] * u
+
+    # 5. General case
+    mask = ~(mask0 | mask_pi)
+    if mask.any():
+        R_g = R[mask]
+        theta_g = theta[mask]
+        r = torch.stack([
+            R_g[..., 2,1] - R_g[..., 1,2],
+            R_g[..., 0,2] - R_g[..., 2,0],
+            R_g[..., 1,0] - R_g[..., 0,1]
+        ], dim=-1) / (2 * torch.sin(theta_g)[..., None])
+        rodrigues[mask] = theta_g[..., None] * r
+
+    return rodrigues
+
+def rodrigues_to_rotmat(r):
+    """
+    r: Rodrigues vector, shape (..., 3)
+    returns: rotation matrix, shape (..., 3, 3)
+    """
+    theta = torch.norm(r, dim=-1, keepdim=True)  # 회전각
+    k = r / (theta + 1e-8)  # 회전축 (0으로 나누는 경우 방지)
+    
+    kx, ky, kz = k[..., 0], k[..., 1], k[..., 2]
+    
+    # skew-symmetric matrix [k]_x
+    zeros = torch.zeros_like(kx)
+    K = torch.stack([
+        torch.stack([zeros, -kz, ky], dim=-1),
+        torch.stack([kz, zeros, -kx], dim=-1),
+        torch.stack([-ky, kx, zeros], dim=-1)
+    ], dim=-2)  # shape (..., 3, 3)
+    
+    I = torch.eye(3, device=r.device, dtype=r.dtype).expand(K.shape[:-2] + (3, 3))
+    
+    theta = theta[..., 0]  # broadcast용
+    sin_theta = torch.sin(theta)[..., None, None]
+    cos_theta = torch.cos(theta)[..., None, None]
+    
+    R = I + sin_theta * K + (1 - cos_theta) * torch.matmul(K, K)
+    
+    return R
+
+def normalize_rodrigues(r):
+    """
+    Normalize Rodrigues vectors so that theta ∈ [0, π].
+    
+    Args:
+        r: (..., 3) tensor, Rodrigues vectors
+    
+    Returns:
+        theta: (...,) rotation angles in [0, π]
+        k: (..., 3) unit rotation axes
+    """
+    # 회전각 (norm)
+    theta = torch.norm(r, dim=-1, keepdim=True)  # (..., 1)
+    
+    # 회전축 (unit vector)
+    k = r / (theta + 1e-8)  # (..., 3)
+    
+    # theta가 π 초과하는 경우 마스크
+    mask = (theta > torch.pi)
+    
+    # 보정: θ' = 2π - θ, k' = -k
+    theta = torch.where(mask, 2 * torch.pi - theta, theta)
+    k = torch.where(mask, -k, k)
+    
+    return theta.squeeze(-1), k
     
 
 class Rotation3D:

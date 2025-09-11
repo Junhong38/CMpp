@@ -76,7 +76,7 @@ class TransitionUp(nn.Module):
         return x
 
 
-class EQCNN_equi_unet(nn.Module):
+class EQCNN_equi_unet_future(nn.Module):
 
     def __init__(self, feat_dim, pooling='mean'):
         super(EQCNN_equi_unet, self).__init__()
@@ -184,11 +184,11 @@ class EQCNN_equi_unet(nn.Module):
 
         return equi_feat
 
-class EQCNN_equi_unet_old(nn.Module):
+class EQCNN_equi_unet(nn.Module):
 
     def __init__(self, feat_dim, pooling='mean'):
         super(EQCNN_equi_unet, self).__init__()
-        self.k = 20
+        self.k = 10 #20
 
         if pooling == 'max':
             self.pool1 = VNMaxPool(64//3)

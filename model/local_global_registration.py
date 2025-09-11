@@ -55,13 +55,14 @@ def weighted_procrustes(
     ref_points_centered = ref_points - ref_centroid  # (B, N, 3)
 
     H = src_points_centered.permute(0, 2, 1) @ (weights * ref_points_centered)
-    try: U, _, V = svd(H)
+    try: U, _, V = svd(H.float())
     except: 
         print('use torch svd!')
-        U, _, V = torch.svd(H.cpu())
+        U, _, V = torch.svd(H.float().cpu())
     Ut, V = U.transpose(1, 2).cuda(), V.cuda()
     eye = torch.eye(3).unsqueeze(0).repeat(batch_size, 1, 1).cuda()
-    eye[:, -1, -1] = torch.sign(torch.det(V @ Ut))
+    with torch.autocast(device_type="cuda", dtype=torch.float32):
+        eye[:, -1, -1] = torch.sign(torch.det(V @ Ut))
     # eye[:, -1, -1] = torch.sign(torch.det((V @ Ut).to(torch.float32)))
     R = V @ eye @ Ut
 
