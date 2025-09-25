@@ -23,7 +23,7 @@ from model.backbone.vn_dgcnn import EQCNN_equi_unet
 from model.backbone.vn_dgcnn import EQCNN_equi
 
 from model.backbone.vn_layers import VNLinear, VNLeakyReLU, VNLinearLeakyReLU, VNLinearNoActivation
-from model.loss import CircleLoss, PointMatchingLoss, OrientationLoss
+from model.loss import OrientationLoss
 from model.learnable_sinkhorn import LearnableLogOptimalTransport
 from model.local_global_registration import LocalGlobalRegistration, WeightedProcrustes
 
@@ -117,56 +117,18 @@ class EquiAssem(pl.LightningModule):
         # Layer for Equivariant feature
         # self.equi_layer = VNLinearLeakyReLU(self.feat_dim//3, self.feat_dim//3)
         # self.equi_layer = VNLinear(self.feat_dim//3, self.feat_dim//3)
-        self.equi_layer = nn.Sequential(
-            VNLinearLeakyReLU(self.feat_dim//3, self.feat_dim//3),
-            VNLinearLeakyReLU(self.feat_dim//3, self.feat_dim//3),
-            VNLinearLeakyReLU(self.feat_dim//3, self.feat_dim//3),
-            # VNLinearLeakyReLU(self.feat_dim//3, self.feat_dim//3),
-            # VNLinearLeakyReLU(self.feat_dim//3, self.feat_dim//3),
-            # VNLinearLeakyReLU(self.feat_dim//3, self.feat_dim//3),
-            # VNLinearLeakyReLU(self.feat_dim//3, self.feat_dim//3),
-            # VNLinearLeakyReLU(self.feat_dim//3, self.feat_dim//3),
-            # VNLinearLeakyReLU(self.feat_dim//3, self.feat_dim//3),
-            # VNLinearLeakyReLU(self.feat_dim//3, self.feat_dim//3),
-        )
-        # self.equi_layer = EQCNN_equi_unet(feat_dim=self.feat_dim, pooling="mean")
 
         # Layer for Rotation Matrix
         # self.proj = VNLinearLeakyReLU(2 * (self.feat_dim//3), 1)
         self.proj = VNLinear(2 * (self.feat_dim//3), 1)
-        # self.proj = VNLinear(self.feat_dim//3, 1)
         # self.proj = VNLinear(self.feat_dim//3, 2)
 
         # Channel Attention
-        if attention == 'channel':
-            # self.c_attn = ChannelAttentionModule((self.feat_dim//3) * 3, self.feat_dim, ratio=4)
-            # self.shape_c_attn = ChannelAttentionModule((self.feat_dim//3) * 3, self.feat_dim//2, ratio=4)
-            self.shape_c_attn = ChannelAttentionModule((self.feat_dim//3) * 3, self.feat_dim, ratio=4)
+        # if attention == 'channel':
+        #     self.c_attn = ChannelAttentionModule((self.feat_dim//3) * 3, self.feat_dim, ratio=4)
         
-        # Shape Descriptor
-        self.shape_mlp = nn.Sequential(nn.Conv1d((self.feat_dim//3) * 3, self.feat_dim//2, kernel_size=1, bias=False),
-                                nn.InstanceNorm1d(self.feat_dim//2),
-                                nn.LeakyReLU(negative_slope=0.2),
-                                nn.Conv1d(self.feat_dim//2, self.feat_dim//2, kernel_size=1, bias=False),
-                                nn.InstanceNorm1d(self.feat_dim//2),
-                                nn.LeakyReLU(negative_slope=0.2),
-                                nn.Conv1d(self.feat_dim//2, self.feat_dim//2, kernel_size=1, bias=False),
-                                nn.InstanceNorm1d(self.feat_dim//2),
-                                nn.LeakyReLU(negative_slope=0.2),
-                                )
-        # self.shape_mlp = nn.Sequential(nn.Conv1d((self.feat_dim//3) * 3, self.feat_dim, kernel_size=1, bias=False),
-        #                         nn.InstanceNorm1d(self.feat_dim),
-        #                         nn.LeakyReLU(negative_slope=0.2),
-        #                         nn.Conv1d(self.feat_dim, self.feat_dim, kernel_size=1, bias=False),
-        #                         nn.InstanceNorm1d(self.feat_dim),
-        #                         nn.LeakyReLU(negative_slope=0.2),
-        #                         nn.Conv1d(self.feat_dim, self.feat_dim, kernel_size=1, bias=False),
-        #                         nn.InstanceNorm1d(self.feat_dim),
-        #                         nn.LeakyReLU(negative_slope=0.2),
-        #                         )
-        
-        # Occupancy Descriptor
-        # self.occ_mlp = nn.Sequential(nn.Conv1d((self.feat_dim//3) * 3, self.feat_dim//2, kernel_size=1, bias=False),
+        # # Shape Descriptor
+        # self.shape_mlp = nn.Sequential(nn.Conv1d((self.feat_dim//3) * 3, self.feat_dim//2, kernel_size=1, bias=False),
         #                         nn.InstanceNorm1d(self.feat_dim//2),
         #                         nn.LeakyReLU(negative_slope=0.2),
         #                         nn.Conv1d(self.feat_dim//2, self.feat_dim//2, kernel_size=1, bias=False),
@@ -174,35 +136,47 @@ class EquiAssem(pl.LightningModule):
         #                         nn.LeakyReLU(negative_slope=0.2),
         #                         nn.Conv1d(self.feat_dim//2, self.feat_dim//2, kernel_size=1, bias=False),
         #                         nn.InstanceNorm1d(self.feat_dim//2),
-        #                         nn.Tanh()
+        #                         nn.LeakyReLU(negative_slope=0.2),
         #                         )
         
-        # Optimal Transport
-        self.optimal_transport = LearnableLogOptimalTransport(num_iterations=100)
+        # # Occupancy Descriptor
+        # # self.occ_mlp = nn.Sequential(nn.Conv1d((self.feat_dim//3) * 3, self.feat_dim//2, kernel_size=1, bias=False),
+        # #                         nn.InstanceNorm1d(self.feat_dim//2),
+        # #                         nn.LeakyReLU(negative_slope=0.2),
+        # #                         nn.Conv1d(self.feat_dim//2, self.feat_dim//2, kernel_size=1, bias=False),
+        # #                         nn.InstanceNorm1d(self.feat_dim//2),
+        # #                         nn.LeakyReLU(negative_slope=0.2),
+        # #                         nn.Conv1d(self.feat_dim//2, self.feat_dim//2, kernel_size=1, bias=False),
+        # #                         nn.InstanceNorm1d(self.feat_dim//2),
+        # #                         nn.Tanh()
+        # #                         )
+        
+        # # Optimal Transport
+        # self.optimal_transport = LearnableLogOptimalTransport(num_iterations=100)
 
-        # LGR
-        self.fine_matching = LocalGlobalRegistration(
-            k=3,
-            acceptance_radius=0.1,
-            mutual=True,
-            confidence_threshold=0.05,
-            use_dustbin=False,
-            use_global_score=False,
-            correspondence_threshold=3,
-            correspondence_limit=None,
-            num_refinement_steps=5,
-        )
+        # # LGR
+        # self.fine_matching = LocalGlobalRegistration(
+        #     k=3,
+        #     acceptance_radius=0.1,
+        #     mutual=True,
+        #     confidence_threshold=0.05,
+        #     use_dustbin=False,
+        #     use_global_score=False,
+        #     correspondence_threshold=3,
+        #     correspondence_limit=None,
+        #     num_refinement_steps=5,
+        # )
         
-        # Objectives
-        self.matching_loss = PointMatchingLoss()
+        # # Objectives
+        # self.matching_loss = PointMatchingLoss()
         self.orientation_loss = OrientationLoss()
-        self.shape_loss = CircleLoss()
-        # self.occupancy_loss = CircleLoss()
+        # self.shape_loss = CircleLoss()
+        # # self.occupancy_loss = CircleLoss()
 
-        # Weights for losses
-        self.s_loss_weight = 1.0 #0.5 
-        # self.occ_loss_weight = 0.5
-        self.p_loss_weight = 1.0
+        # # Weights for losses
+        # self.s_loss_weight = 1.0 #0.5 
+        # # self.occ_loss_weight = 0.5
+        # self.p_loss_weight = 1.0
         self.o_loss_weight = 0 if no_ori else 1.0 #0.1
 
         self.debug = debug
@@ -234,36 +208,17 @@ class EquiAssem(pl.LightningModule):
     def training_step(self, in_dict, batch_idx):
         _, loss_dict = self.forward_pass(
             in_dict, mode='train')
+        if torch.isnan(loss_dict['loss']):
+            print(loss_dict['loss'])
         if loss_dict['loss']==0.: return None
         print(f"orientation loss : {loss_dict['o_loss']}")
-        print(f"shape loss : {loss_dict['s_loss']}")
         return loss_dict['loss']
-
-    def on_train_end(self):
-        print("Drawing...")
-        import matplotlib.pyplot as plt
-        import torch
-
-        pm = torch.stack(self.P_margin_history)  # [num_epochs, num_features]
-        nm = torch.stack(self.N_margin_history)
-
-        plt.figure(figsize=(8, 4))
-        plt.plot(pm.numpy(), marker='o', color='red', label='P_margin')
-        plt.plot(nm.numpy(), marker='x', color='blue', label='N_margin')
-
-        plt.title("P_margin & N_margin")
-        plt.xlabel("Epoch")
-        plt.ylabel("Mean of Margin Value")
-        plt.legend()
-        plt.grid(True)
-        plt.savefig(f"margins_over_epochs_WholePoint_Circle_P{self.pos_margin}_N{self.neg_margin}_LS{self.log_scale}.png", dpi=300, bbox_inches='tight')
-        plt.close()
     
     def validation_step(self, in_dict, batch_idx):
         _, loss_dict = self.forward_pass(
             in_dict, mode='val')
-        self.P_margin_history.append(_['P_margin'])
-        self.N_margin_history.append(_['N_margin'])
+        if torch.isnan(loss_dict['loss']):
+            print(loss_dict['loss'])
         self.validation_step_outputs.append(loss_dict)
         return loss_dict
 
@@ -310,19 +265,18 @@ class EquiAssem(pl.LightningModule):
         # 1. SO(3)-Equivariant Feature Extractor
         src_equi_feats_backbone = self.backbone(src_pcd) # (1, 341, 3, N)
         trg_equi_feats_backbone = self.backbone(trg_pcd) # (1, 341, 3, M)
-        # src_equi_feats = self.backbone(src_pcd) # (1, 341, 3, N)
-        # trg_equi_feats = self.backbone(trg_pcd) # (1, 341, 3, M)
 
         # torch.cuda.synchronize()
         # print(f"backbone(VectorNeuron) : {time.time() - start:.4f}s")
 
-        src_equi_feats = self.equi_layer(src_equi_feats_backbone.unsqueeze(-1)).squeeze(-1)
-        trg_equi_feats = self.equi_layer(trg_equi_feats_backbone.unsqueeze(-1)).squeeze(-1)
-        # src_equi_feats = self.equi_layer(src_pcd)
-        # trg_equi_feats = self.equi_layer(trg_pcd)
+        # src_equi_feats = self.equi_layer(src_equi_feats_backbone.unsqueeze(-1)).squeeze(-1)
+        # trg_equi_feats = self.equi_layer(trg_equi_feats_backbone.unsqueeze(-1)).squeeze(-1)
 
-        out_dict['src_equi_feats'] = src_equi_feats
-        out_dict['trg_equi_feats'] = trg_equi_feats
+        # out_dict['src_equi_feats'] = src_equi_feats
+        # out_dict['trg_equi_feats'] = trg_equi_feats
+
+        out_dict['src_equi_feats_backbone'] = src_equi_feats_backbone
+        out_dict['trg_equi_feats_backbone'] = trg_equi_feats_backbone
 
         src_equi_feats_backbone_mean = src_equi_feats_backbone.mean(dim=-1, keepdim=True).expand(src_equi_feats_backbone.size()) # (1, 341, 3, N)
         trg_equi_feats_backbone_mean = trg_equi_feats_backbone.mean(dim=-1, keepdim=True).expand(trg_equi_feats_backbone.size()) # (1, 341, 3, M)
@@ -333,111 +287,89 @@ class EquiAssem(pl.LightningModule):
         # src_vecs = self.proj(src_equi_feats).permute(0, 3, 1, 2) # (1, 682, 3, N) -> (1, 2, 3, N) -> (1, N, 2, 3)
         # trg_vecs = self.proj(trg_equi_feats).permute(0, 3, 1, 2) # (1, 682, 3, M) -> (1, 2, 3, M) -> (1, M, 2, 3)
 
-        #### SCALING ####
-        # eps = 1e-4
-        # scale = 3.0
-
-        # norm_src = torch.norm(src_vecs, dim=-1, keepdim=True)
-        # norm_src_safe = torch.clamp(norm_src, min=eps)
-        # direction_src = src_vecs / norm_src_safe
-        # scaled_norm_src = torch.pi * torch.tanh(norm_src / scale)
-        # src_vecs = direction_src * scaled_norm_src
-
-        # norm_trg = torch.norm(trg_vecs, dim=-1, keepdim=True)
-        # norm_trg_safe = torch.clamp(norm_trg, min=eps)
-        # direction_trg = trg_vecs / norm_trg_safe
-        # scaled_norm_trg = torch.pi * torch.tanh(norm_trg / scale)
-        # trg_vecs = direction_trg * scaled_norm_trg
-
-        # print(f"NORM : {norm_src_vecs.max()}, {norm_src_ve}")
-        #### SCALING ####
-
-        # src_vecs = self.proj(src_equi_feats).permute(0, 3, 1, 2) # (1, 682, 3, N) -> (1, 2, 3, N) -> (1, N, 2, 3)
-        # trg_vecs = self.proj(trg_equi_feats).permute(0, 3, 1, 2) # (1, 682, 3, M) -> (1, 2, 3, M) -> (1, M, 2, 3)
+        out_dict['src_vecs'] = src_vecs
+        out_dict['trg_vecs'] = trg_vecs
 
         # 3. Gram Schmidt & Cross-product
         # src_ori = ortho2rotation(src_vecs) # (1, N, 2, 3) -> (1, N, 3, 3)
         # trg_ori = ortho2rotation(trg_vecs) # (1, M, 2, 3) -> (1, M, 3, 3)
 
-        # 3. Convert Rodrigues vector(*_vecs) to rotation matrix(*_ori)
-        src_vecs = src_vecs.squeeze(2)
-        trg_vecs = trg_vecs.squeeze(2)
-        src_ori = rodrigues_to_rotmat(src_vecs) # (1, N, 1, 3) -> (1, N, 3, 3)
-        trg_ori = rodrigues_to_rotmat(trg_vecs) # (1, M, 1, 3) -> (1, M, 3, 3)
+        # # 3. Convert Rodrigues vector(*_vecs) to rotation matrix(*_ori)
+        # src_vecs = src_vecs.squeeze(2)
+        # trg_vecs = trg_vecs.squeeze(2)
+        # src_ori = rodrigues_to_rotmat(src_vecs) # (1, N, 1, 3) -> (1, N, 3, 3)
+        # trg_ori = rodrigues_to_rotmat(trg_vecs) # (1, M, 1, 3) -> (1, M, 3, 3)
 
-        # 3. Normalization
-        # eps = 1e-8
-        # src_ori = src_vecs / (torch.norm(src_vecs, dim=3, keepdim=True) + eps)
-        # trg_ori = trg_vecs / (torch.norm(trg_vecs, dim=3, keepdim=True) + eps)
+        # # 3. Normalization
+        # # eps = 1e-8
+        # # src_ori = src_vecs / (torch.norm(src_vecs, dim=3, keepdim=True) + eps)
+        # # trg_ori = trg_vecs / (torch.norm(trg_vecs, dim=3, keepdim=True) + eps)
 
-        # 4. Invariant Features
-        # direction = -1 if self.reverse_normal else 1
-        if self.reverse_normal: 
-            # src_ori = R_to_Rprime(src_ori)
-            src_ori = src_ori.transpose(-2, -1)
-        src_inv_feats = torch.matmul(src_equi_feats.permute(0, 3, 1, 2).float(), src_ori.transpose(-2,-1)) # (1, N, 341, 3) x (1, N, 3, 3) -> (1, N, 341, 3)
-        trg_inv_feats = torch.matmul(trg_equi_feats.permute(0, 3, 1, 2).float(), trg_ori.transpose(-2,-1)) # (1, M, 1024, 3) x (1, M, 3, 1) -> (1, M, 341, 3)
-        src_inv_feats = rearrange(src_inv_feats, 'b n c r -> b (c r) n') # (1, N, 341, 3) -> (1, 1023, N)
-        trg_inv_feats = rearrange(trg_inv_feats, 'b n c r -> b (c r) n') # (1, M, 341, 3) -> (1, 1023, M)
+        # # 4. Invariant Features
+        # # direction = -1 if self.reverse_normal else 1
+        # if self.reverse_normal: 
+        #     # src_ori = R_to_Rprime(src_ori)
+        #     src_ori = src_ori.transpose(-2, -1)
+        # src_inv_feats = torch.matmul(src_equi_feats.permute(0, 3, 1, 2).float(), src_ori.transpose(-2,-1).float()) # (1, N, 341, 3) x (1, N, 3, 3) -> (1, N, 341, 3)
+        # trg_inv_feats = torch.matmul(trg_equi_feats.permute(0, 3, 1, 2).float(), trg_ori.transpose(-2,-1).float()) # (1, M, 1024, 3) x (1, M, 3, 1) -> (1, M, 341, 3)
+        # src_inv_feats = rearrange(src_inv_feats, 'b n c r -> b (c r) n') # (1, N, 341, 3) -> (1, 1023, N)
+        # trg_inv_feats = rearrange(trg_inv_feats, 'b n c r -> b (c r) n') # (1, M, 341, 3) -> (1, 1023, M)
         
-        # 5. Chaneel Attention Map
-        if self.attention == 'channel':
-            inv_feats = torch.cat([src_inv_feats, trg_inv_feats], dim=-1)  # (1, 1023, N+M)
-            attention = self.c_attn(inv_feats) # (1, 1023, N+M) -> (1, 1024, N+M)
+        # # 5. Chaneel Attention Map
+        # if self.attention == 'channel':
+        #     inv_feats = torch.cat([src_inv_feats, trg_inv_feats], dim=-1)  # (1, 1023, N+M)
+        #     attention = self.c_attn(inv_feats) # (1, 1023, N+M) -> (1, 1024, N+M)
             
-            shape_attention, occ_attention = attention[:, :512], attention[:, 512:]
-            loss['shape_attn_ratio'] = shape_attention.sum() / (shape_attention.sum()+occ_attention.sum())
-            loss['occ_attn_ratio'] = occ_attention.sum() / (shape_attention.sum()+occ_attention.sum())
-            # shape_attention = self.shape_c_attn(inv_feats)
+        #     shape_attention, occ_attention = attention[:, :512], attention[:, 512:]
+        #     loss['shape_attn_ratio'] = shape_attention.sum() / (shape_attention.sum()+occ_attention.sum())
+        #     loss['occ_attn_ratio'] = occ_attention.sum() / (shape_attention.sum()+occ_attention.sum())
         
-        #### 6. SHAPE DESCRIPTOR ####
-        src_shape_feats = self.shape_mlp(src_inv_feats) # (1, 1023, M) -> (1, 512, M)
-        if self.attention == 'channel': src_shape_feats = src_shape_feats * shape_attention
-        # if self.attention == 'channel': src_shape_feats = src_shape_feats * attention
-        trg_shape_feats = self.shape_mlp(trg_inv_feats) # (1, 1023, M) -> (1, 512, M)
-        if self.attention == 'channel': trg_shape_feats = trg_shape_feats * shape_attention
-        # if self.attention == 'channel': trg_shape_feats = trg_shape_feats * attention
-        #### 6. SHAPE DESCRIPTOR ####
+        # #### 6. SHAPE DESCRIPTOR ####
+        # src_shape_feats = self.shape_mlp(src_inv_feats) # (1, 1023, M) -> (1, 512, M)
+        # if self.attention == 'channel': src_shape_feats = src_shape_feats * shape_attention
+        # trg_shape_feats = self.shape_mlp(trg_inv_feats) # (1, 1023, M) -> (1, 512, M)
+        # if self.attention == 'channel': trg_shape_feats = trg_shape_feats * shape_attention
+        # #### 6. SHAPE DESCRIPTOR ####
 
-        #### 7. OCCUPANCY DESCRIPTOR ####
-        # src_occ_feats = self.occ_mlp(src_inv_feats) # (1, 1024, N) -> (1, 512, N)
-        # if self.attention == 'channel': src_occ_feats = src_occ_feats * occ_attention
-        # trg_occ_feats = self.occ_mlp(trg_inv_feats) # (1, 1024, M) -> (1, 512, M)
-        # if self.attention == 'channel': trg_occ_feats = trg_occ_feats * occ_attention
-        #### 7. OCCUPANCY DESCRIPTOR ####
+        # #### 7. OCCUPANCY DESCRIPTOR ####
+        # # src_occ_feats = self.occ_mlp(src_inv_feats) # (1, 1024, N) -> (1, 512, N)
+        # # if self.attention == 'channel': src_occ_feats = src_occ_feats * occ_attention
+        # # trg_occ_feats = self.occ_mlp(trg_inv_feats) # (1, 1024, M) -> (1, 512, M)
+        # # if self.attention == 'channel': trg_occ_feats = trg_occ_feats * occ_attention
+        # #### 7. OCCUPANCY DESCRIPTOR ####
 
-        # 8. Optimal Transport
+        # # 8. Optimal Transport
         # eps = 1e-8
-        shape_matching_scores = torch.einsum('b c n , b c m -> b n m', src_shape_feats, trg_shape_feats) # (1, N, M)
-        shape_matching_scores = shape_matching_scores / src_shape_feats.shape[1] ** 0.5
+        # shape_matching_scores = torch.einsum('b c n , b c m -> b n m', src_shape_feats, trg_shape_feats) # (1, N, M)
+        # shape_matching_scores = shape_matching_scores / (src_shape_feats.shape[1] ** 0.5 + eps)
 
-        # if self.occ_loss=='positive': 
-        #     occ_matching_scores = torch.einsum('b c n , b c m -> b n m', src_occ_feats, trg_occ_feats) # (1, N, M)
-        # else: 
-        #     occ_matching_scores = -torch.einsum('b c n , b c m -> b n m', src_occ_feats, trg_occ_feats) # (1, N, M)
-        # occ_matching_scores = occ_matching_scores / (src_occ_feats.shape[1] ** 0.5 + eps)
+        # # if self.occ_loss=='positive': 
+        # #     occ_matching_scores = torch.einsum('b c n , b c m -> b n m', src_occ_feats, trg_occ_feats) # (1, N, M)
+        # # else: 
+        # #     occ_matching_scores = -torch.einsum('b c n , b c m -> b n m', src_occ_feats, trg_occ_feats) # (1, N, M)
+        # # occ_matching_scores = occ_matching_scores / (src_occ_feats.shape[1] ** 0.5 + eps)
 
-        # matching_scores = self.optimal_transport(shape_matching_scores + occ_matching_scores) # (1, N, M) -> (1, N+1, M+1)
-        matching_scores = self.optimal_transport(shape_matching_scores)
-        matching_scores_drop = matching_scores[:,:-1,:-1]
+        # # matching_scores = self.optimal_transport(shape_matching_scores + occ_matching_scores) # (1, N, M) -> (1, N+1, M+1)
+        # matching_scores = self.optimal_transport(shape_matching_scores)
+        # matching_scores_drop = matching_scores[:,:-1,:-1]
 
-        # 9. Weighted SVD with top-k correspondence selections
-        if mode in ['val', 'test']:
-            with torch.no_grad():
-                src_corr_pts, trg_corr_pts, corr_scores, estimated_transform, pred_corr = self.fine_matching(
-                    src_pcd, trg_pcd, matching_scores_drop, k=128)
+        # # 9. Weighted SVD with top-k correspondence selections
+        # if mode in ['val', 'test']:
+        #     with torch.no_grad():
+        #         src_corr_pts, trg_corr_pts, corr_scores, estimated_transform, pred_corr = self.fine_matching(
+        #             src_pcd, trg_pcd, matching_scores_drop, k=128)
 
-            out_dict['estimated_rotat'] = estimated_transform[:3, :3].T
-            out_dict['estimated_trans'] = -(estimated_transform[:3, :3].inverse() @ -estimated_transform[:3, 3])
+        #     out_dict['estimated_rotat'] = estimated_transform[:3, :3].T
+        #     out_dict['estimated_trans'] = -(estimated_transform[:3, :3].inverse() @ -estimated_transform[:3, 3])
 
-        # 10. Calculate Loss
+        # # 10. Calculate Loss
         gt_corr = in_dict['gt_correspondence'].squeeze(0)
         
-        # 9-1. shape loss
-        loss['s_loss'] = self.shape_loss(src_pcd_raw, trg_pcd_raw, src_shape_feats.transpose(-2,-1), trg_shape_feats.transpose(-2,-1), gt_corr)
+        # # 9-1. shape loss
+        # loss['s_loss'] = self.shape_loss(src_pcd_raw, trg_pcd_raw, src_shape_feats.transpose(-2,-1), trg_shape_feats.transpose(-2,-1), gt_corr).float()
 
-        # 9-2 point matching loss
-        loss['p_loss'] = self.matching_loss(matching_scores, gt_corr, src_pcd_raw, trg_pcd_raw).float()
+        # # 9-2 point matching loss
+        # loss['p_loss'] = self.matching_loss(matching_scores, gt_corr, src_pcd_raw, trg_pcd_raw).float()
 
         # 9-3. orientation loss
         # loss['o_loss'] = self.orientation_loss(src_ori, trg_ori, gt_corr, in_dict['gt_rotat'])
@@ -451,7 +383,6 @@ class EquiAssem(pl.LightningModule):
         # loss['o_loss'] = self.orientation_loss(src_rod / torch.linalg.norm(src_rod, dim=-1, keepdim=True), trg_rod / torch.linalg.norm(trg_rod, dim=-1, keepdim=True), in_dict['gt_normals'])
         # loss['o_loss'] = self.orientation_loss(src_vecs / torch.linalg.norm(src_vecs, dim=-1, keepdim=True), trg_vecs / torch.linalg.norm(trg_vecs, dim=-1, keepdim=True), in_dict['gt_normals'])
         loss['o_loss'] = self.orientation_loss(src_vecs, trg_vecs, gt_corr, in_dict['gt_normals'])
-        # loss['o_loss'] = self.orientation_loss(src_vecs, trg_vecs, in_dict['gt_normals'])
 
         # ez_src = torch.tensor([0.0, 0.0, 1.0], device=in_dict['gt_normals'][0].device).expand_as(in_dict['gt_normals'][0])
         # ez_trg = torch.tensor([0.0, 0.0, 1.0], device=in_dict['gt_normals'][1].device).expand_as(in_dict['gt_normals'][1])
@@ -466,14 +397,14 @@ class EquiAssem(pl.LightningModule):
         #     loss['occ_loss'] = self.occupancy_loss(src_pcd_raw, trg_pcd_raw, src_occ_feats.transpose(-2,-1), -trg_occ_feats.transpose(-2,-1), gt_corr).float()
 
         # 9-4. final loss
-        loss['loss'] = self.p_loss_weight * loss['p_loss'] + self.o_loss_weight * loss['o_loss'] + self.s_loss_weight * loss['s_loss'] #+ self.occ_loss_weight * loss['occ_loss']
-        # loss['loss'] = loss['o_loss']
+        # loss['loss'] = self.p_loss_weight * loss['p_loss'] + self.o_loss_weight * loss['o_loss'] + self.s_loss_weight * loss['s_loss'] #+ self.occ_loss_weight * loss['occ_loss']
+        loss['loss'] = loss['o_loss']
         out_dict.update(loss)
         
         # 10. Evaluation
-        if mode in ['val', 'test']:
-            eval_dict = self.evaluate_prediction(in_dict, out_dict, gt_corr)
-            loss.update(eval_dict)
+        # if mode in ['val', 'test']:
+        #     eval_dict = self.evaluate_prediction(in_dict, out_dict, gt_corr)
+        #     loss.update(eval_dict)
 
         # breakpoint()
 
@@ -486,8 +417,8 @@ class EquiAssem(pl.LightningModule):
             # vis_dict['trg_occ_feats'] = trg_occ_feats.squeeze(0).cpu().detach()
             vis_dict['src_vec'] = src_vecs.squeeze(0).cpu().detach()
             vis_dict['trg_vec'] = trg_vecs.squeeze(0).cpu().detach()
-            # vis_dict['src_ori'] = src_ori.squeeze(0).cpu().detach()
-            # vis_dict['trg_ori'] = trg_ori.squeeze(0).cpu().detach()
+            vis_dict['src_ori'] = src_ori.squeeze(0).cpu().detach()
+            vis_dict['trg_ori'] = trg_ori.squeeze(0).cpu().detach()
             # vis_dict['src_pcd'] = src_pcd.squeeze(0).cpu().detach()
             # vis_dict['trg_pcd'] = trg_pcd.squeeze(0).cpu().detach()
             vis_dict['src_pcd_raw'] = src_pcd_raw.squeeze(0).cpu().detach()
@@ -497,12 +428,11 @@ class EquiAssem(pl.LightningModule):
             # vis_dict['gt_correspondence'] = in_dict['gt_correspondence'].squeeze(0).cpu().detach()
             # vis_dict['pred_corr'] = pred_corr.cpu().detach()
 
-            save_folder = './pickles/GTccorr_reverse_INV_VNLLR_equi_layer_small_ShapeOnly_SafeScaledOri'
+            save_folder = './pickles/expanded_normal_reverse'
             os.makedirs(save_folder, exist_ok=True)
             with open(f'{save_folder}/{in_dict["eval_idx"].item()}_debug.pickle', 'wb') as f:
                 pickle.dump(vis_dict, f)
             # print(f"writing...{in_dict['eval_idx']}")
-            breakpoint()
 
         # in training we log for every step
         if mode == 'train':

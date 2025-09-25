@@ -212,31 +212,65 @@ def rodrigues_to_rotmat(r):
     
     return R
 
-def normalize_rodrigues(r):
+def R_to_Rprime(R: torch.Tensor):
     """
-    Normalize Rodrigues vectors so that theta ∈ [0, π].
-    
-    Args:
-        r: (..., 3) tensor, Rodrigues vectors
-    
+    R: (..., 3, 3) rotation matrix
     Returns:
-        theta: (...,) rotation angles in [0, π]
-        k: (..., 3) unit rotation axes
+        R_prime: (..., 3, 3) rotation matrix rotated by (theta + pi) along original Rodrigues axis
     """
-    # 회전각 (norm)
-    theta = torch.norm(r, dim=-1, keepdim=True)  # (..., 1)
+    # 1. Rotation matrix -> Rodrigues vector
+    r = rotmat_to_rodrigues(R)  # (..., 3)
     
-    # 회전축 (unit vector)
-    k = r / (theta + 1e-8)  # (..., 3)
+    # 2. Rodrigues vector -> rotation axis & angle
+    theta = torch.norm(r, dim=-1, keepdim=True)  # (...,1)
+    u = r / (theta + 1e-8)                        # unit axis, (...,3)
     
-    # theta가 π 초과하는 경우 마스크
-    mask = (theta > torch.pi)
+    # 3. Add pi to rotation angle
+    r_prime = u * (theta + torch.pi)
     
-    # 보정: θ' = 2π - θ, k' = -k
-    theta = torch.where(mask, 2 * torch.pi - theta, theta)
-    k = torch.where(mask, -k, k)
+    # 4. Rodrigues -> rotation matrix
+    R_prime = rodrigues_to_rotmat(r_prime)
     
-    return theta.squeeze(-1), k
+    return R_prime
+
+
+def rotation_matrix_from_vectors(v_from, v_to):
+    """
+    Compute batched rotation matrices that align v_from to v_to.
+    v_from, v_to: (B, N, 3)
+    return: (B, N, 3, 3)
+    """
+    v_from = v_from / (v_from.norm(dim=-1, keepdim=True) + EPS)
+    v_to   = v_to   / (v_to.norm(dim=-1, keepdim=True) + EPS)
+
+    # cross product (B, N, 3)
+    axis = torch.cross(v_from, v_to, dim=-1)
+    axis_norm = axis.norm(dim=-1, keepdim=True)
+
+    # dot product (B, N, 1)
+    dot = (v_from * v_to).sum(dim=-1, keepdim=True).clamp(-1.0, 1.0)
+    theta = torch.acos(dot)  # (B, N, 1)
+
+    # skew-symmetric matrix K (B, N, 3, 3)
+    kx, ky, kz = axis[..., 0], axis[..., 1], axis[..., 2]
+    K = torch.zeros(*axis.shape[:-1], 3, 3, device=v_from.device, dtype=v_from.dtype)
+    K[..., 0, 1] = -kz
+    K[..., 0, 2] =  ky
+    K[..., 1, 0] =  kz
+    K[..., 1, 2] = -kx
+    K[..., 2, 0] = -ky
+    K[..., 2, 1] =  kx
+
+    axis_norm = axis_norm + EPS
+    K = K / axis_norm.unsqueeze(-1)  # (B, N, 3, 3)
+
+    I = torch.eye(3, device=v_from.device, dtype=v_from.dtype)
+    I = I.view(1, 1, 3, 3).expand_as(K)
+
+    theta = theta.unsqueeze(-1)  # (B, N, 1, 1)
+
+    R = I + torch.sin(theta) * K + (1 - torch.cos(theta)) * (K @ K)  # (B, N, 3, 3)
+    return R
     
 
 class Rotation3D:

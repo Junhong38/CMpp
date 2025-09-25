@@ -3,7 +3,29 @@ import os
 import queue
 from threading import Thread
 
-def worker(gpu_id, task_queue):
+# def worker(gpu_id, task_queue):
+#     """
+#     Continuously get a task from the queue, set the CUDA_VISIBLE_DEVICES environment variable, and execute the task.
+#     When the queue is empty, the worker will exit.
+#     """
+#     while True:
+#         try:
+#             # If the queue is empty, queue.Empty will be raised, and the worker will break the loop
+#             command = task_queue.get(timeout=3)  # You can adjust the timeout as needed
+#         except queue.Empty:
+#             return
+
+#         env = os.environ.copy()
+#         env['CUDA_VISIBLE_DEVICES'] = str(gpu_id)
+
+#         # Execute the command
+#         process = subprocess.Popen(command, env=env, shell=True)
+#         process.wait()
+
+#         # Mark this task as done in the queue to allow another to be added if needed
+#         task_queue.task_done()
+
+def worker(task_queue):
     """
     Continuously get a task from the queue, set the CUDA_VISIBLE_DEVICES environment variable, and execute the task.
     When the queue is empty, the worker will exit.
@@ -16,7 +38,7 @@ def worker(gpu_id, task_queue):
             return
 
         env = os.environ.copy()
-        env['CUDA_VISIBLE_DEVICES'] = str(gpu_id)
+        # env['CUDA_VISIBLE_DEVICES'] = str(gpu_id)
 
         # Execute the command
         process = subprocess.Popen(command, env=env, shell=True)
@@ -48,7 +70,8 @@ def execute_commands_on_gpus(commands, num_gpus=None):
     # Start a worker thread for each GPU
     threads = []
     for gpu_id in range(num_gpus):
-        thread = Thread(target=worker, args=(gpu_id, command_queue))
+        # thread = Thread(target=worker, args=(gpu_id, command_queue))
+        thread = Thread(target=worker, args=(command_queue,))
         thread.start()
         threads.append(thread)
 
@@ -61,53 +84,44 @@ def execute_commands_on_gpus(commands, num_gpus=None):
         thread.join()
 
 def return_command(
-    score_comb,
-    topk,
-    match_selection,
-    results_folder,
-    optimal_matching
+    pos_margin,
+    neg_margin,
+    log_scale,
+    logpath
 ):
     """Generate a command string for launching an experiment."""
     command = f"""
-    python test_mpa_shonan_mating.py \\
-    --min_part 2 \\
-    --max_part 2 \\
-    --scale full \\
-    --load ./checkpoint/CM-v2-mpa-every-model-trmse-epoch=325.ckpt \\
-    --gt_normal_threshold -0.7 \\
-    --gt_mating_surface \\
-    --score_comb {score_comb} \\
-    --distance_threshold 0.02 \\
-    --topk {topk} \\
-    --initial_match_selection {match_selection} \\
-    --results_folder {results_folder} \\
-    --optimal_matching_choice {optimal_matching} \\
+    python main.py \\
+    --scale overfitting \\
+    --reverse_normal \\
+    --attention none \\
+    --pos_margin {pos_margin} \\
+    --neg_margin {neg_margin} \\
+    --log_scale {log_scale} \\
+    --logpath {logpath} \\
+    --gpus 0 1 2 3 4 5 6 7
     """
 
     return command
 
 # Generate command list
 commands_list = []
-for match_selection in ['topk', 'mutual', 'soft']:
-    for score_comb in ['sum']: #, 'intersection'
-        for optimal_matching in ['many-to-one', 'one-to-one']:
-            if match_selection == 'topk':
-                topk_library = ['0', '128']
-            elif match_selection == 'mutual' or 'soft':
-                topk_library = ['1', '2', '3']
-            for topk in topk_library:
-                results_folder = "test_MS_FULL_" + match_selection + "_" + topk + "_" + score_comb + "_" + optimal_matching + ".txt"
-                commands_list.append(
-                    return_command(
-                        score_comb=score_comb,
-                        topk=topk,
-                        match_selection=match_selection,
-                        results_folder=results_folder,
-                        optimal_matching=optimal_matching
-                    )
+for log_scale in ['24', '1', '15', '5']:
+    for pos_margin in ['0.05', '0.1']:
+        for neg_margin in ['0.4', '0.6', '0.8', '1.0', '1.2']:
+            if log_scale == '24' and pos_margin == '0.05' and neg_margin in ['0.4', '0.6', '0.8']:
+                continue
+            logname = "NewCircleLoss_overfitting_P"+pos_margin+"_N"+neg_margin+"_LS"+log_scale
+            commands_list.append(
+                return_command(
+                    pos_margin=pos_margin,
+                    neg_margin=neg_margin,
+                    log_scale=log_scale,
+                    logpath=logname
                 )
+            )
 
 # print(commands_list[0])
 # Execute the commands across the GPUs
-execute_commands_on_gpus(commands_list, num_gpus=8)
+execute_commands_on_gpus(commands_list, num_gpus=1)
 

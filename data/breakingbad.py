@@ -38,8 +38,8 @@ class DatasetBreakingBad(Dataset):
         else:
             if self.split == 'test': split = 'val'
             # Read fracture path list
-            if scale == 'overfitting':
-                filepaths = join('./data/data_list', f"mpa_{data_category}_{split}_overfitting.txt")
+            if scale in ['overfitting', 'tiny']:
+                filepaths = join('./data/data_list', f"{data_category}_{split}_{scale}.txt")
             elif scale == 'full':
                 filepaths = join('./data/data_list', f"{data_category}_{split}.txt")
             elif scale == 'ransac':

@@ -21,9 +21,11 @@ from data.dataset import GADataset
 from common import utils
 import open3d as o3d
 
-from model.equiassem import EquiAssem
-from model.equiassem_shape import EquiAssem_shape
-from model.equiassem_occ import EquiAssem_occ
+# from model.equiassem import EquiAssem
+from model.equiassem_2stage import EquiAssem
+# from model.equiassem_normal import EquiAssem
+# from model.equiassem_shape import EquiAssem_shape
+# from model.equiassem_occ import EquiAssem_occ
 
 import warnings
 warnings.filterwarnings("ignore", message="divide by zero encountered in double_scalars", category=RuntimeWarning)
@@ -34,32 +36,35 @@ warnings.filterwarnings("ignore", message="divide by zero encountered in double_
 def main(args):
     
     # Model initialization
-    if args.model == 'both':
-        model = EquiAssem(lr=args.lr,
-                        backbone=args.backbone,
-                        shape_loss=args.shape_loss, 
-                        occ_loss=args.occ_loss, 
-                        no_ori=args.no_ori,
-                        attention=args.attention,
-                        visualize=args.visualize,
-                        debug=args.debug,
-                        reverse_normal=args.reverse_normal)
-    elif args.model == 'shape_only':
-        model = EquiAssem_shape(lr=args.lr,
-                        backbone=args.backbone,
-                        shape_loss=args.shape_loss, 
-                        no_ori=args.no_ori,
-                        visualize=args.visualize,
-                        debug=args.debug,
-                        reverse_normal=args.reverse_normal)
-    elif args.model == 'occ_only':
-        model = EquiAssem_occ(lr=args.lr,
-                        backbone=args.backbone,
-                        occ_loss=args.occ_loss, 
-                        no_ori=args.no_ori,
-                        visualize=args.visualize,
-                        debug=args.debug,
-                        reverse_normal=args.reverse_normal)
+    # if args.model == 'both':
+    model = EquiAssem(lr=args.lr,
+                    backbone=args.backbone,
+                    shape_loss=args.shape_loss, 
+                    occ_loss=args.occ_loss, 
+                    no_ori=args.no_ori,
+                    attention=args.attention,
+                    visualize=args.visualize,
+                    debug=args.debug,
+                    reverse_normal_off=args.reverse_normal_off,
+                    pos_margin=args.pos_margin,
+                    neg_margin=args.neg_margin,
+                    log_scale=args.log_scale)
+    # elif args.model == 'shape_only':
+    #     model = EquiAssem_shape(lr=args.lr,
+    #                     backbone=args.backbone,
+    #                     shape_loss=args.shape_loss, 
+    #                     no_ori=args.no_ori,
+    #                     visualize=args.visualize,
+    #                     debug=args.debug,
+    #                     reverse_normal=args.reverse_normal)
+    # elif args.model == 'occ_only':
+    #     model = EquiAssem_occ(lr=args.lr,
+    #                     backbone=args.backbone,
+    #                     occ_loss=args.occ_loss, 
+    #                     no_ori=args.no_ori,
+    #                     visualize=args.visualize,
+    #                     debug=args.debug,
+    #                     reverse_normal=args.reverse_normal)
 
     # Dataset initialization
     GADataset.initialize(args.datapath, args.data_category, args.sub_category, args.min_part, args.max_part, args.n_pts, args.scale)
@@ -103,9 +108,9 @@ def main(args):
     checkpoint_callback_cd = ModelCheckpoint(dirpath=ckp_dir, filename='model-cd-{epoch:03d}', monitor='val/cd', save_top_k=1, mode='min')
     checkpoint_callback_rrmse = ModelCheckpoint(dirpath=ckp_dir, filename='model-rrmse-{epoch:03d}', monitor='val/rrmse', save_top_k=1, mode='min')
     checkpoint_callback_trmse = ModelCheckpoint(dirpath=ckp_dir, filename='model-trmse-{epoch:03d}', monitor='val/trmse', save_top_k=1, mode='min')
-    checkpoint_callback_Oloss = ModelCheckpoint(dirpath=ckp_dir, filename='model-Oloss-{epoch:03d}', monitor='val/o_loss', save_top_k=1, mode='min')
+    # checkpoint_callback_Oloss = ModelCheckpoint(dirpath=ckp_dir, filename='model-Oloss-{epoch:03d}', monitor='val/o_loss', save_top_k=1, mode='min')
     latest_checkpoint_callback = ModelCheckpoint(dirpath=ckp_dir, filename='model-latest', save_last=True)
-    early = EarlyStopping(monitor="val/loss", mode="min", patience=20, min_delta=1e-4, verbose=True)
+    # early = EarlyStopping(monitor="val/loss", mode="min", patience=20, min_delta=1e-4, verbose=True)
 
     callbacks = [
         LearningRateMonitor('epoch'),
@@ -113,9 +118,9 @@ def main(args):
         checkpoint_callback_cd,
         checkpoint_callback_rrmse,
         checkpoint_callback_trmse,
-        checkpoint_callback_Oloss,
+        # checkpoint_callback_Oloss,
         latest_checkpoint_callback,
-        early,
+        # early,
     ]
 
     logger = WandbLogger(
@@ -138,7 +143,7 @@ def main(args):
         max_epochs=args.epochs,
         callbacks=callbacks,
         check_val_every_n_epoch=1,
-        # profiler='simple',
+        profiler='simple',
         fast_dev_run=False,
     )
 
@@ -151,6 +156,7 @@ def main(args):
             key=lambda x: os.path.getmtime(os.path.join(ckp_dir, x)))
         last_ckp = ckp_files[-1]
         print(f'INFO: automatically detect checkpoint {last_ckp}')
+        # breakpoint()
         ckp_path = os.path.join(ckp_dir, last_ckp)
     elif args.load != '':
         # check if it has trainint states, or just a model weight
@@ -187,7 +193,7 @@ if __name__ == '__main__':
     parser.add_argument('--load', type=str, default='')
     parser.add_argument('--resume', action='store_true')
 
-    parser.add_argument('--scale', type=str, default='full', choices=['full', 'small', 'overfitting'])
+    parser.add_argument('--scale', type=str, default='full', choices=['full', 'small', 'overfitting', 'tiny'])
 
     # Ablation studies
     parser.add_argument('--model', type=str, default='both', choices=['both', 'shape_only', 'occ_only'])
@@ -195,8 +201,12 @@ if __name__ == '__main__':
     parser.add_argument('--shape_loss', type=str, default='positive', choices=['positive', 'negative'])
     parser.add_argument('--occ_loss', type=str, default='negative', choices=['positive', 'negative'])
     parser.add_argument('--no_ori', action='store_true')
-    parser.add_argument('--attention', type=str, default='channel', choices=['channel', 'none'])
-    parser.add_argument('--reverse_normal', action='store_true')
+    parser.add_argument('--attention', type=str, default='none', choices=['channel', 'none'])
+    parser.add_argument('--reverse_normal_off', action='store_true')
+
+    parser.add_argument('--pos_margin', type=float, default=0.1)
+    parser.add_argument('--neg_margin', type=float, default=1.4)
+    parser.add_argument('--log_scale', type=float, default=24)
     
     # Additional experiments
     parser.add_argument('--visualize', action='store_true')
