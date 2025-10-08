@@ -88,7 +88,7 @@ class EquiAssem(pl.LightningModule):
             visualize=False, debug=False, inlier_threshold=0.01, score_threshold=0, 
             auto_score_threshold=False, ori_threshold=-1, weighted_voting=False,
             gt_normal_threshold=-1, gt_mating_surface=False,
-            score_comb='intersection', reverse_normal=False
+            score_comb='intersection', reverse_normal_off=False
             ):
         super(EquiAssem, self).__init__()
 
@@ -182,7 +182,7 @@ class EquiAssem(pl.LightningModule):
         self.debug = debug
         self.visualize = visualize
 
-        self.reverse_normal = reverse_normal
+        self.reverse_normal_off = reverse_normal_off
 
         self.validation_step_outputs = []
         self.test_step_outputs = []
@@ -363,48 +363,49 @@ class EquiAssem(pl.LightningModule):
         #     out_dict['estimated_trans'] = -(estimated_transform[:3, :3].inverse() @ -estimated_transform[:3, 3])
 
         # # 10. Calculate Loss
-        gt_corr = in_dict['gt_correspondence'].squeeze(0)
-        
-        # # 9-1. shape loss
-        # loss['s_loss'] = self.shape_loss(src_pcd_raw, trg_pcd_raw, src_shape_feats.transpose(-2,-1), trg_shape_feats.transpose(-2,-1), gt_corr).float()
+        if mode in ['train', 'val']:
+            gt_corr = in_dict['gt_correspondence'].squeeze(0)
+            
+            # # 9-1. shape loss
+            # loss['s_loss'] = self.shape_loss(src_pcd_raw, trg_pcd_raw, src_shape_feats.transpose(-2,-1), trg_shape_feats.transpose(-2,-1), gt_corr).float()
 
-        # # 9-2 point matching loss
-        # loss['p_loss'] = self.matching_loss(matching_scores, gt_corr, src_pcd_raw, trg_pcd_raw).float()
+            # # 9-2 point matching loss
+            # loss['p_loss'] = self.matching_loss(matching_scores, gt_corr, src_pcd_raw, trg_pcd_raw).float()
 
-        # 9-3. orientation loss
-        # loss['o_loss'] = self.orientation_loss(src_ori, trg_ori, gt_corr, in_dict['gt_rotat'])
-        # loss['o_loss'] = self.orientation_loss(src_ori[:,:,0,:], trg_ori[:,:,0,:], in_dict['gt_normals'])
+            # 9-3. orientation loss
+            # loss['o_loss'] = self.orientation_loss(src_ori, trg_ori, gt_corr, in_dict['gt_rotat'])
+            # loss['o_loss'] = self.orientation_loss(src_ori[:,:,0,:], trg_ori[:,:,0,:], in_dict['gt_normals'])
 
-        # src_rod = rotmat_to_rodrigues(src_ori)
-        # trg_rod = rotmat_to_rodrigues(trg_ori)
-        # eps = 1e-8
-        # src_theta, src_k = normalize_rodrigues(src_rod)
-        # trg_theta, trg_k = normalize_rodrigues(trg_rod)
-        # loss['o_loss'] = self.orientation_loss(src_rod / torch.linalg.norm(src_rod, dim=-1, keepdim=True), trg_rod / torch.linalg.norm(trg_rod, dim=-1, keepdim=True), in_dict['gt_normals'])
-        # loss['o_loss'] = self.orientation_loss(src_vecs / torch.linalg.norm(src_vecs, dim=-1, keepdim=True), trg_vecs / torch.linalg.norm(trg_vecs, dim=-1, keepdim=True), in_dict['gt_normals'])
-        loss['o_loss'] = self.orientation_loss(src_vecs, trg_vecs, gt_corr, in_dict['gt_normals'])
+            # src_rod = rotmat_to_rodrigues(src_ori)
+            # trg_rod = rotmat_to_rodrigues(trg_ori)
+            # eps = 1e-8
+            # src_theta, src_k = normalize_rodrigues(src_rod)
+            # trg_theta, trg_k = normalize_rodrigues(trg_rod)
+            # loss['o_loss'] = self.orientation_loss(src_rod / torch.linalg.norm(src_rod, dim=-1, keepdim=True), trg_rod / torch.linalg.norm(trg_rod, dim=-1, keepdim=True), in_dict['gt_normals'])
+            # loss['o_loss'] = self.orientation_loss(src_vecs / torch.linalg.norm(src_vecs, dim=-1, keepdim=True), trg_vecs / torch.linalg.norm(trg_vecs, dim=-1, keepdim=True), in_dict['gt_normals'])
+            loss['o_loss'] = self.orientation_loss(src_vecs, trg_vecs, gt_corr, in_dict['gt_normals'])
 
-        # ez_src = torch.tensor([0.0, 0.0, 1.0], device=in_dict['gt_normals'][0].device).expand_as(in_dict['gt_normals'][0])
-        # ez_trg = torch.tensor([0.0, 0.0, 1.0], device=in_dict['gt_normals'][1].device).expand_as(in_dict['gt_normals'][1])
-        # rotation_src_norm_to_z = rotation_matrix_from_vectors(in_dict['gt_normals'][0].float(), ez_src)
-        # rotation_trg_norm_to_z = rotation_matrix_from_vectors(in_dict['gt_normals'][1].float(), ez_trg)
-        # loss['o_loss'] = self.orientation_loss(src_ori, trg_ori, rotation_src_norm_to_z, rotation_trg_norm_to_z)
+            # ez_src = torch.tensor([0.0, 0.0, 1.0], device=in_dict['gt_normals'][0].device).expand_as(in_dict['gt_normals'][0])
+            # ez_trg = torch.tensor([0.0, 0.0, 1.0], device=in_dict['gt_normals'][1].device).expand_as(in_dict['gt_normals'][1])
+            # rotation_src_norm_to_z = rotation_matrix_from_vectors(in_dict['gt_normals'][0].float(), ez_src)
+            # rotation_trg_norm_to_z = rotation_matrix_from_vectors(in_dict['gt_normals'][1].float(), ez_trg)
+            # loss['o_loss'] = self.orientation_loss(src_ori, trg_ori, rotation_src_norm_to_z, rotation_trg_norm_to_z)
 
-        # 9-4. occupancy loss
-        # if self.occ_loss=='positive': 
-        #     loss['occ_loss'] = self.occupancy_loss(src_pcd_raw, trg_pcd_raw, src_occ_feats.transpose(-2,-1), trg_occ_feats.transpose(-2,-1), gt_corr).float()
-        # else:
-        #     loss['occ_loss'] = self.occupancy_loss(src_pcd_raw, trg_pcd_raw, src_occ_feats.transpose(-2,-1), -trg_occ_feats.transpose(-2,-1), gt_corr).float()
+            # 9-4. occupancy loss
+            # if self.occ_loss=='positive': 
+            #     loss['occ_loss'] = self.occupancy_loss(src_pcd_raw, trg_pcd_raw, src_occ_feats.transpose(-2,-1), trg_occ_feats.transpose(-2,-1), gt_corr).float()
+            # else:
+            #     loss['occ_loss'] = self.occupancy_loss(src_pcd_raw, trg_pcd_raw, src_occ_feats.transpose(-2,-1), -trg_occ_feats.transpose(-2,-1), gt_corr).float()
 
-        # 9-4. final loss
-        # loss['loss'] = self.p_loss_weight * loss['p_loss'] + self.o_loss_weight * loss['o_loss'] + self.s_loss_weight * loss['s_loss'] #+ self.occ_loss_weight * loss['occ_loss']
-        loss['loss'] = loss['o_loss']
-        out_dict.update(loss)
-        
-        # 10. Evaluation
-        # if mode in ['val', 'test']:
-        #     eval_dict = self.evaluate_prediction(in_dict, out_dict, gt_corr)
-        #     loss.update(eval_dict)
+            # 9-4. final loss
+            # loss['loss'] = self.p_loss_weight * loss['p_loss'] + self.o_loss_weight * loss['o_loss'] + self.s_loss_weight * loss['s_loss'] #+ self.occ_loss_weight * loss['occ_loss']
+            loss['loss'] = loss['o_loss']
+            out_dict.update(loss)
+            
+            # 10. Evaluation
+            # if mode in ['val', 'test']:
+            #     eval_dict = self.evaluate_prediction(in_dict, out_dict, gt_corr)
+            #     loss.update(eval_dict)
 
         # breakpoint()
 

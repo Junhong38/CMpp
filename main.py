@@ -16,6 +16,7 @@ from scipy.spatial.transform import Rotation
 import pytorch_lightning as pl
 from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor, EarlyStopping
+from pytorch_lightning import seed_everything
 
 from data.dataset import GADataset
 from common import utils
@@ -30,11 +31,13 @@ from model.equiassem_2stage import EquiAssem
 import warnings
 warnings.filterwarnings("ignore", message="divide by zero encountered in double_scalars", category=RuntimeWarning)
 
+
+
 # torch.backends.cuda.matmul.allow_tf32 = False
 # torch.backends.cudnn.allow_tf32 = False
 
 def main(args):
-    
+    seed_everything(42, workers=True)
     # Model initialization
     # if args.model == 'both':
     model = EquiAssem(lr=args.lr,
@@ -143,7 +146,7 @@ def main(args):
         max_epochs=args.epochs,
         callbacks=callbacks,
         check_val_every_n_epoch=1,
-        profiler='simple',
+        # profiler='simple',
         fast_dev_run=False,
     )
 

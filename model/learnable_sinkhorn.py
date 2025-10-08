@@ -3,7 +3,7 @@ import torch.nn as nn
 
 
 class LearnableLogOptimalTransport(nn.Module):
-    def __init__(self, num_iterations, inf=1e12):
+    def __init__(self, num_iterations, inf=1e8):
         r"""Sinkhorn Optimal transport with dustbin parameter (SuperGlue style)."""
         super(LearnableLogOptimalTransport, self).__init__()
         self.num_iterations = num_iterations
@@ -63,6 +63,7 @@ class LearnableLogOptimalTransport(nn.Module):
 
         outputs = self.log_sinkhorn_normalization(padded_scores, log_mu, log_nu)
         outputs = outputs - norm.unsqueeze(1).unsqueeze(2)
+        # breakpoint()
 
         return outputs
 

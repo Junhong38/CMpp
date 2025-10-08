@@ -88,7 +88,7 @@ class EquiAssem(pl.LightningModule):
             visualize=False, debug=False, inlier_threshold=0.01, score_threshold=0, 
             auto_score_threshold=False, ori_threshold=-1, weighted_voting=False,
             gt_normal_threshold=-1, gt_mating_surface=False,
-            score_comb='intersection', reverse_normal=False
+            score_comb='intersection', reverse_normal_off=False
             ):
         super(EquiAssem, self).__init__()
 
@@ -121,8 +121,8 @@ class EquiAssem(pl.LightningModule):
             VNLinearLeakyReLU(self.feat_dim//3, self.feat_dim//3),
             VNLinearLeakyReLU(self.feat_dim//3, self.feat_dim//3),
             VNLinearLeakyReLU(self.feat_dim//3, self.feat_dim//3),
-            # VNLinearLeakyReLU(self.feat_dim//3, self.feat_dim//3),
-            # VNLinearLeakyReLU(self.feat_dim//3, self.feat_dim//3),
+            VNLinearLeakyReLU(self.feat_dim//3, self.feat_dim//3),
+            VNLinearLeakyReLU(self.feat_dim//3, self.feat_dim//3),
             # VNLinearLeakyReLU(self.feat_dim//3, self.feat_dim//3),
             # VNLinearLeakyReLU(self.feat_dim//3, self.feat_dim//3),
             # VNLinearLeakyReLU(self.feat_dim//3, self.feat_dim//3),
@@ -208,7 +208,7 @@ class EquiAssem(pl.LightningModule):
         self.debug = debug
         self.visualize = visualize
 
-        self.reverse_normal = reverse_normal
+        self.reverse_normal_off = reverse_normal_off
 
         self.validation_step_outputs = []
         self.test_step_outputs = []
@@ -262,8 +262,8 @@ class EquiAssem(pl.LightningModule):
     def validation_step(self, in_dict, batch_idx):
         _, loss_dict = self.forward_pass(
             in_dict, mode='val')
-        self.P_margin_history.append(_['P_margin'])
-        self.N_margin_history.append(_['N_margin'])
+        # self.P_margin_history.append(_['P_margin'])
+        # self.N_margin_history.append(_['N_margin'])
         self.validation_step_outputs.append(loss_dict)
         return loss_dict
 
@@ -372,7 +372,7 @@ class EquiAssem(pl.LightningModule):
 
         # 4. Invariant Features
         # direction = -1 if self.reverse_normal else 1
-        if self.reverse_normal: 
+        if not self.reverse_normal_off: 
             # src_ori = R_to_Rprime(src_ori)
             src_ori = src_ori.transpose(-2, -1)
         src_inv_feats = torch.matmul(src_equi_feats.permute(0, 3, 1, 2).float(), src_ori.transpose(-2,-1)) # (1, N, 341, 3) x (1, N, 3, 3) -> (1, N, 341, 3)
@@ -407,9 +407,9 @@ class EquiAssem(pl.LightningModule):
         #### 7. OCCUPANCY DESCRIPTOR ####
 
         # 8. Optimal Transport
-        # eps = 1e-8
+        eps = 1e-8
         shape_matching_scores = torch.einsum('b c n , b c m -> b n m', src_shape_feats, trg_shape_feats) # (1, N, M)
-        shape_matching_scores = shape_matching_scores / src_shape_feats.shape[1] ** 0.5
+        shape_matching_scores = shape_matching_scores / (src_shape_feats.shape[1] ** 0.5 + eps)
 
         # if self.occ_loss=='positive': 
         #     occ_matching_scores = torch.einsum('b c n , b c m -> b n m', src_occ_feats, trg_occ_feats) # (1, N, M)
@@ -434,7 +434,7 @@ class EquiAssem(pl.LightningModule):
         gt_corr = in_dict['gt_correspondence'].squeeze(0)
         
         # 9-1. shape loss
-        loss['s_loss'] = self.shape_loss(src_pcd_raw, trg_pcd_raw, src_shape_feats.transpose(-2,-1), trg_shape_feats.transpose(-2,-1), gt_corr)
+        loss['s_loss'], out_dict['P_margin'], out_dict['N_margin'] = self.shape_loss(src_pcd_raw, trg_pcd_raw, src_shape_feats.transpose(-2,-1), trg_shape_feats.transpose(-2,-1), gt_corr)
 
         # 9-2 point matching loss
         loss['p_loss'] = self.matching_loss(matching_scores, gt_corr, src_pcd_raw, trg_pcd_raw).float()
@@ -450,7 +450,7 @@ class EquiAssem(pl.LightningModule):
         # trg_theta, trg_k = normalize_rodrigues(trg_rod)
         # loss['o_loss'] = self.orientation_loss(src_rod / torch.linalg.norm(src_rod, dim=-1, keepdim=True), trg_rod / torch.linalg.norm(trg_rod, dim=-1, keepdim=True), in_dict['gt_normals'])
         # loss['o_loss'] = self.orientation_loss(src_vecs / torch.linalg.norm(src_vecs, dim=-1, keepdim=True), trg_vecs / torch.linalg.norm(trg_vecs, dim=-1, keepdim=True), in_dict['gt_normals'])
-        loss['o_loss'] = self.orientation_loss(src_vecs, trg_vecs, gt_corr, in_dict['gt_normals'])
+        loss['o_loss'] = self.orientation_loss(src_vecs, trg_vecs, gt_corr, in_dict['gt_normals']).float()
         # loss['o_loss'] = self.orientation_loss(src_vecs, trg_vecs, in_dict['gt_normals'])
 
         # ez_src = torch.tensor([0.0, 0.0, 1.0], device=in_dict['gt_normals'][0].device).expand_as(in_dict['gt_normals'][0])
