@@ -12,15 +12,15 @@ import numpy as np
 from scipy.spatial import cKDTree
 from scipy.spatial.transform import Rotation
 
-from common.rotation import ortho2rotation
+from common.rotation import ortho2rotation, rodrigues_to_rotmat
 from chamfer_distance import ChamferDistance as chamfer_dist
 
-
+from model.backbone_changed.vn_dgcnn import EQCNN_equi_unet as EQCNN_equi_unet_changed
 from model.backbone.vn_dgcnn import EQCNN_equi_unet
 from model.backbone.vn_dgcnn import EQCNN_equi
 
 from model.backbone.vn_layers import VNLinear, VNLeakyReLU, VNLinearLeakyReLU, VNLinearNoActivation
-from model.loss import CircleLoss, PointMatchingLoss, OrientationLoss
+from model.loss import CircleLoss, PointMatchingLoss, OrientationLoss, CircleLoss_changed, PointMatchingLoss_changed, OrientationLoss_changed
 from model.learnable_sinkhorn import LearnableLogOptimalTransport
 from model.local_global_registration import LocalGlobalRegistration, WeightedProcrustes
 
@@ -36,7 +36,7 @@ from common.utils import save_pc, knn, get_graph_feature
 import os, trimesh
 
 # REBUTTAL
-from vecAdam.vectoradam import VectorAdam
+# from vecAdam.vectoradam import VectorAdam
 
 class ChannelAttentionModule(nn.Module):
     """ this function is used to achieve the channel attention module in CBAM paper"""
@@ -65,7 +65,8 @@ class ChannelAttentionModule(nn.Module):
         return attention
 
 class EquiAssem(pl.LightningModule):
-    def __init__(self, lr, backbone='vn_unet', shape_loss='positive', occ_loss='negative', no_ori=False, attention='channel', visualize=False, debug=False):
+    def __init__(self, lr, backbone='vn_unet', shape_loss='positive', occ_loss='negative', no_ori=False, attention='channel', visualize=False, debug=False,
+                 shapeloss_check=False, pointmatchingloss_check=False, vndgcnn_check=False, orientation_check=False):
         super(EquiAssem, self).__init__()
 
         self.lr = lr
@@ -74,12 +75,20 @@ class EquiAssem(pl.LightningModule):
         self.no_ori = no_ori
         self.attention = attention
 
+        self.shapeloss_check = shapeloss_check
+        self.pointmatchingloss_check = pointmatchingloss_check
+        self.vndgcnn_check = vndgcnn_check
+        self.orientation_check = orientation_check
+
         # Output feature dimension of Feature Extractor
         self.feat_dim = 1024
 
         # Feature Extractor
         if backbone == 'vn_unet':
-            self.backbone = EQCNN_equi_unet(feat_dim=self.feat_dim, pooling="mean")
+            if self.vndgcnn_check:
+                self.backbone = EQCNN_equi_unet_changed(feat_dim=self.feat_dim, pooling="mean")
+            else:
+                self.backbone = EQCNN_equi_unet(feat_dim=self.feat_dim, pooling="mean")
         elif backbone == 'vn_dgcnn':
             self.backbone = EQCNN_equi(feat_dim=self.feat_dim, pooling="mean")
         elif backbone == 'unet':
@@ -88,7 +97,17 @@ class EquiAssem(pl.LightningModule):
             raise NotImplementedError("DGCNN backbone not implemented")
         
         # Basis Vector
-        self.proj = VNLinear(self.feat_dim//3, 2)
+        if self.orientation_check:
+            self.proj = VNLinear(self.feat_dim//3*2, 1)
+            self.equi_layer = nn.Sequential(
+                VNLinearLeakyReLU(self.feat_dim//3, self.feat_dim//3),
+                VNLinearLeakyReLU(self.feat_dim//3, self.feat_dim//3),
+                VNLinearLeakyReLU(self.feat_dim//3, self.feat_dim//3),
+                VNLinearLeakyReLU(self.feat_dim//3, self.feat_dim//3),
+                VNLinearLeakyReLU(self.feat_dim//3, self.feat_dim//3),
+            )
+        else:
+            self.proj = VNLinear(self.feat_dim//3, 2)
 
         # Channel Attention
         if attention == 'channel':
@@ -135,10 +154,26 @@ class EquiAssem(pl.LightningModule):
         )
         
         # Objectives
-        self.circle_loss = CircleLoss()
-        self.matching_loss = PointMatchingLoss()
-        self.orientation_loss = OrientationLoss()
-        self.occupancy_loss = CircleLoss()
+        if self.shapeloss_check:
+            self.circle_loss = CircleLoss_changed()
+            self.matching_loss = PointMatchingLoss()
+            self.orientation_loss = OrientationLoss()
+            self.occupancy_loss = CircleLoss_changed()
+        elif self.pointmatchingloss_check:
+            self.circle_loss = CircleLoss()
+            self.matching_loss = PointMatchingLoss_changed()
+            self.orientation_loss = OrientationLoss()
+            self.occupancy_loss = CircleLoss()
+        elif self.orientation_check:
+            self.circle_loss = CircleLoss()
+            self.matching_loss = PointMatchingLoss()
+            self.orientation_loss = OrientationLoss_changed()
+            self.occupancy_loss = CircleLoss()
+        else:
+            self.circle_loss = CircleLoss()
+            self.matching_loss = PointMatchingLoss()
+            self.orientation_loss = OrientationLoss()
+            self.occupancy_loss = CircleLoss()
 
         # Weights for losses
         self.c_loss_weight = 0.5 
@@ -211,17 +246,36 @@ class EquiAssem(pl.LightningModule):
         src_pcd = in_dict['pcd_t'][0] # (1, N ,3)
         trg_pcd = in_dict['pcd_t'][1] # (1, M ,3)
         
-        # 1. SO(3)-Equivariant Feature Extractor
-        src_equi_feats = self.backbone(src_pcd) # (1, 341, 3, N)
-        trg_equi_feats = self.backbone(trg_pcd) # (1, 341, 3, M)
 
-        # 2. Basis Vector Projection 
-        src_vecs = self.proj(src_equi_feats).permute(0, 3, 1, 2) # (1, 341, 3, N) -> (1, 2, 3, N) -> (1, N, 2, 3)
-        trg_vecs = self.proj(trg_equi_feats).permute(0, 3, 1, 2) # (1, 341, 3, M) -> (1, 2, 3, M) -> (1, M, 2, 3)
+        if self.orientation_check:
+            src_equi_feats_backbone = self.backbone(src_pcd) # (1, 341, 3, N)
+            trg_equi_feats_backbone = self.backbone(trg_pcd) # (1, 341, 3, M)
+            out_dict['src_equi_feats_backbone'] = src_equi_feats_backbone
+            out_dict['trg_equi_feats_backbone'] = trg_equi_feats_backbone
+            src_equi_feats = self.equi_layer(src_equi_feats_backbone.unsqueeze(-1)).squeeze(-1)
+            trg_equi_feats = self.equi_layer(trg_equi_feats_backbone.unsqueeze(-1)).squeeze(-1)
+            src_equi_feats_backbone_mean = src_equi_feats_backbone.mean(dim=-1, keepdim=True).expand(src_equi_feats_backbone.size()) # (1, 341, 3, N)
+            trg_equi_feats_backbone_mean = trg_equi_feats_backbone.mean(dim=-1, keepdim=True).expand(trg_equi_feats_backbone.size()) # (1, 341, 3, M)
+            src_vecs = self.proj(torch.cat((src_equi_feats_backbone, src_equi_feats_backbone_mean), 1).unsqueeze(-1)).squeeze(-1).permute(0, 3, 1, 2) # (1, 682, 3, N) -> (1, 2, 3, N) -> (1, N, 2, 3)
+            trg_vecs = self.proj(torch.cat((trg_equi_feats_backbone, trg_equi_feats_backbone_mean), 1).unsqueeze(-1)).squeeze(-1).permute(0, 3, 1, 2) # (1, 682, 3, M) -> (1, 2, 3, M) -> (1, M, 2, 3)
+            src_vecs = src_vecs.squeeze(2)
+            trg_vecs = trg_vecs.squeeze(2)
+            src_ori = rodrigues_to_rotmat(src_vecs) # (1, N, 1, 3) -> (1, N, 3, 3)
+            trg_ori = rodrigues_to_rotmat(trg_vecs) # (1, M, 1, 3) -> (1, M, 3, 3)
+            src_ori = src_ori.transpose(-2,-1)
 
-        # 3. Gram Schmidt & Cross-product
-        src_ori = ortho2rotation(src_vecs) # (1, N, 2, 3) -> (1, N, 3, 3)
-        trg_ori = ortho2rotation(trg_vecs) # (1, M, 2, 3) -> (1, M, 3, 3)
+        else:
+            # 1. SO(3)-Equivariant Feature Extractor
+            src_equi_feats = self.backbone(src_pcd) # (1, 341, 3, N)
+            trg_equi_feats = self.backbone(trg_pcd) # (1, 341, 3, M)
+
+            # 2. Basis Vector Projection 
+            src_vecs = self.proj(src_equi_feats).permute(0, 3, 1, 2) # (1, 341, 3, N) -> (1, 2, 3, N) -> (1, N, 2, 3)
+            trg_vecs = self.proj(trg_equi_feats).permute(0, 3, 1, 2) # (1, 341, 3, M) -> (1, 2, 3, M) -> (1, M, 2, 3)
+
+            # 3. Gram Schmidt & Cross-product
+            src_ori = ortho2rotation(src_vecs) # (1, N, 2, 3) -> (1, N, 3, 3)
+            trg_ori = ortho2rotation(trg_vecs) # (1, M, 2, 3) -> (1, M, 3, 3)
 
         # 4. Invariant Features
         src_inv_feats = torch.matmul(src_equi_feats.permute(0, 3, 1, 2), src_ori.transpose(-2,-1)) # (1, N, 341, 3) x (1, N, 3, 3) -> (1, N, 341, 3)
@@ -284,7 +338,10 @@ class EquiAssem(pl.LightningModule):
         loss['p_loss'] = self.matching_loss(matching_scores, gt_corr, src_pcd_raw, trg_pcd_raw)
 
         # 9-3. orientation loss
-        loss['o_loss'] = self.orientation_loss(src_ori, trg_ori, gt_corr, in_dict['gt_rotat'])
+        if self.orientation_check:
+            loss['o_loss'] = self.orientation_loss(src_vecs, trg_vecs, gt_corr, in_dict['gt_normals'])
+        else:
+            loss['o_loss'] = self.orientation_loss(src_ori, trg_ori, gt_corr, in_dict['gt_rotat'])
         
         # 9-4. occupancy loss
         if self.occ_loss=='positive': 

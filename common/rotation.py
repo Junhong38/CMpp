@@ -135,6 +135,34 @@ def ortho2rotation(poses):
     z = z[:, :, :, None]
 
     return torch.cat((x, y, z), -1).transpose(2,3)
+
+def rodrigues_to_rotmat(r):
+    """
+    r: Rodrigues vector, shape (..., 3)
+    returns: rotation matrix, shape (..., 3, 3)
+    """
+    theta = torch.norm(r, dim=-1, keepdim=True)  # 회전각
+    k = r / (theta + 1e-8)  # 회전축 (0으로 나누는 경우 방지)
+    
+    kx, ky, kz = k[..., 0], k[..., 1], k[..., 2]
+    
+    # skew-symmetric matrix [k]_x
+    zeros = torch.zeros_like(kx)
+    K = torch.stack([
+        torch.stack([zeros, -kz, ky], dim=-1),
+        torch.stack([kz, zeros, -kx], dim=-1),
+        torch.stack([-ky, kx, zeros], dim=-1)
+    ], dim=-2)  # shape (..., 3, 3)
+    
+    I = torch.eye(3, device=r.device, dtype=r.dtype).expand(K.shape[:-2] + (3, 3))
+    
+    theta = theta[..., 0]  # broadcast용
+    sin_theta = torch.sin(theta)[..., None, None]
+    cos_theta = torch.cos(theta)[..., None, None]
+    
+    R = I + sin_theta * K + (1 - cos_theta) * torch.matmul(K, K)
+    
+    return R
     
 
 class Rotation3D:

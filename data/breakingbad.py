@@ -102,7 +102,7 @@ class DatasetBreakingBad(Dataset):
         # Read mesh, point cloud of a fractured object
         logger = logging.getLogger("trimesh")
         logger.setLevel(logging.ERROR)
-        mesh, pcd = self.read_obj_data(idx)
+        mesh, pcd, face = self.read_obj_data(idx)
         
         # Get ground-truth correspondences
         matching_inds = get_correspondences(to_o3d_pcd(pcd[0]), to_o3d_pcd(pcd[1]), self.overlap_radius)
@@ -111,6 +111,11 @@ class DatasetBreakingBad(Dataset):
         pcd_t, mesh_t, gt_trans = self._translate(mesh, pcd)
         pcd_t, mesh_t, gt_rotat = self._rotate(mesh_t, pcd_t)
         gt_relative_trsfm = self._compute_relative_transform(gt_trans, gt_rotat)
+
+        # Get ground-truth normals
+        gt_normals = [
+            mesh_t[i].face_normals[face_i] for i, face_i in enumerate(face)
+        ]
         
         batch = {
                 'eval_idx': idx,
@@ -130,6 +135,7 @@ class DatasetBreakingBad(Dataset):
                 'gt_trans_inv': [-t for t in gt_trans],
                 'relative_trsfm': gt_relative_trsfm,
 
+                'gt_normals': gt_normals,
                 'gt_correspondence': matching_inds,
                 }
 
@@ -156,17 +162,23 @@ class DatasetBreakingBad(Dataset):
 
         # Sample N-part point clouds from meshes
         pcds = []
+        faces = []
         for mesh in meshes:
             n_pts = int(self.n_pts * mesh.area / total_area)
-            if self.split in ['val', 'test']: sampled_pts = torch.tensor(trimesh.sample.sample_surface_even(mesh, n_pts, seed=idx)[0]).float()
-            else: sampled_pts = torch.tensor(trimesh.sample.sample_surface_even(mesh, n_pts)[0]).float()
+            if self.split in ['val', 'test']: sampled_pts, face_idx = trimesh.sample.sample_surface_even(mesh, n_pts, seed=idx)
+            else: sampled_pts, face_idx = trimesh.sample.sample_surface_even(mesh, n_pts)
+
+            sampled_pts = torch.tensor(sampled_pts).float()
 
             if sampled_pts.size(0) < self.min_n_pts:
-                if self.split in ['val', 'test']: extra_pts, _ = trimesh.sample.sample_surface(mesh, self.min_n_pts - sampled_pts.size(0), seed=idx)
-                else: extra_pts, _ = trimesh.sample.sample_surface(mesh, self.min_n_pts - sampled_pts.size(0))
+                if self.split in ['val', 'test']: extra_pts, extra_face_idx = trimesh.sample.sample_surface(mesh, self.min_n_pts - sampled_pts.size(0), seed=idx)
+                else: extra_pts, extra_face_idx = trimesh.sample.sample_surface(mesh, self.min_n_pts - sampled_pts.size(0))
                 sampled_pts = torch.cat([sampled_pts, torch.tensor(extra_pts).float()], dim=0)
+                face_idx = np.concatenate([face_idx, extra_face_idx], axis=0)
             
             pcds.append(sampled_pts)
+            faces.append(face_idx)
+            
 
         # if self.mpa and len(pcds)>2:
         #     # Randomly select one point cloud
@@ -188,5 +200,6 @@ class DatasetBreakingBad(Dataset):
         if self.split == 'train' and random.random() > 0.5:
             meshes.reverse()
             pcds.reverse()
+            faces.reverse()
         
-        return meshes, pcds
+        return meshes, pcds, faces

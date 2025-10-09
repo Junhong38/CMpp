@@ -42,7 +42,11 @@ def main(args):
                         no_ori=args.no_ori,
                         attention=args.attention,
                         visualize=args.visualize,
-                        debug=args.debug)
+                        debug=args.debug,
+                        shapeloss_check=args.shapeloss_check,
+                        pointmatchingloss_check=args.pointmatchingloss_check,
+                        vndgcnn_check=args.vndgcnn_check,
+                        orientation_check=args.orientation_check)
     elif args.model == 'shape_only':
         model = EquiAssem_shape(lr=args.lr,
                         backbone=args.backbone,
@@ -112,7 +116,7 @@ def main(args):
     ]
 
     logger = WandbLogger(
-        project='cvpr25-equiassem',
+        project='iclr26-CM++',
         name=logger_name,
         id=logger_id,
         save_dir=ckp_dir,
@@ -160,12 +164,25 @@ def main(args):
 
     trainer.fit(model, dataloader_trn, dataloader_val, ckpt_path=ckp_path)
     print('Done training...')
+    # 학습 종료 후 figure 저장
+    if hasattr(model, 'circle_loss'):
+        if args.shapeloss_check:
+            exp_name = 'shapeloss_check'
+        elif args.pointmatchingloss_check:
+            exp_name = 'pointmatchingloss_check'
+        elif args.vndgcnn_check:
+            exp_name = 'vndgcnn_check'
+        elif args.orientation_check:    
+            exp_name = 'orientation_check'
+        else:
+            exp_name = 'original'
+        model.circle_loss.save_stats_figure(f'CheckingEXP_{exp_name}.png')
 
 
 if __name__ == '__main__':
     # Arguments parsing
     parser = argparse.ArgumentParser(description='Equivariant Assembly Pytorch Implementation')
-    parser.add_argument('--datapath', type=str, default='../../data/bbad_v2')
+    parser.add_argument('--datapath', type=str, default='../../../../../hdd/junhong/data/bbad_v2')
     parser.add_argument('--data_category', type=str, default='everyday', choices=['everyday', 'artifact', 'synthetic'])
     parser.add_argument('--sub_category', type=str, default='all')
     parser.add_argument('--n_pts', type=int, default=5000)
@@ -193,6 +210,11 @@ if __name__ == '__main__':
     # Additional experiments
     parser.add_argument('--visualize', action='store_true')
     parser.add_argument('--debug', action='store_true')
+
+    parser.add_argument('--shapeloss_check', action='store_true')
+    parser.add_argument('--pointmatchingloss_check', action='store_true')
+    parser.add_argument('--vndgcnn_check', action='store_true')
+    parser.add_argument('--orientation_check', action='store_true')
         
     # DDP argument
     parser.add_argument('--gpus', nargs='+', default=[0], type=int)
