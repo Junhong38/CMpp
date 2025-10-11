@@ -6,7 +6,7 @@ import torch
 from data.dataset import GADataset
 
 import pytorch_lightning as pl
-from pytorch_lightning.loggers import WandbLogger
+from pytorch_lightning.loggers import WandbLogger, CSVLogger
 from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor
 from pytorch_lightning import seed_everything
 
@@ -113,8 +113,13 @@ def main(args):
             save_dir=ckp_dir,
             tags=[args.scale],
         )
-    else: # [TODO] IF THERE IS NOT LOGGER, THEN ERROR WILL OCCUR
-        logger = None
+    else:
+        # CSV logger 사용 - 텍스트 파일로 모든 메트릭 저장
+        logger = CSVLogger(
+            save_dir=ckp_dir,
+            name="csv_logs",
+            version=None,  # 자동 버전 관리
+        )
 
 
     all_gpus = list(args.gpus)
