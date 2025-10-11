@@ -7,88 +7,132 @@ class CircleLoss(nn.Module):
 
     def __init__(self, log_scale=16, pos_optimal=0.1, neg_optimal=1.4):
         super(CircleLoss,self).__init__()
-        self.log_scale = 24
+        self.log_scale = log_scale
         self.pos_optimal = pos_optimal
         self.neg_optimal = neg_optimal
 
-        self.pos_margin = 0.1
-        self.neg_margin = 1.4
+        self.pos_margin = pos_optimal - 0.05
+        self.neg_margin = neg_optimal + 0.05
         
         self.pos_radius = 0.018
         self.safe_radius = 0.03
 
-        self.max_points = 128
+        # self.max_points = 128
 
     def get_circle_loss(self, coords_dist, feats_dist):
+        # [TODO] Where is the source?
         """
         Modified from: https://github.com/XuyangBai/D3Feat.pytorch
+
+        Args:
+            coords_dist (torch.Tensor): (N, M)
+            feats_dist (torch.Tensor): (N, M)
+
+        Returns:
+            torch.Tensor: (1, ), circle loss
+            torch.Tensor: (1, ), P_margin
+            torch.Tensor: (1, ), N_margin
         """
+
+        print(f"coords_dist: {coords_dist.shape}, feats_dist: {feats_dist.shape}")
+
 
         pos_mask = coords_dist < self.pos_radius
         neg_mask = coords_dist > self.safe_radius
 
+        # Positive/Negative feats_dist 분포 출력
+        pos_dists = feats_dist[pos_mask]
+        neg_dists = feats_dist[neg_mask]
+        if pos_dists.numel() > 0 or neg_dists.numel() > 0:
+            print(f"[CircleLoss] pos_dists: mean={pos_dists.mean():.4f}, std={pos_dists.std():.4f}, min={pos_dists.min():.4f}, max={pos_dists.max():.4f}")
+            print(f"[CircleLoss] neg_dists: mean={neg_dists.mean():.4f}, std={neg_dists.std():.4f}, min={neg_dists.min():.4f}, max={neg_dists.max():.4f}")
+
+        if pos_mask.sum() > neg_mask.sum():
+            breakpoint()
+        
+        # sample the neg_mask to match proportions
+        neg_indices = neg_mask.nonzero(as_tuple=False)
+        neg_nonsampled = neg_indices[torch.randperm(neg_indices.size(0))[pos_mask.sum():]]
+        neg_mask[neg_nonsampled[:,0], neg_nonsampled[:,1]] = False
+
         # get anchors that have both positive and negative pairs
-        row_sel = ((pos_mask.sum(-1)>0) * (neg_mask.sum(-1)>0)).detach()
-        col_sel = ((pos_mask.sum(-2)>0) * (neg_mask.sum(-2)>0)).detach()
+        # [TODO] Why not handling only postitive or negative?
+        row_sel = ((pos_mask.sum(-1)>0) * (neg_mask.sum(-1)>0)) # (N,M) -> (N, )
+        col_sel = ((pos_mask.sum(-2)>0) * (neg_mask.sum(-2)>0)) # (N,M) -> (M, )
 
         # get alpha for both positive and negative pairs
-        pos_weight = feats_dist - 1e5 * (~pos_mask).float() # mask the non-positive 
+        pos_weight = feats_dist - 1e5 * (~pos_mask).float() # mask the non-positive # [TODO] If feats_dis higher but not pos_mask, then it can be bug
         pos_weight = (pos_weight - self.pos_optimal) # mask the uninformative positive
-        pos_weight = torch.max(torch.zeros_like(pos_weight), pos_weight).detach() 
+        pos_weight = torch.max(torch.zeros_like(pos_weight), pos_weight) # (N,M)
 
         neg_weight = feats_dist + 1e5 * (~neg_mask).float() # mask the non-negative
         neg_weight = (self.neg_optimal - neg_weight) # mask the uninformative negative
-        neg_weight = torch.max(torch.zeros_like(neg_weight),neg_weight).detach()
+        neg_weight = torch.max(torch.zeros_like(neg_weight),neg_weight) # (N,M)
 
-        lse_pos_row = torch.logsumexp(self.log_scale * (feats_dist - self.pos_margin) * pos_weight,dim=-1)
-        lse_pos_col = torch.logsumexp(self.log_scale * (feats_dist - self.pos_margin) * pos_weight,dim=-2)
+        # log(Σ exp(γ * (d - m_pos) * w_pos))
+        lse_pos_row = torch.logsumexp(self.log_scale * (feats_dist - self.pos_margin) * pos_weight, dim=-1) # (N, )
+        lse_pos_col = torch.logsumexp(self.log_scale * (feats_dist - self.pos_margin) * pos_weight, dim=-2) # (M, )
 
-        lse_neg_row = torch.logsumexp(self.log_scale * (self.neg_margin - feats_dist) * neg_weight,dim=-1)
-        lse_neg_col = torch.logsumexp(self.log_scale * (self.neg_margin - feats_dist) * neg_weight,dim=-2)
+        # log(Σ exp(γ * (m_neg - d) * w_neg))
+        lse_neg_row = torch.logsumexp(self.log_scale * (self.neg_margin - feats_dist) * neg_weight, dim=-1) # (N, )
+        lse_neg_col = torch.logsumexp(self.log_scale * (self.neg_margin - feats_dist) * neg_weight, dim=-2) # (M, )
 
-        loss_row = F.softplus(lse_pos_row + lse_neg_row)/self.log_scale
-        loss_col = F.softplus(lse_pos_col + lse_neg_col)/self.log_scale
+        # Softplus = log(1+exp(x))
+        # So, log(1+exp(x)) / log_scale -> log(1 + Σ exp(γ * (d - m_pos) * w_pos) + Σ exp(γ * (m_neg - d) * w_neg)) / log_scale
+        loss_row = F.softplus(lse_pos_row + lse_neg_row)/self.log_scale # (N, ) # [TODO] Why do we need to divide by log_scale?
+        loss_col = F.softplus(lse_pos_col + lse_neg_col)/self.log_scale # (M, ) # [TODO] Why do we need to divide by log_scale?
 
         circle_loss = (loss_row[row_sel].mean() + loss_col[col_sel].mean()) / 2
 
-        return circle_loss
+        P_margin = (lse_pos_row[row_sel].mean().detach().cpu() + lse_pos_col[col_sel].mean().detach().cpu()) / 2
+        N_margin = (lse_neg_row[row_sel].mean().detach().cpu() + lse_neg_col[col_sel].mean().detach().cpu()) / 2
+
+        return circle_loss, P_margin.mean().detach().cpu(), N_margin.mean().detach().cpu()
+
 
 
     def forward(self, src_pcd, tgt_pcd, src_feats, tgt_feats, correspondence):
+        """
+        Args:
+            src_pcd (torch.Tensor): (N, 3)
+            tgt_pcd (torch.Tensor): (M, 3)
+            src_feats (torch.Tensor): (1, N, D)
+            tgt_feats (torch.Tensor): (1, M, D)
+            correspondence (torch.Tensor): (P, 2)
+
+        Returns:
+            _type_: _description_
+        """
+
         if len(correspondence) == 0:
             print('[circle loss] No correspondence!')
-            return torch.tensor(0.).to(src_feats.device)
-
-        c_dist = torch.norm(src_pcd[correspondence[:,0]] - tgt_pcd[correspondence[:,1]], dim = 1)
-        c_select = c_dist < self.pos_radius - 0.001
-        correspondence = correspondence[c_select]
-        
-        if correspondence.size(0) > self.max_points:
-            choice = np.random.permutation(correspondence.size(0))[:self.max_points]
-            correspondence = correspondence[choice]
-
-        # Use only correspondence points
-        src_idx = correspondence[:,0]
-        tgt_idx = correspondence[:,1]
-        src_pcd, tgt_pcd = src_pcd[src_idx], tgt_pcd[tgt_idx]
-        src_feats, tgt_feats = src_feats[:, src_idx, :], tgt_feats[:, tgt_idx, :]
+            return (torch.tensor(0.).to(src_feats.device), torch.tensor(0.).to(src_feats.device), torch.tensor(0.).to(src_feats.device))
 
         # Get coordinate distance
-        coords_dist = torch.sqrt(torch.sum((src_pcd[:, None, :] - tgt_pcd[None, :, :]) ** 2, dim=-1))
+        coords_dist = torch.sqrt(torch.clamp(torch.sum((src_pcd[:, None, :] - tgt_pcd[None, :, :]) ** 2, dim=-1), min=0.0))
+        # breakpoint()
 
         # Get feature distance (from GeoTransformer Implementation)
-        src_feats = F.normalize(src_feats.squeeze(0), p=2, dim=-1)
-        tgt_feats = F.normalize(tgt_feats.squeeze(0), p=2, dim=-1)
-        feats_dist = (2.0 - 2.0 * torch.einsum('x d, y d -> x y', src_feats, tgt_feats)).pow(0.5)
+        src_feats = F.normalize(src_feats.squeeze(0), p=2, dim=-1) # (1, N, D) -> (N, D)
+        tgt_feats = F.normalize(tgt_feats.squeeze(0), p=2, dim=-1) # (1, M, D) -> (M, D)
+        if torch.isnan(src_feats).any() or torch.isnan(tgt_feats).any():
+            print("NaN detected in features!")
+            src_feats = torch.nan_to_num(src_feats)
+            tgt_feats = torch.nan_to_num(tgt_feats)
+        dot = torch.einsum('x d, y d -> x y', src_feats, tgt_feats)
+        dot = torch.clamp(dot, min=-1.0, max=1.0)
+        value = 2.0 - 2.0 * dot
+        assert (value >= 0).all(), f"Negative value detected in sqrt input: min={value.min()}"
+        feats_dist = torch.sqrt(torch.clamp(value, min=0.0)) # Why sould we use sine?
         
         # Calculate circle loss and feature matching recall (FMR)
         circle_loss = self.get_circle_loss(coords_dist, feats_dist)
+        if torch.isnan(circle_loss[0]):
+            print('[circle loss] NaN detected! :', circle_loss)
+            circle_loss = (torch.tensor(0.).to(src_feats.device), torch.tensor(0.).to(src_feats.device), torch.tensor(0.).to(src_feats.device))
         
-        if circle_loss != circle_loss:
-            # print('[circle loss] NaN detected!')
-            circle_loss = torch.tensor(0.).to(src_feats.device)
-            
         return circle_loss
+
 
 class PointMatchingLoss(nn.Module):
     def __init__(self):
@@ -96,6 +140,17 @@ class PointMatchingLoss(nn.Module):
         self.positive_radius = 0.018
 
     def forward(self, matching_scores, correlations, src_pcd, trg_pcd):
+        """
+        Args:
+            matching_scores (torch.Tensor): (1, N, M)
+            correlations (torch.Tensor): (P, 2)
+            src_pcd (torch.Tensor): (N, 3)
+            trg_pcd (torch.Tensor): (M, 3)
+
+        Returns:
+            torch.Tensor: (1, ), point matching loss
+        """
+
         coords_dist = torch.sqrt(torch.sum((src_pcd[:, None, :] - trg_pcd[None, :, :]) ** 2, dim=-1))
         gt_corr_map = coords_dist < self.positive_radius
 
@@ -103,70 +158,99 @@ class PointMatchingLoss(nn.Module):
         labels = torch.zeros_like(matching_scores, dtype=torch.bool)
         
         # Handle slack rows and columns
-        slack_row_labels = torch.sum(gt_corr_map[:, :-1], dim=1) == 0
-        slack_col_labels = torch.sum(gt_corr_map[:-1, :], dim=0) == 0
+        slack_row_labels = torch.sum(gt_corr_map, dim=1) == 0
+        slack_col_labels = torch.sum(gt_corr_map, dim=0) == 0
 
         labels[:, :-1, :-1] = gt_corr_map
         labels[:, :-1, -1] = slack_row_labels
         labels[:, -1, :-1] = slack_col_labels
         
         # Calculate the loss
-        loss = -matching_scores[labels].mean()
+        loss = - matching_scores[labels].mean()
 
         return loss
+
 
 class OrientationLoss(nn.Module):
     def __init__(self):
         super(OrientationLoss, self).__init__()
         self.eps = 1e-7
+        self.reg_weight = 1.0 # 0.1
 
-    def inter_loss(self, src_ori, trg_ori, correspondence, src_gt_rot, trg_gt_rot):
-        src_ori = src_ori[:, correspondence[:,0]] 
-        trg_ori = trg_ori[:, correspondence[:,1]]
+    def angle_loss(self, src_angle, trg_angle, correspondence, src_gt_normal, trg_gt_normal):
+        """
+        Args:
+            src_angle (torch.Tensor): (N, 1)
+            trg_angle (torch.Tensor): (M, 1)
+            correspondence (torch.Tensor): (P, 2)
+            src_gt_normal (torch.Tensor): (N, 3)
+            trg_gt_normal (torch.Tensor): (M, 3)
 
-        src_ori = torch.matmul(src_ori, src_gt_rot)
-        trg_ori = torch.matmul(trg_ori, trg_gt_rot)
+        Returns:
+            torch.Tensor: (1, ), angle loss
+        """
+        src_angle = src_angle[correspondence[:,0]] 
+        trg_angle = trg_angle[correspondence[:,1]]
 
-        diff = src_ori - trg_ori
-        f_norm = torch.norm(diff, p='fro', dim=(2, 3))
-        inter_loss = torch.mean(f_norm)
+        loss_fn = nn.SmoothL1Loss(beta=1.0, reduction='mean')
+        angle_loss = loss_fn(src_angle, trg_angle)
         
-        return inter_loss
+        return angle_loss
 
-    def forward(self, src_ori, trg_ori, correspondence, gt_rot):
+    def axis_loss(self, axis, normal):
+        """
+        Args:
+            axis (torch.Tensor): (N, 3)
+            normal (torch.Tensor): (N, 3)
+
+        Returns:
+            torch.Tensor: (1, ), axis loss
+        """
+        # Smooth L1 loss
+        loss_fn = nn.SmoothL1Loss(beta=1.0, reduction='mean')
+        axis_loss = loss_fn(axis, normal)
+        return axis_loss
+
+    def angle_regularization(self, angle):
+        return torch.mean(torch.relu(angle - 0.9*torch.pi) ** 2)
+
+    def forward(self, src_ori, trg_ori, correspondence, gt_normals):
+        """
+        Args:
+            src_ori (torch.Tensor): (1, N, 1, 3)
+            trg_ori (torch.Tensor): (1, M, 1, 3)
+            correspondence (torch.Tensor): (P, 2)
+            gt_normals (list): length is 2, only for two pieces
+                - gt_normals[0]: (1, N, 3)
+                - gt_normals[1]: (1, M, 3)
+
+        Returns:
+            torch.Tensor: (1, ), orientation loss
+        """
+  
         if len(correspondence) == 0:
             return torch.tensor(0.).to(src_ori.device)
 
-        src_gt_rot = gt_rot[0]
-        trg_gt_rot = gt_rot[1]
-        ori_loss = self.inter_loss(src_ori, trg_ori, correspondence, src_gt_rot, trg_gt_rot)
+        src_ori = src_ori.squeeze() # (1, N, 1, 3) --> (N, 3)
+        trg_ori = trg_ori.squeeze() # (1, M, 1, 3) --> (M, 3)
 
-        return ori_loss
+        src_angle = torch.linalg.norm(src_ori, dim=-1, keepdim=True) # (N, 1)
+        trg_angle = torch.linalg.norm(trg_ori, dim=-1, keepdim=True) # (M, 1)
 
-class OrientationLossGeodesic(nn.Module):
-    def __init__(self):
-        super(OrientationLossGeodesic, self).__init__()
-        self.eps = 1e-7
+        src_axis = src_ori / (src_angle + self.eps) # (N, 3)
+        trg_axis = trg_ori / (trg_angle + self.eps) # (M, 3)
 
-    def inter_loss(self, src_ori, trg_ori, correspondence, src_gt_rot, trg_gt_rot):
-        src_ori = src_ori[:, correspondence[:,0]] 
-        trg_ori = trg_ori[:, correspondence[:,1]]
+        src_normals = gt_normals[0].squeeze() # (1, N, 3) --> (N, 3)
+        trg_normals = gt_normals[1].squeeze() # (1, M, 3) --> (M, 3)
 
-        src_ori = torch.matmul(src_ori, src_gt_rot)
-        trg_ori = torch.matmul(trg_ori, trg_gt_rot)
-        
-        R_diff = torch.matmul(src_ori.transpose(2,3), trg_ori)
-        trace_R_diff = torch.einsum('bnii->bn', R_diff)
-        theta = torch.acos(torch.clamp((trace_R_diff-1)/2, -1.0+self.eps, 1.0-self.eps))
-        inter_loss = torch.mean(theta ** 2)
-        return inter_loss
+        src_axis_loss = self.axis_loss(src_axis, src_normals)
+        trg_axis_loss = self.axis_loss(trg_axis, trg_normals)
 
-    def forward(self, src_ori, trg_ori, correspondence, gt_rot):
-        if len(correspondence) == 0:
-            return torch.tensor(0.).to(src_ori.device)
+        angle_loss = self.angle_loss(src_angle, trg_angle, correspondence, src_normals, trg_normals)
 
-        src_gt_rot = gt_rot[0]
-        trg_gt_rot = gt_rot[1]
-        ori_loss = self.inter_loss(src_ori, trg_ori, correspondence, src_gt_rot, trg_gt_rot)
+        reg_loss = self.angle_regularization(src_angle) + self.angle_regularization(trg_angle)
 
-        return ori_loss
+        return (src_axis_loss + trg_axis_loss) / 2 + angle_loss + self.reg_weight * reg_loss
+        # return src_axis_loss + trg_axis_loss + reg_loss
+
+
