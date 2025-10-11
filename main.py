@@ -1,28 +1,14 @@
 import os
-import sys
 import pwd
 import argparse
-import importlib
-import time
-import gc
-from distutils.dir_util import copy_tree
-
 import torch
-import torch.nn as nn
-import torch.optim as optim
 
-from scipy.spatial.transform import Rotation
+from data.dataset import GADataset
 
 import pytorch_lightning as pl
 from pytorch_lightning.loggers import WandbLogger
-from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor, EarlyStopping
+from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor
 from pytorch_lightning import seed_everything
-
-from data.dataset import GADataset
-from common import utils
-import open3d as o3d
-
-
 
 
 def main(args):
@@ -45,15 +31,12 @@ def main(args):
         from model.CMpp_equiassem import EquiAssem
         model = EquiAssem(lr=args.lr,
                           backbone=args.backbone,
-                          shape_loss=args.shape_loss, 
-                          occ_loss=args.occ_loss, 
-                          no_ori=args.no_ori,
                           attention=args.attention,
-                          visualize=args.visualize,
-                          debug=args.debug,
                           pos_margin=args.pos_margin,
                           neg_margin=args.neg_margin,
-                          log_scale=args.log_scale)
+                          log_scale=args.log_scale,
+                          visualize=args.visualize,
+                          debug=args.debug,)
 
 
     # Dataset initialization

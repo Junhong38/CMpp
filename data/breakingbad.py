@@ -1,18 +1,15 @@
 import os
 from os.path import join
 import itertools
-import logging
 import random
-
 import numpy as np
 from scipy.spatial.transform import Rotation as R
-from scipy.spatial import cKDTree
 import trimesh
+
 import torch
 from torch.utils.data import Dataset
-from einops import rearrange, repeat
-import open3d as o3d
-from data.utils import to_o3d_pcd, to_array, get_correspondences
+
+from data.utils import to_o3d_pcd, get_correspondences
 
 
 class DatasetBreakingBad(Dataset):
@@ -200,8 +197,6 @@ class DatasetBreakingBad(Dataset):
         """
 
         # Read mesh, point cloud of a fractured object
-        # logger = logging.getLogger("trimesh")
-        # logger.setLevel(logging.ERROR)
         mesh, pcd, face = self.read_obj_data(idx)
 
 

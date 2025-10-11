@@ -36,7 +36,7 @@ from common.utils import save_pc, knn, get_graph_feature
 import os, trimesh
 
 # REBUTTAL
-from vecAdam.vectoradam import VectorAdam
+# from vecAdam.vectoradam import VectorAdam
 
 class ChannelAttentionModule(nn.Module):
     """ this function is used to achieve the channel attention module in CBAM paper"""
