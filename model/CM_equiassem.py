@@ -20,7 +20,7 @@ from model.backbone.vn_dgcnn import EQCNN_equi_unet
 from model.backbone.vn_dgcnn import EQCNN_equi
 
 from model.backbone.vn_layers import VNLinear, VNLeakyReLU, VNLinearLeakyReLU, VNLinearNoActivation
-from model.loss import CircleLoss, PointMatchingLoss, OrientationLoss
+from model.CM_loss import CircleLoss, PointMatchingLoss, OrientationLoss
 from model.learnable_sinkhorn import LearnableLogOptimalTransport
 from model.local_global_registration import LocalGlobalRegistration, WeightedProcrustes
 
@@ -206,6 +206,7 @@ class EquiAssem(pl.LightningModule):
     def forward_pass(self, in_dict, mode):
 
         out_dict, loss = {}, {}
+        # exit("stop")
         src_pcd_raw = in_dict['pcd'][0].squeeze(0)
         trg_pcd_raw = in_dict['pcd'][1].squeeze(0)
         src_pcd = in_dict['pcd_t'][0] # (1, N ,3)
