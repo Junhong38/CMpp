@@ -22,7 +22,7 @@ from data.dataset import GADataset
 from common import utils
 import open3d as o3d
 
-from model.equiassem import EquiAssem
+
 
 
 def main(args):
@@ -30,17 +30,30 @@ def main(args):
     
     # Model initialization
     # [TODO] MODEL IS CHANGED
-    model = EquiAssem(lr=args.lr,
-                      backbone=args.backbone,
-                      shape_loss=args.shape_loss, 
-                      occ_loss=args.occ_loss, 
-                      no_ori=args.no_ori,
-                      attention=args.attention,
-                      visualize=args.visualize,
-                      debug=args.debug,
-                      pos_margin=args.pos_margin, # [TODO] FOR REPRODUCIBILITY, WE SHOULD SET PROPER DEFUL VALUES
-                      neg_margin=args.neg_margin, # [TODO] FOR REPRODUCIBILITY, WE SHOULD SET PROPER DEFAULT VALUES
-                      log_scale=args.log_scale) # [TODO] FOR REPRODUCIBILITY, WE SHOULD SET PROPER DEFAULT VALUES
+    if args.model == 'CM_equiassem':
+        from model.CM_equiassem import EquiAssem
+        model = EquiAssem(lr=args.lr,
+                          backbone=args.backbone,
+                          shape_loss=args.shape_loss, 
+                          occ_loss=args.occ_loss, 
+                          no_ori=args.no_ori,
+                          attention=args.attention,
+                          visualize=args.visualize,
+                          debug=args.debug)
+    
+    else: # CMpp_equiassem
+        from model.CMpp_equiassem import EquiAssem
+        model = EquiAssem(lr=args.lr,
+                          backbone=args.backbone,
+                          shape_loss=args.shape_loss, 
+                          occ_loss=args.occ_loss, 
+                          no_ori=args.no_ori,
+                          attention=args.attention,
+                          visualize=args.visualize,
+                          debug=args.debug,
+                          pos_margin=args.pos_margin,
+                          neg_margin=args.neg_margin,
+                          log_scale=args.log_scale)
 
 
     # Dataset initialization
@@ -189,6 +202,7 @@ if __name__ == '__main__':
 
 
     # Debugging arguments
+    parser.add_argument('--model', type=str, default='CM_equiassem', choices=['CM_equiassem', 'CMpp_equiassem'])
     parser.add_argument('--scale', type=str, default='full', choices=['full', 'small', 'overfitting', 'tiny'])
 
 
