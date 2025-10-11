@@ -33,22 +33,24 @@ class CircleLoss(nn.Module):
             torch.Tensor: (1, ), P_margin
             torch.Tensor: (1, ), N_margin
         """
-
-        print(f"coords_dist: {coords_dist.shape}, feats_dist: {feats_dist.shape}")
-
-
         pos_mask = coords_dist < self.pos_radius
         neg_mask = coords_dist > self.safe_radius
 
-        # Positive/Negative feats_dist 분포 출력
-        pos_dists = feats_dist[pos_mask]
-        neg_dists = feats_dist[neg_mask]
-        if pos_dists.numel() > 0 or neg_dists.numel() > 0:
-            print(f"[CircleLoss] pos_dists: mean={pos_dists.mean():.4f}, std={pos_dists.std():.4f}, min={pos_dists.min():.4f}, max={pos_dists.max():.4f}")
-            print(f"[CircleLoss] neg_dists: mean={neg_dists.mean():.4f}, std={neg_dists.std():.4f}, min={neg_dists.min():.4f}, max={neg_dists.max():.4f}")
+        # Calculate Positive/Negative feats_dist distribution
+        with torch.no_grad():
+            pos_dists = feats_dist[pos_mask]
+            neg_dists = feats_dist[neg_mask]
 
-        if pos_mask.sum() > neg_mask.sum():
-            breakpoint()
+            pos_neg_distribution = {
+                'pos_mean': pos_dists.mean().item(),
+                'pos_std': pos_dists.std().item(),
+                'pos_min': pos_dists.min().item(),
+                'pos_max': pos_dists.max().item(),
+                'neg_mean': neg_dists.mean().item(),
+                'neg_std': neg_dists.std().item(),
+                'neg_min': neg_dists.min().item(),
+                'neg_max': neg_dists.max().item(),
+            }
         
         # sample the neg_mask to match proportions
         neg_indices = neg_mask.nonzero(as_tuple=False)
@@ -87,7 +89,7 @@ class CircleLoss(nn.Module):
         P_margin = (lse_pos_row[row_sel].mean().detach().cpu() + lse_pos_col[col_sel].mean().detach().cpu()) / 2
         N_margin = (lse_neg_row[row_sel].mean().detach().cpu() + lse_neg_col[col_sel].mean().detach().cpu()) / 2
 
-        return circle_loss, P_margin.mean().detach().cpu(), N_margin.mean().detach().cpu()
+        return circle_loss, P_margin.mean().detach().cpu(), N_margin.mean().detach().cpu(), pos_neg_distribution
 
 
 
@@ -106,7 +108,7 @@ class CircleLoss(nn.Module):
 
         if len(correspondence) == 0:
             print('[circle loss] No correspondence!')
-            return (torch.tensor(0.).to(src_feats.device), torch.tensor(0.).to(src_feats.device), torch.tensor(0.).to(src_feats.device))
+            return (torch.tensor(0.).to(src_feats.device), torch.tensor(0.).to(src_feats.device), torch.tensor(0.).to(src_feats.device), None)
 
         # Get coordinate distance
         coords_dist = torch.sqrt(torch.clamp(torch.sum((src_pcd[:, None, :] - tgt_pcd[None, :, :]) ** 2, dim=-1), min=0.0))
@@ -129,7 +131,7 @@ class CircleLoss(nn.Module):
         circle_loss = self.get_circle_loss(coords_dist, feats_dist)
         if torch.isnan(circle_loss[0]):
             print('[circle loss] NaN detected! :', circle_loss)
-            circle_loss = (torch.tensor(0.).to(src_feats.device), torch.tensor(0.).to(src_feats.device), torch.tensor(0.).to(src_feats.device))
+            circle_loss = (torch.tensor(0.).to(src_feats.device), torch.tensor(0.).to(src_feats.device), torch.tensor(0.).to(src_feats.device), None)
         
         return circle_loss
 

@@ -136,6 +136,7 @@ def main(args):
         max_epochs=args.epochs,
         callbacks=callbacks,
         check_val_every_n_epoch=1,
+        log_every_n_steps=1,
         # profiler='simple',
         fast_dev_run=False,
     )

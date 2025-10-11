@@ -198,18 +198,14 @@ class EquiAssem(pl.LightningModule):
     def training_step(self, in_dict, batch_idx):
         _, loss_dict = self.forward_pass(in_dict, mode='train')
         if torch.isnan(loss_dict['loss']):
-            print(loss_dict['loss'])
-        if loss_dict['loss']==0.: 
-            return None
-        print(f"shape loss : {loss_dict['s_loss']}")
-        print(f"point matching loss : {loss_dict['p_loss']}")
+            assert False, "Loss is nan, Stop training"
         return loss_dict['loss']
     
 
     def validation_step(self, in_dict, batch_idx):
         _, loss_dict = self.forward_pass(in_dict, mode='val')
         if torch.isnan(loss_dict['loss']):
-            print(loss_dict['loss'])
+            assert False, "Loss is nan, Stop validation"
         self.validation_step_outputs.append(loss_dict)
         return loss_dict
 
@@ -406,7 +402,7 @@ class EquiAssem(pl.LightningModule):
         loss['o_loss'] = self.orientation_loss(src_ori, trg_ori, gt_corr, in_dict['gt_normals'])
         
         # Shape loss
-        loss['s_loss'], out_dict['pos_margin'], out_dict['neg_margin'] = self.shape_loss(src_pcd_raw, trg_pcd_raw, src_shape_feats.transpose(-2,-1), trg_shape_feats.transpose(-2,-1), gt_corr)
+        loss['s_loss'], out_dict['pos_margin'], out_dict['neg_margin'], pos_neg_distribution = self.shape_loss(src_pcd_raw, trg_pcd_raw, src_shape_feats.transpose(-2,-1), trg_shape_feats.transpose(-2,-1), gt_corr)
 
         # Point matching loss
         loss['p_loss'] = 1.0 + self.matching_loss(matching_scores, gt_corr, src_pcd_raw, trg_pcd_raw).float()
@@ -453,9 +449,16 @@ class EquiAssem(pl.LightningModule):
         # in training we log for every step
         if mode == 'train':
             log_dict = {f'{mode}/{k}': v.item() for k, v in loss.items()}
-            self.log_dict(log_dict, logger=True, sync_dist=True, rank_zero_only=True, on_step=False, on_epoch=True, batch_size=1)
-            lr = self.trainer.optimizers[0].param_groups[0]['lr']
-            self.log('learning_rate', lr, prog_bar=True, logger=True)
+            pos_neg_distribution = {f'{mode}/{k}': v for k, v in pos_neg_distribution.items()}
+            log_dict.update(pos_neg_distribution)
+
+            training_loss = log_dict.pop(f'{mode}/loss')
+            current_lr = self.trainer.optimizers[0].param_groups[0]['lr']
+
+            self.log_dict(log_dict, prog_bar=False, logger=True, sync_dist=True, rank_zero_only=True, on_step=True, on_epoch=True, batch_size=1)
+            self.log(f'{mode}/loss', training_loss, prog_bar=True, logger=True, sync_dist=True, rank_zero_only=True, on_step=True, on_epoch=True, batch_size=1)
+            self.log('current_lr', current_lr, prog_bar=True, logger=True, sync_dist=True, rank_zero_only=True, on_step=True, on_epoch=False, batch_size=1)
+
         else:
             torch.cuda.empty_cache()
 
