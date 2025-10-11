@@ -58,6 +58,8 @@ class EquiAssem(pl.LightningModule):
             pos_margin=0.1, neg_margin=1.4, log_scale=24,
             s_loss_weight=1.0, p_loss_weight=1.0, o_loss_weight=1.0,
             visualize=False, debug=False,
+
+            temp_Gram_optimum=False,
             ):
         """Equivariant Assembly Model for 3D Object Assembly
 
@@ -73,6 +75,8 @@ class EquiAssem(pl.LightningModule):
             o_loss_weight (float, optional): Weight for orientation loss. Defaults to 1.0.
             visualize (bool, optional): Whether to save visualization results. Defaults to False.
             debug (bool, optional): Whether to enable debug mode. Defaults to False.
+
+            temp_Gram_optimum (bool, optional): Whether to use optimum projection for Gram Schmidt Orthogonalization. Defaults to False.
         """
         super(EquiAssem, self).__init__()
 
@@ -90,13 +94,16 @@ class EquiAssem(pl.LightningModule):
         print(f"o_loss_weight: {o_loss_weight}")
         print(f"visualize: {visualize}")
         print(f"debug: {debug}")
+        print(f"temp_Gram_optimum: {temp_Gram_optimum}")
         print("------------------------------------------------------")
 
         self.lr = lr
         self.attention = attention
-        self.debug = debug
         self.visualize = visualize
+        self.debug = debug
 
+        # DEBUG - Temporarily used for Gram Schmidt Orthogonalization
+        self.temp_Gram_optimum = temp_Gram_optimum
 
         # Output feature dimension of Feature Extractor
         self.feat_dim = 1024
@@ -293,27 +300,34 @@ class EquiAssem(pl.LightningModule):
 
         Returns:
             out_dict (dict)
-                - src_equi_feats: (1, D, 3, N)
-                - trg_equi_feats: (1, D, 3, M)
-                - estimated_rotat: (3, 3)
-                - estimated_trans: (3)
-                - p_loss: (1, )
-                - loss: (1, )
+                - During training,
+                    - pos_margin: (1, )
+                    - neg_margin: (1, )
+                    - o_loss: (1, )
+                    - s_loss: (1, )
+                    - p_loss: (1, )
+                    - loss: (1, )
+                
+                - During validation or test, the following keys are added
+                    - estimated_rotat: (3, 3)
+                    - estimated_trans: (3)
 
             loss (dict)
-                - p_loss: (1, )
-                - loss: (1, )
-
-                When validation or test,
-                - cd: (1, )
-                - rrmse: (1, )
-                - trmse: (1, )
-                - crd: (1, )
+                - During training,
+                    - o_loss: (1, )
+                    - s_loss: (1, )
+                    - p_loss: (1, )
+                    - loss: (1, )
+                
+                - During validation or test, the following keys are added
+                    - cd: (1, )
+                    - rrmse: (1, )
+                    - trmse: (1, )
+                    - crd: (1, )
         """
+
+
         out_dict, loss = {}, {}
-
-        exit("stop")
-
 
         # 0. Get Point Clouds and Ground Truth Correspondence
         src_pcd_raw = in_dict['pcd'][0].squeeze(0) # (N, 3)
@@ -347,12 +361,9 @@ class EquiAssem(pl.LightningModule):
         trg_equi_feats = self.equi_layer(trg_equi_feats_backbone.unsqueeze(-1)).squeeze(-1) # (1, C, 3, M)
 
 
-        
-        # [TODO] WE WILL DO IN THE FUTURE
         # 4. Gram Schmidt & Cross-product, this is for making three basis vectors by using two predicted vectors
-        # src_ori = ortho2rotation(src_vecs) # (1, N, 2, 3) -> (1, N, 3, 3)
-        # trg_ori = ortho2rotation(trg_vecs) # (1, M, 2, 3) -> (1, M, 3, 3)
-
+        src_ori = ortho2rotation(src_vecs, optimum=self.temp_Gram_optimum) # (1, N, 2, 3) -> (1, N, 3, 3)
+        trg_ori = ortho2rotation(trg_vecs, optimum=self.temp_Gram_optimum) # (1, M, 2, 3) -> (1, M, 3, 3)
 
 
         # 5. Invariant Features
@@ -392,7 +403,7 @@ class EquiAssem(pl.LightningModule):
 
         # 8. Calculate Loss
         # Orientation loss
-        loss['o_loss'] = self.orientation_loss(src_vecs, trg_vecs, gt_corr, in_dict['gt_normals'])
+        loss['o_loss'] = self.orientation_loss(src_ori, trg_ori, gt_corr, in_dict['gt_normals'])
         
         # Shape loss
         loss['s_loss'], out_dict['pos_margin'], out_dict['neg_margin'] = self.shape_loss(src_pcd_raw, trg_pcd_raw, src_shape_feats.transpose(-2,-1), trg_shape_feats.transpose(-2,-1), gt_corr)
@@ -447,6 +458,7 @@ class EquiAssem(pl.LightningModule):
             self.log('learning_rate', lr, prog_bar=True, logger=True)
         else:
             torch.cuda.empty_cache()
+
 
         return out_dict, loss
 

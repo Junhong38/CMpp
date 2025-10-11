@@ -36,7 +36,8 @@ def main(args):
                           neg_margin=args.neg_margin,
                           log_scale=args.log_scale,
                           visualize=args.visualize,
-                          debug=args.debug,)
+                          debug=args.debug,
+                          temp_Gram_optimum=args.temp_Gram_optimum)
 
 
     # Dataset initialization
@@ -187,6 +188,9 @@ if __name__ == '__main__':
     # Debugging arguments
     parser.add_argument('--model', type=str, default='CM_equiassem', choices=['CM_equiassem', 'CMpp_equiassem'])
     parser.add_argument('--scale', type=str, default='full', choices=['full', 'small', 'overfitting', 'tiny'])
+
+    # Debugging temporarily used
+    parser.add_argument('--temp_Gram_optimum', action='store_true')
 
 
     # Ablation studies

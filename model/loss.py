@@ -174,51 +174,15 @@ class PointMatchingLoss(nn.Module):
 class OrientationLoss(nn.Module):
     def __init__(self):
         super(OrientationLoss, self).__init__()
-        self.eps = 1e-7
-        self.reg_weight = 1.0 # 0.1
+        self.loss_fn = nn.SmoothL1Loss(beta=1.0, reduction='mean')
 
-    def angle_loss(self, src_angle, trg_angle, correspondence, src_gt_normal, trg_gt_normal):
-        """
-        Args:
-            src_angle (torch.Tensor): (N, 1)
-            trg_angle (torch.Tensor): (M, 1)
-            correspondence (torch.Tensor): (P, 2)
-            src_gt_normal (torch.Tensor): (N, 3)
-            trg_gt_normal (torch.Tensor): (M, 3)
-
-        Returns:
-            torch.Tensor: (1, ), angle loss
-        """
-        src_angle = src_angle[correspondence[:,0]] 
-        trg_angle = trg_angle[correspondence[:,1]]
-
-        loss_fn = nn.SmoothL1Loss(beta=1.0, reduction='mean')
-        angle_loss = loss_fn(src_angle, trg_angle)
         
-        return angle_loss
-
-    def axis_loss(self, axis, normal):
-        """
-        Args:
-            axis (torch.Tensor): (N, 3)
-            normal (torch.Tensor): (N, 3)
-
-        Returns:
-            torch.Tensor: (1, ), axis loss
-        """
-        # Smooth L1 loss
-        loss_fn = nn.SmoothL1Loss(beta=1.0, reduction='mean')
-        axis_loss = loss_fn(axis, normal)
-        return axis_loss
-
-    def angle_regularization(self, angle):
-        return torch.mean(torch.relu(angle - 0.9*torch.pi) ** 2)
 
     def forward(self, src_ori, trg_ori, correspondence, gt_normals):
         """
         Args:
-            src_ori (torch.Tensor): (1, N, 1, 3)
-            trg_ori (torch.Tensor): (1, M, 1, 3)
+            src_ori (torch.Tensor): (1, N, 3, 3), first basis should be aligned with gt_normals[0]
+            trg_ori (torch.Tensor): (1, M, 3, 3), first basis should be aligned with gt_normals[1]
             correspondence (torch.Tensor): (P, 2)
             gt_normals (list): length is 2, only for two pieces
                 - gt_normals[0]: (1, N, 3)
@@ -227,30 +191,20 @@ class OrientationLoss(nn.Module):
         Returns:
             torch.Tensor: (1, ), orientation loss
         """
-  
         if len(correspondence) == 0:
             return torch.tensor(0.).to(src_ori.device)
 
-        src_ori = src_ori.squeeze() # (1, N, 1, 3) --> (N, 3)
-        trg_ori = trg_ori.squeeze() # (1, M, 1, 3) --> (M, 3)
+        src_normal_basis = src_ori[:, :, 0, :] # (1, N, 3)
+        trg_normal_basis = trg_ori[:, :, 0, :] # (1, M, 3)
 
-        src_angle = torch.linalg.norm(src_ori, dim=-1, keepdim=True) # (N, 1)
-        trg_angle = torch.linalg.norm(trg_ori, dim=-1, keepdim=True) # (M, 1)
+        src_normal_basis_loss = self.loss_fn(src_normal_basis, gt_normals[0])
+        trg_normal_basis_loss = self.loss_fn(trg_normal_basis, gt_normals[1])
 
-        src_axis = src_ori / (src_angle + self.eps) # (N, 3)
-        trg_axis = trg_ori / (trg_angle + self.eps) # (M, 3)
+        final_loss = (src_normal_basis_loss + trg_normal_basis_loss) / 2
 
-        src_normals = gt_normals[0].squeeze() # (1, N, 3) --> (N, 3)
-        trg_normals = gt_normals[1].squeeze() # (1, M, 3) --> (M, 3)
+        return final_loss
 
-        src_axis_loss = self.axis_loss(src_axis, src_normals)
-        trg_axis_loss = self.axis_loss(trg_axis, trg_normals)
+        
 
-        angle_loss = self.angle_loss(src_angle, trg_angle, correspondence, src_normals, trg_normals)
-
-        reg_loss = self.angle_regularization(src_angle) + self.angle_regularization(trg_angle)
-
-        return (src_axis_loss + trg_axis_loss) / 2 + angle_loss + self.reg_weight * reg_loss
-        # return src_axis_loss + trg_axis_loss + reg_loss
 
 
