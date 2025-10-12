@@ -42,7 +42,8 @@ def main(args):
                           debugged_point_matching_loss=args.debugged_point_matching_loss,
                           faster_backbone=args.faster_backbone,
                           new_orientation_module=args.new_orientation_module,
-                          delete_occupancy_loss=args.delete_occupancy_loss)
+                          delete_occupancy_loss=args.delete_occupancy_loss
+                          use_opt_gram=args.use_opt_gram)
     
     else: # CMpp_equiassem
         from model.CMpp_equiassem import EquiAssem
@@ -191,8 +192,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Equivariant Assembly Pytorch Implementation')
 
     # Dataset arguments
-    # parser.add_argument('--datapath', type=str, default='/mnt/nvme2n1p1/kimsangki_datasets/breaking_bad/volume_constrained')
-    parser.add_argument('--datapath', type=str, default='../../../../hdd/junhong/data/bbad_v2')
+    parser.add_argument('--datapath', type=str, default='/mnt/nvme2n1p1/kimsangki_datasets/breaking_bad/volume_constrained')
     parser.add_argument('--data_category', type=str, default='everyday', choices=['everyday', 'artifact', 'synthetic'])
     parser.add_argument('--sub_category', type=str, default='all')
     parser.add_argument('--n_pts', type=int, default=5000)
@@ -213,9 +213,6 @@ if __name__ == '__main__':
     parser.add_argument('--model', type=str, default='CM_equiassem', choices=['CM_equiassem', 'CMpp_equiassem', 'CMpp_equiassem_develop_lee'])
     parser.add_argument('--scale', type=str, default='full', choices=['full', 'small', 'overfitting', 'tiny'])
 
-    # Debugging temporarily used
-    parser.add_argument('--temp_Gram_optimum', action='store_true')
-
 
     # Ablation studies
     parser.add_argument('--backbone', type=str, default='vn_unet', choices=['vn_unet', 'vn_dgcnn', 'unet', 'dgcnn'])
@@ -225,13 +222,15 @@ if __name__ == '__main__':
     parser.add_argument('--attention', type=str, default='channel', choices=['channel', 'none'])
 
     
-    # Developing experiments arguments
+    
+    # Developing temporarily used experiments arguments
     parser.add_argument('--additional_VNLinearLeakyReLU', action='store_true', help='Use VNLinearLeakyReLU layers for the equivariant shape feature')
     parser.add_argument('--debugged_circle_loss', action='store_true', help='Debugged version of Circle Loss')
     parser.add_argument('--debugged_point_matching_loss', action='store_true', help='Debugged version of Point Matching Loss')
     parser.add_argument('--faster_backbone', action='store_true', help='Changing VN_DGCNN to work faster')
     parser.add_argument('--new_orientation_module', action='store_true', help='New module for orientation')
     parser.add_argument('--delete_occupancy_loss', action='store_true', help='Deleting the Occupancy Loss')
+    parser.add_argument('--use_opt_gram', action='store_true')
 
 
     # Margin arguments which are used in circle loss

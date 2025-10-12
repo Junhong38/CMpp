@@ -14,7 +14,7 @@ from einops import rearrange
 
 from model.backbone.vn_dgcnn import EQCNN_equi_unet, EQCNN_equi
 from model.backbone.vn_layers import VNLinear, VNLinearLeakyReLU
-from model.loss import PointMatchingLoss, OrientationLoss, CircleLoss
+from model.loss import PointMatchingLoss, OrientationLoss
 from model.learnable_sinkhorn import LearnableLogOptimalTransport
 from model.local_global_registration import LocalGlobalRegistration
 
@@ -59,7 +59,14 @@ class EquiAssem(pl.LightningModule):
             s_loss_weight=1.0, p_loss_weight=1.0, o_loss_weight=1.0,
             visualize=False, debug=False,
 
-            temp_Gram_optimum=False,
+            # Developing temporarily used experiments arguments
+            additional_VNLinearLeakyReLU=False,
+            debugged_circle_loss=False,
+            debugged_point_matching_loss=False,
+            faster_backbone=False,
+            new_orientation_module=False,
+            delete_occupancy_loss=False,
+            use_opt_gram=False,
             ):
         """Equivariant Assembly Model for 3D Object Assembly
 
@@ -76,7 +83,15 @@ class EquiAssem(pl.LightningModule):
             visualize (bool, optional): Whether to save visualization results. Defaults to False.
             debug (bool, optional): Whether to enable debug mode. Defaults to False.
 
-            temp_Gram_optimum (bool, optional): Whether to use optimum projection for Gram Schmidt Orthogonalization. Defaults to False.
+
+            # Developing temporarily used experiments arguments
+            additional_VNLinearLeakyReLU (bool, optional): Whether to use additional VNLinearLeakyReLU layers for the equivariant shape feature. Defaults to False.
+            debugged_circle_loss (bool, optional): Whether to use the debugged version of Circle Loss. Defaults to False.
+            debugged_point_matching_loss (bool, optional): Whether to use the debugged version of Point Matching Loss. Defaults to False.
+            faster_backbone (bool, optional): Whether to use the faster backbone. Defaults to False. NOT USED YET
+            new_orientation_module (bool, optional): Whether to use the new module for orientation loss. Defaults to False.
+            delete_occupancy_loss (bool, optional): Whether to delete the occupancy loss. Defaults to False.
+            use_opt_gram (bool, optional): Whether to use the optimum Gram Schmidt Orthogonalization. Defaults to False.
         """
         super(EquiAssem, self).__init__()
 
@@ -94,7 +109,13 @@ class EquiAssem(pl.LightningModule):
         print(f"o_loss_weight: {o_loss_weight}")
         print(f"visualize: {visualize}")
         print(f"debug: {debug}")
-        print(f"temp_Gram_optimum: {temp_Gram_optimum}")
+        print(f"additional_VNLinearLeakyReLU: {additional_VNLinearLeakyReLU}")
+        print(f"debugged_circle_loss: {debugged_circle_loss}")
+        print(f"debugged_point_matching_loss: {debugged_point_matching_loss}")
+        print(f"faster_backbone: {faster_backbone}")
+        print(f"new_orientation_module: {new_orientation_module}")
+        print(f"delete_occupancy_loss: {delete_occupancy_loss}")
+        print(f"use_opt_gram: {use_opt_gram}")
         print("------------------------------------------------------")
 
         self.lr = lr
@@ -102,14 +123,44 @@ class EquiAssem(pl.LightningModule):
         self.visualize = visualize
         self.debug = debug
 
-        # DEBUG - Temporarily used for Gram Schmidt Orthogonalization
-        self.temp_Gram_optimum = temp_Gram_optimum
+
+        self.debugged_circle_loss = debugged_circle_loss
+        self.debugged_point_matching_loss = debugged_point_matching_loss
+        self.new_orientation_module = new_orientation_module
+        self.delete_occupancy_loss = delete_occupancy_loss
+        self.use_opt_gram = use_opt_gram
+
 
         # Output feature dimension of Feature Extractor
         self.feat_dim = 1024
 
         
         # Objectives
+        if debugged_circle_loss:
+            print("Using the debugged version of Circle Loss")
+            from model.loss import CircleLoss
+        else:
+            from model.CM_loss import CircleLoss
+
+        if debugged_point_matching_loss:
+            print("Using the debugged version of Point Matching Loss")
+            from model.loss import PointMatchingLoss
+        else:
+            from model.CM_loss import PointMatchingLoss
+
+
+        if new_orientation_module:
+            print("Using the new module for orientation loss")
+            from model.loss import OrientationLoss
+        else:
+            from model.CM_loss import OrientationLoss
+
+        if delete_occupancy_loss:
+            print("Deleting the occupancy loss")
+        else:
+            self.occupancy_loss = CircleLoss(pos_optimal=pos_margin, neg_optimal=neg_margin, log_scale=log_scale)
+
+
         self.matching_loss = PointMatchingLoss()
         self.shape_loss = CircleLoss(pos_optimal=pos_margin, neg_optimal=neg_margin, log_scale=log_scale)
         self.orientation_loss = OrientationLoss()
@@ -119,6 +170,9 @@ class EquiAssem(pl.LightningModule):
         self.s_loss_weight = s_loss_weight
         self.p_loss_weight = p_loss_weight
         self.o_loss_weight = o_loss_weight
+        if not delete_occupancy_loss:
+            self.o_loss_weight = s_loss_weight / 2
+            self.s_loss_weight = s_loss_weight / 2
 
 
         # Logging
@@ -142,13 +196,17 @@ class EquiAssem(pl.LightningModule):
 
         
         # Layer for Equivariant feature
-        self.equi_layer = nn.Sequential(
-            VNLinearLeakyReLU(self.feat_dim//3, self.feat_dim//3),
-            VNLinearLeakyReLU(self.feat_dim//3, self.feat_dim//3),
-            VNLinearLeakyReLU(self.feat_dim//3, self.feat_dim//3),
-            VNLinearLeakyReLU(self.feat_dim//3, self.feat_dim//3),
-            VNLinearLeakyReLU(self.feat_dim//3, self.feat_dim//3),
-        )
+        if additional_VNLinearLeakyReLU:
+            print("Using additional VNLinearLeakyReLU layers for the equivariant shape feature")
+            self.equi_layer = nn.Sequential(
+                VNLinearLeakyReLU(self.feat_dim//3, self.feat_dim//3),
+                VNLinearLeakyReLU(self.feat_dim//3, self.feat_dim//3),
+                VNLinearLeakyReLU(self.feat_dim//3, self.feat_dim//3),
+                VNLinearLeakyReLU(self.feat_dim//3, self.feat_dim//3),
+                VNLinearLeakyReLU(self.feat_dim//3, self.feat_dim//3),
+            )
+        else:
+            self.equi_layer = nn.Identity()
 
 
         # Channel Attention
@@ -157,16 +215,40 @@ class EquiAssem(pl.LightningModule):
         
 
         # Module for invariant Shape Descriptor
-        self.shape_mlp = nn.Sequential(nn.Conv1d((self.feat_dim//3) * 3, self.feat_dim, kernel_size=1, bias=False),
-                                       nn.InstanceNorm1d(self.feat_dim),
-                                       nn.LeakyReLU(negative_slope=0.2),
-                                       nn.Conv1d(self.feat_dim, self.feat_dim, kernel_size=1, bias=False),
-                                       nn.InstanceNorm1d(self.feat_dim),
-                                       nn.LeakyReLU(negative_slope=0.2),
-                                       nn.Conv1d(self.feat_dim, self.feat_dim, kernel_size=1, bias=False),
-                                       nn.InstanceNorm1d(self.feat_dim),
-                                       nn.LeakyReLU(negative_slope=0.2),
-                                       )
+        if not delete_occupancy_loss:
+            # Shape Descriptor
+            self.shape_mlp = nn.Sequential(nn.Conv1d(1023, 512, kernel_size=1, bias=False),
+                                           nn.InstanceNorm1d(512),
+                                           nn.LeakyReLU(negative_slope=0.2),
+                                           nn.Conv1d(512, 512, kernel_size=1, bias=False),
+                                           nn.InstanceNorm1d(512),
+                                           nn.LeakyReLU(negative_slope=0.2),
+                                           nn.Conv1d(512, 512, kernel_size=1, bias=False),
+                                           nn.InstanceNorm1d(512),
+                                           nn.LeakyReLU(negative_slope=0.2),
+                                        )
+            # Occupancy Descriptor
+            self.occ_mlp = nn.Sequential(nn.Conv1d(1023, 512, kernel_size=1, bias=False),
+                                         nn.InstanceNorm1d(512),
+                                         nn.LeakyReLU(negative_slope=0.2),
+                                         nn.Conv1d(512, 512, kernel_size=1, bias=False),
+                                         nn.InstanceNorm1d(512),
+                                         nn.LeakyReLU(negative_slope=0.2),
+                                         nn.Conv1d(512, 512, kernel_size=1, bias=False),
+                                         nn.InstanceNorm1d(512),
+                                         nn.Tanh()
+                                         )
+        else:
+            self.shape_mlp = nn.Sequential(nn.Conv1d((self.feat_dim//3) * 3, self.feat_dim, kernel_size=1, bias=False),
+                                           nn.InstanceNorm1d(self.feat_dim),
+                                           nn.LeakyReLU(negative_slope=0.2),
+                                           nn.Conv1d(self.feat_dim, self.feat_dim, kernel_size=1, bias=False),
+                                           nn.InstanceNorm1d(self.feat_dim),
+                                           nn.LeakyReLU(negative_slope=0.2),
+                                           nn.Conv1d(self.feat_dim, self.feat_dim, kernel_size=1, bias=False),
+                                           nn.InstanceNorm1d(self.feat_dim),
+                                           nn.LeakyReLU(negative_slope=0.2),
+                                           )
         
 
         # Optimal Transport
@@ -208,7 +290,6 @@ class EquiAssem(pl.LightningModule):
             assert False, "Loss is nan, Stop validation"
         self.validation_step_outputs.append(loss_dict)
         return loss_dict
-
 
     def on_validation_epoch_end(self):    
         # avg_loss among all data
@@ -321,9 +402,10 @@ class EquiAssem(pl.LightningModule):
                     - trmse: (1, )
                     - crd: (1, )
         """
-
-
         out_dict, loss = {}, {}
+
+        # exit("stop")
+
 
         # 0. Get Point Clouds and Ground Truth Correspondence
         src_pcd_raw = in_dict['pcd'][0].squeeze(0) # (N, 3)
@@ -358,8 +440,8 @@ class EquiAssem(pl.LightningModule):
 
 
         # 4. Gram Schmidt & Cross-product, this is for making three basis vectors by using two predicted vectors
-        src_ori = ortho2rotation(src_vecs, optimum=self.temp_Gram_optimum) # (1, N, 2, 3) -> (1, N, 3, 3)
-        trg_ori = ortho2rotation(trg_vecs, optimum=self.temp_Gram_optimum) # (1, M, 2, 3) -> (1, M, 3, 3)
+        src_ori = ortho2rotation(src_vecs, optimum=self.use_opt_gram) # (1, N, 2, 3) -> (1, N, 3, 3)
+        trg_ori = ortho2rotation(trg_vecs, optimum=self.use_opt_gram) # (1, M, 2, 3) -> (1, M, 3, 3)
 
 
         # 5. Invariant Features
@@ -388,25 +470,54 @@ class EquiAssem(pl.LightningModule):
             trg_shape_feats = trg_shape_feats * shape_attention
 
 
+        if not self.delete_occupancy_loss:
+            # 6-2. OCCUPANCY DESCRIPTOR
+            src_occ_feats = self.occ_mlp(src_inv_feats) # (1, 1023, N) -> (1, 512, N)
+            if self.attention == 'channel': src_occ_feats = src_occ_feats * occ_attention
+            trg_occ_feats = self.occ_mlp(trg_inv_feats) # (1, 1023, M) -> (1, 512, M)
+            if self.attention == 'channel': trg_occ_feats = trg_occ_feats * occ_attention
+            
+
         # 7. Optimal Transport
         shape_matching_scores = torch.einsum('b c n , b c m -> b n m', src_shape_feats, trg_shape_feats) # (1, N, M)
         shape_matching_scores = shape_matching_scores / (src_shape_feats.shape[1] ** 0.5 + 1e-8) # 1e-8 is for avoiding division by zero
-        
+        if not self.delete_occupancy_loss:
+            occ_matching_scores = -torch.einsum('b c n , b c m -> b n m', src_occ_feats, trg_occ_feats) # (1, N, M)
+            occ_matching_scores = occ_matching_scores / src_occ_feats.shape[1] ** 0.5
+            shape_matching_scores = shape_matching_scores + occ_matching_scores # Combine shape and occupancy scores
+
         matching_scores = self.optimal_transport(shape_matching_scores)
-        matching_scores = torch.exp(matching_scores) # Optimal Transport is in log space, so before registration, we need to exp it
+        if self.debugged_point_matching_loss:
+            matching_scores = torch.exp(matching_scores) # Optimal Transport is in log space, so before registration, we need to exp it
         matching_scores_drop = matching_scores[:,:-1,:-1]   
 
 
         # 8. Calculate Loss
         # Orientation loss
-        loss['o_loss'] = self.orientation_loss(src_ori, trg_ori, gt_corr, in_dict['gt_normals'])
+        if self.new_orientation_module:
+            loss['o_loss'] = self.orientation_loss(src_ori, trg_ori, gt_corr, in_dict['gt_normals'])
+        else:
+            loss['o_loss'] = self.orientation_loss(src_ori, trg_ori, gt_corr, in_dict['gt_rotat'])
         
+
         # Shape loss
-        loss['s_loss'], out_dict['pos_margin'], out_dict['neg_margin'], pos_neg_distribution = self.shape_loss(src_pcd_raw, trg_pcd_raw, src_shape_feats.transpose(-2,-1), trg_shape_feats.transpose(-2,-1), gt_corr)
+        if self.debugged_circle_loss:
+            loss['s_loss'], out_dict['pos_margin'], out_dict['neg_margin'], pos_neg_distribution = self.shape_loss(src_pcd_raw, trg_pcd_raw, src_shape_feats.transpose(-2,-1), trg_shape_feats.transpose(-2,-1), gt_corr)
+        else:
+            loss['s_loss'] = self.shape_loss(src_pcd_raw, trg_pcd_raw, src_shape_feats.transpose(-2,-1), trg_shape_feats.transpose(-2,-1), gt_corr)
 
+        
         # Point matching loss
-        loss['p_loss'] = 1.0 + self.matching_loss(matching_scores, gt_corr, src_pcd_raw, trg_pcd_raw).float()
+        if self.debugged_point_matching_loss:
+            loss['p_loss'] = 1.0 + self.matching_loss(matching_scores, gt_corr, src_pcd_raw, trg_pcd_raw).float()
+        else:
+            loss['p_loss'] = self.matching_loss(matching_scores, gt_corr, src_pcd_raw, trg_pcd_raw).float()
+        
 
+        if not self.delete_occupancy_loss:
+            loss['occ_loss'] = self.occupancy_loss(src_pcd_raw, trg_pcd_raw, src_occ_feats.transpose(-2,-1), -trg_occ_feats.transpose(-2,-1), gt_corr)
+            loss['s_loss'] = loss['s_loss'] + loss['occ_loss']  # Total shape loss is the sum of shape loss and occupancy loss
+        
         # Final loss
         loss['loss'] = self.o_loss_weight * loss['o_loss'] + self.s_loss_weight * loss['s_loss'] + self.p_loss_weight * loss['p_loss']
 
@@ -458,10 +569,9 @@ class EquiAssem(pl.LightningModule):
             self.log_dict(log_dict, prog_bar=False, logger=True, sync_dist=True, rank_zero_only=True, on_step=True, on_epoch=True, batch_size=1)
             self.log(f'{mode}/loss', training_loss, prog_bar=True, logger=True, sync_dist=True, rank_zero_only=True, on_step=True, on_epoch=True, batch_size=1)
             self.log('current_lr', current_lr, prog_bar=True, logger=True, sync_dist=True, rank_zero_only=True, on_step=True, on_epoch=False, batch_size=1)
-
+        
         else:
             torch.cuda.empty_cache()
-
 
         return out_dict, loss
 
