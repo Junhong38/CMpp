@@ -27,25 +27,7 @@ def main(args):
                           visualize=args.visualize,
                           debug=args.debug)
         
-    elif args.model == 'CMpp_equiassem_develop_lee': # Import developing mode model
-        from model.CMpp_equiassem_develop_lee import EquiAssem
-        model = EquiAssem(lr=args.lr,
-                          backbone=args.backbone,
-                          attention=args.attention,
-                          pos_margin=args.pos_margin,
-                          neg_margin=args.neg_margin,
-                          log_scale=args.log_scale,
-                          visualize=args.visualize,
-                          debug=args.debug,
-                          additional_VNLinearLeakyReLU=args.additional_VNLinearLeakyReLU,
-                          debugged_circle_loss=args.debugged_circle_loss,
-                          debugged_point_matching_loss=args.debugged_point_matching_loss,
-                          faster_backbone=args.faster_backbone,
-                          new_orientation_module=args.new_orientation_module,
-                          delete_occupancy_loss=args.delete_occupancy_loss
-                          use_opt_gram=args.use_opt_gram)
-    
-    else: # CMpp_equiassem
+    elif args.model == 'CMpp_equiassem': # Import developing mode model
         from model.CMpp_equiassem import EquiAssem
         model = EquiAssem(lr=args.lr,
                           backbone=args.backbone,
@@ -53,9 +35,24 @@ def main(args):
                           pos_margin=args.pos_margin,
                           neg_margin=args.neg_margin,
                           log_scale=args.log_scale,
+
+                          s_loss_weight=args.s_loss_weight,
+                          p_loss_weight=args.p_loss_weight,
+                          o_loss_weight=args.o_loss_weight,
+
                           visualize=args.visualize,
                           debug=args.debug,
-                          temp_Gram_optimum=args.temp_Gram_optimum)
+
+                          additional_VNLinearLeakyReLU=args.additional_VNLinearLeakyReLU,
+                          debugged_circle_loss=args.debugged_circle_loss,
+                          debugged_point_matching_loss=args.debugged_point_matching_loss,
+                          n_knn=args.n_knn,
+                          new_orientation_module=args.new_orientation_module,
+                          delete_occupancy_loss=args.delete_occupancy_loss
+                          use_opt_gram=args.use_opt_gram)
+    
+    else:
+        raise NotImplementedError("Model not implemented")
 
 
     # Dataset initialization
@@ -132,11 +129,11 @@ def main(args):
             tags=[args.scale],
         )
     else:
-        # CSV logger 사용 - 텍스트 파일로 모든 메트릭 저장
+        # CSV logger for saving all metrics in a text file
         logger = CSVLogger(
             save_dir=ckp_dir,
             name="csv_logs",
-            version=None,  # 자동 버전 관리
+            version=None,
         )
 
 
@@ -192,7 +189,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Equivariant Assembly Pytorch Implementation')
 
     # Dataset arguments
-    parser.add_argument('--datapath', type=str, default='/mnt/nvme2n1p1/kimsangki_datasets/breaking_bad/volume_constrained')
+    parser.add_argument('--datapath', type=str, default='/mnt/nvme2n1p1/kimsangki_datasets/breaking_bad/volume_constrained') # '../../../../hdd/junhong/data/bbad_v2'
     parser.add_argument('--data_category', type=str, default='everyday', choices=['everyday', 'artifact', 'synthetic'])
     parser.add_argument('--sub_category', type=str, default='all')
     parser.add_argument('--n_pts', type=int, default=5000)
@@ -201,7 +198,7 @@ if __name__ == '__main__':
 
 
     # Training arguments
-    parser.add_argument('--logpath', type=str, default='default_logpath', help='Log path')
+    parser.add_argument('--logpath', type=str, default='default_logpath', help='Log path and name for project')
     parser.add_argument('--batch_size', type=int, default=1, help='Batch size. DO NOT CHANGE THIS VALUE. WE ASSUME THAT BATCH SIZE IS 1')
     parser.add_argument('--lr', type=float, default=1e-2, help='Learning rate. If you use multi-GPU training, the learning rate is multiplied by the number of GPUs.')
     parser.add_argument('--epochs', type=int, default=90, help='Number of epochs. This is automatically set to 200 for everyday dataset and 300 for other datasets.')
@@ -210,11 +207,11 @@ if __name__ == '__main__':
 
 
     # Debugging arguments
-    parser.add_argument('--model', type=str, default='CM_equiassem', choices=['CM_equiassem', 'CMpp_equiassem', 'CMpp_equiassem_develop_lee'])
-    parser.add_argument('--scale', type=str, default='full', choices=['full', 'small', 'overfitting', 'tiny'])
+    parser.add_argument('--model', type=str, default='CMpp_equiassem', choices=['CM_equiassem', 'CMpp_equiassem'])
+    parser.add_argument('--scale', type=str, default='overfitting', choices=['overfitting', 'tiny', 'small', 'full'])
 
 
-    # Ablation studies
+    # This arguments are used only for CM_equiassem
     parser.add_argument('--backbone', type=str, default='vn_unet', choices=['vn_unet', 'vn_dgcnn', 'unet', 'dgcnn'])
     parser.add_argument('--shape_loss', type=str, default='positive', choices=['positive', 'negative'])
     parser.add_argument('--occ_loss', type=str, default='negative', choices=['positive', 'negative'])
@@ -222,21 +219,25 @@ if __name__ == '__main__':
     parser.add_argument('--attention', type=str, default='channel', choices=['channel', 'none'])
 
     
-    
     # Developing temporarily used experiments arguments
-    parser.add_argument('--additional_VNLinearLeakyReLU', action='store_true', help='Use VNLinearLeakyReLU layers for the equivariant shape feature')
-    parser.add_argument('--debugged_circle_loss', action='store_true', help='Debugged version of Circle Loss')
-    parser.add_argument('--debugged_point_matching_loss', action='store_true', help='Debugged version of Point Matching Loss')
-    parser.add_argument('--faster_backbone', action='store_true', help='Changing VN_DGCNN to work faster')
-    parser.add_argument('--new_orientation_module', action='store_true', help='New module for orientation')
-    parser.add_argument('--delete_occupancy_loss', action='store_true', help='Deleting the Occupancy Loss')
-    parser.add_argument('--use_opt_gram', action='store_true')
+    parser.add_argument('--additional_VNLinearLeakyReLU', action='store_true', help='If True, use VNLinearLeakyReLU layers for the equivariant shape feature')
+    parser.add_argument('--debugged_circle_loss', action='store_true', help='If True, use Debugged version of Circle Loss')
+    parser.add_argument('--debugged_point_matching_loss', action='store_true', help='If True, use Debugged version of Point Matching Loss')
+    parser.add_argument('--n_knn', type=int, default=20, help='Number of nearest neighbors for KNN')
+    parser.add_argument('--new_orientation_module', action='store_true', help='If True, use New module for orientation')
+    parser.add_argument('--delete_occupancy_loss', action='store_true', help='If True, delete the Occupancy Loss')
+    parser.add_argument('--use_opt_gram', action='store_true', help='If True, use Optimum Gram Schmidt Orthogonalization')
+
+    # Weights for losses
+    parser.add_argument('--s_loss_weight', type=float, default=0.5, help='Weight for shape loss, in the future, we will change this into 1.0')
+    parser.add_argument('--p_loss_weight', type=float, default=1.0, help='Weight for point loss, in the future, we will change this into 1.0')
+    parser.add_argument('--o_loss_weight', type=float, default=0.1, help='Weight for orientation loss, in the future, we will change this into 1.0')
 
 
     # Margin arguments which are used in circle loss
-    parser.add_argument('--pos_margin', type=float, default=0.1)
-    parser.add_argument('--neg_margin', type=float, default=1.4)
-    parser.add_argument('--log_scale', type=float, default=24)
+    parser.add_argument('--pos_margin', type=float, default=0.1, help='Margin for positive samples in loss computation')
+    parser.add_argument('--neg_margin', type=float, default=1.4, help='Margin for negative samples in loss computation')
+    parser.add_argument('--log_scale', type=float, default=24, help='Log scale for loss computation')
     
 
     # Additional experiments
@@ -272,14 +273,14 @@ if __name__ == '__main__':
         args.parallel_strategy = None
 
     # Setting developing experiments arguments automatically
-    if args.model == 'CMpp_equiassem_develop_lee': # If the model is CMpp_equiassem_develop_lee
+    if args.model == 'CMpp_equiassem': # If the model is CMpp_equiassem
         arg_order = [
             "additional_VNLinearLeakyReLU",
             "debugged_circle_loss",
             "debugged_point_matching_loss",
-            "faster_backbone",
             "new_orientation_module",
             "delete_occupancy_loss",
+            "use_opt_gram",
         ]
 
         for i, name in enumerate(arg_order):

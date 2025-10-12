@@ -63,7 +63,7 @@ class EquiAssem(pl.LightningModule):
             additional_VNLinearLeakyReLU=False,
             debugged_circle_loss=False,
             debugged_point_matching_loss=False,
-            faster_backbone=False,
+            n_knn=20,
             new_orientation_module=False,
             delete_occupancy_loss=False,
             use_opt_gram=False,
@@ -88,7 +88,7 @@ class EquiAssem(pl.LightningModule):
             additional_VNLinearLeakyReLU (bool, optional): Whether to use additional VNLinearLeakyReLU layers for the equivariant shape feature. Defaults to False.
             debugged_circle_loss (bool, optional): Whether to use the debugged version of Circle Loss. Defaults to False.
             debugged_point_matching_loss (bool, optional): Whether to use the debugged version of Point Matching Loss. Defaults to False.
-            faster_backbone (bool, optional): Whether to use the faster backbone. Defaults to False. NOT USED YET
+            n_knn (int, optional): Number of nearest neighbors for KNN. Defaults to 20.
             new_orientation_module (bool, optional): Whether to use the new module for orientation loss. Defaults to False.
             delete_occupancy_loss (bool, optional): Whether to delete the occupancy loss. Defaults to False.
             use_opt_gram (bool, optional): Whether to use the optimum Gram Schmidt Orthogonalization. Defaults to False.
@@ -112,7 +112,7 @@ class EquiAssem(pl.LightningModule):
         print(f"additional_VNLinearLeakyReLU: {additional_VNLinearLeakyReLU}")
         print(f"debugged_circle_loss: {debugged_circle_loss}")
         print(f"debugged_point_matching_loss: {debugged_point_matching_loss}")
-        print(f"faster_backbone: {faster_backbone}")
+        print(f"n_knn: {n_knn}")
         print(f"new_orientation_module: {new_orientation_module}")
         print(f"delete_occupancy_loss: {delete_occupancy_loss}")
         print(f"use_opt_gram: {use_opt_gram}")
@@ -148,13 +148,12 @@ class EquiAssem(pl.LightningModule):
         else:
             from model.CM_loss import PointMatchingLoss
 
-
         if new_orientation_module:
             print("Using the new module for orientation loss")
             from model.loss import OrientationLoss
         else:
             from model.CM_loss import OrientationLoss
-
+        
         if delete_occupancy_loss:
             print("Deleting the occupancy loss")
         else:
@@ -170,9 +169,28 @@ class EquiAssem(pl.LightningModule):
         self.s_loss_weight = s_loss_weight
         self.p_loss_weight = p_loss_weight
         self.o_loss_weight = o_loss_weight
-        if not delete_occupancy_loss:
-            self.o_loss_weight = s_loss_weight / 2
-            self.s_loss_weight = s_loss_weight / 2
+        self.occ_loss_weight = s_loss_weight if not delete_occupancy_loss else 0
+        
+        """
+        For reproducibility, we use the following weights
+        self.s_loss_weight = 0.5 
+        self.p_loss_weight = 1.0
+        self.o_loss_weight = 0.1
+        self.occ_loss_weight = 0.5
+
+        However, for CMpp_equiassem, we use the following weights
+        self.s_loss_weight = 1.0
+        self.p_loss_weight = 1.0
+        self.o_loss_weight = 1.0
+        """
+
+        print("------------------------------------------------------")
+        print("Weight for losses")
+        print(f"s_loss_weight: {self.s_loss_weight}")
+        print(f"p_loss_weight: {self.p_loss_weight}")
+        print(f"o_loss_weight: {self.o_loss_weight}")
+        print(f"occ_loss_weight: {self.occ_loss_weight}")
+        print("------------------------------------------------------")
 
 
         # Logging
@@ -184,28 +202,29 @@ class EquiAssem(pl.LightningModule):
 
         # VN BACKBONE
         if backbone == 'vn_unet':
-            self.backbone = EQCNN_equi_unet(feat_dim=self.feat_dim, pooling="mean")
+            self.backbone = EQCNN_equi_unet(feat_dim=self.feat_dim, pooling="mean", k=n_knn)
         elif backbone == 'vn_dgcnn':
-            self.backbone = EQCNN_equi(feat_dim=self.feat_dim, pooling="mean")
+            self.backbone = EQCNN_equi(feat_dim=self.feat_dim, pooling="mean", k=n_knn)
         else:
             raise NotImplementedError("DGCNN backbone not implemented")
 
-
-        # Layer for Rotation Matrix, it will predict frame vectors
-        self.proj = VNLinear(2 * (self.feat_dim//3), 2)
-
-        
-        # Layer for Equivariant feature
+ 
         if additional_VNLinearLeakyReLU:
             print("Using additional VNLinearLeakyReLU layers for the equivariant shape feature")
+            # Layer for predicting frame vectors
+            self.proj = VNLinear(2 * (self.feat_dim//3), 2)
+            # Layer for Equivariant feature
             self.equi_layer = nn.Sequential(
                 VNLinearLeakyReLU(self.feat_dim//3, self.feat_dim//3),
                 VNLinearLeakyReLU(self.feat_dim//3, self.feat_dim//3),
                 VNLinearLeakyReLU(self.feat_dim//3, self.feat_dim//3),
                 VNLinearLeakyReLU(self.feat_dim//3, self.feat_dim//3),
                 VNLinearLeakyReLU(self.feat_dim//3, self.feat_dim//3),
-            )
+                )
         else:
+            # Layer for predicting frame vectors
+            self.proj = VNLinear(self.feat_dim//3, 2)
+            # Layer for Equivariant feature
             self.equi_layer = nn.Identity()
 
 
@@ -404,8 +423,6 @@ class EquiAssem(pl.LightningModule):
         """
         out_dict, loss = {}, {}
 
-        # exit("stop")
-
 
         # 0. Get Point Clouds and Ground Truth Correspondence
         src_pcd_raw = in_dict['pcd'][0].squeeze(0) # (N, 3)
@@ -421,19 +438,25 @@ class EquiAssem(pl.LightningModule):
 
 
         # 2. Start frame prediction
-        # 2-1. Merge global information by averaging
-        # (1, C, 3, N) -> (1, C, 3, 1) -> (1, C, 3, N)
-        src_equi_feats_backbone_mean = src_equi_feats_backbone.mean(dim=-1, keepdim=True).expand(src_equi_feats_backbone.size())
-        # (1, C, 3, M) -> (1, C, 3, 1) -> (1, C, 3, M)
-        trg_equi_feats_backbone_mean = trg_equi_feats_backbone.mean(dim=-1, keepdim=True).expand(trg_equi_feats_backbone.size())
+        if self.additional_VNLinearLeakyReLU:
+            # 2-1. Merge global information by averaging
+            # (1, C, 3, N) -> (1, C, 3, 1) -> (1, C, 3, N)
+            src_equi_feats_backbone_mean = src_equi_feats_backbone.mean(dim=-1, keepdim=True).expand(src_equi_feats_backbone.size())
+            # (1, C, 3, M) -> (1, C, 3, 1) -> (1, C, 3, M)
+            trg_equi_feats_backbone_mean = trg_equi_feats_backbone.mean(dim=-1, keepdim=True).expand(trg_equi_feats_backbone.size())
 
-        # 2-2. Basis Vector Projection, those vectors will be used as frame basis vectors
-        # (1, C, 3, N) concat (1, C, 3, N) ->  (1, 2C, 3, N) -> (1, 2C, 3, N, 1) -> (1, 2, 3, N, 1) -> (1, 2, 3, N) -> (1, N, 2, 3)
-        src_vecs = self.proj(torch.cat((src_equi_feats_backbone, src_equi_feats_backbone_mean), 1).unsqueeze(-1)).squeeze(-1).permute(0, 3, 1, 2) 
-        # (1, C, 3, M) concat (1, C, 3, M) ->  (1, 2C, 3, M) -> (1, 2C, 3, M, 1) -> (1, 2, 3, M, 1) -> (1, 2, 3, M) -> (1, M, 2, 3)
-        trg_vecs = self.proj(torch.cat((trg_equi_feats_backbone, trg_equi_feats_backbone_mean), 1).unsqueeze(-1)).squeeze(-1).permute(0, 3, 1, 2) 
+            # 2-2. Basis Vector Projection, those vectors will be used as frame basis vectors
+            # (1, C, 3, N) concat (1, C, 3, N) ->  (1, 2C, 3, N) -> (1, 2C, 3, N, 1) -> (1, 2, 3, N, 1) -> (1, 2, 3, N) -> (1, N, 2, 3)
+            src_vecs = self.proj(torch.cat((src_equi_feats_backbone, src_equi_feats_backbone_mean), 1).unsqueeze(-1)).squeeze(-1).permute(0, 3, 1, 2) 
+            # (1, C, 3, M) concat (1, C, 3, M) ->  (1, 2C, 3, M) -> (1, 2C, 3, M, 1) -> (1, 2, 3, M, 1) -> (1, 2, 3, M) -> (1, M, 2, 3)
+            trg_vecs = self.proj(torch.cat((trg_equi_feats_backbone, trg_equi_feats_backbone_mean), 1).unsqueeze(-1)).squeeze(-1).permute(0, 3, 1, 2) 
 
+        else:
+            # 2. Basis Vector Projection 
+            src_vecs = self.proj(src_equi_feats_backbone).permute(0, 3, 1, 2) # (1, N, 2, 3)
+            trg_vecs = self.proj(trg_equi_feats_backbone).permute(0, 3, 1, 2) # (1, M, 2, 3)
 
+        
         # 3. Calculate equivariant shape features
         src_equi_feats = self.equi_layer(src_equi_feats_backbone.unsqueeze(-1)).squeeze(-1) # (1, C, 3, N)
         trg_equi_feats = self.equi_layer(trg_equi_feats_backbone.unsqueeze(-1)).squeeze(-1) # (1, C, 3, M)
@@ -473,16 +496,19 @@ class EquiAssem(pl.LightningModule):
         if not self.delete_occupancy_loss:
             # 6-2. OCCUPANCY DESCRIPTOR
             src_occ_feats = self.occ_mlp(src_inv_feats) # (1, 1023, N) -> (1, 512, N)
-            if self.attention == 'channel': src_occ_feats = src_occ_feats * occ_attention
+            if self.attention == 'channel': 
+                src_occ_feats = src_occ_feats * occ_attention
+            
             trg_occ_feats = self.occ_mlp(trg_inv_feats) # (1, 1023, M) -> (1, 512, M)
-            if self.attention == 'channel': trg_occ_feats = trg_occ_feats * occ_attention
+            if self.attention == 'channel': 
+                trg_occ_feats = trg_occ_feats * occ_attention
             
 
         # 7. Optimal Transport
         shape_matching_scores = torch.einsum('b c n , b c m -> b n m', src_shape_feats, trg_shape_feats) # (1, N, M)
         shape_matching_scores = shape_matching_scores / (src_shape_feats.shape[1] ** 0.5 + 1e-8) # 1e-8 is for avoiding division by zero
-        if not self.delete_occupancy_loss:
-            occ_matching_scores = -torch.einsum('b c n , b c m -> b n m', src_occ_feats, trg_occ_feats) # (1, N, M)
+        if not self.delete_occupancy_loss: # Only negative occupancy loss is used
+            occ_matching_scores = - torch.einsum('b c n , b c m -> b n m', src_occ_feats, trg_occ_feats) # (1, N, M)
             occ_matching_scores = occ_matching_scores / src_occ_feats.shape[1] ** 0.5
             shape_matching_scores = shape_matching_scores + occ_matching_scores # Combine shape and occupancy scores
 
@@ -502,7 +528,7 @@ class EquiAssem(pl.LightningModule):
 
         # Shape loss
         if self.debugged_circle_loss:
-            loss['s_loss'], out_dict['pos_margin'], out_dict['neg_margin'], pos_neg_distribution = self.shape_loss(src_pcd_raw, trg_pcd_raw, src_shape_feats.transpose(-2,-1), trg_shape_feats.transpose(-2,-1), gt_corr)
+            loss['s_loss'], pos_neg_distribution = self.shape_loss(src_pcd_raw, trg_pcd_raw, src_shape_feats.transpose(-2,-1), trg_shape_feats.transpose(-2,-1), gt_corr)
         else:
             loss['s_loss'] = self.shape_loss(src_pcd_raw, trg_pcd_raw, src_shape_feats.transpose(-2,-1), trg_shape_feats.transpose(-2,-1), gt_corr)
 
@@ -516,10 +542,12 @@ class EquiAssem(pl.LightningModule):
 
         if not self.delete_occupancy_loss:
             loss['occ_loss'] = self.occupancy_loss(src_pcd_raw, trg_pcd_raw, src_occ_feats.transpose(-2,-1), -trg_occ_feats.transpose(-2,-1), gt_corr)
-            loss['s_loss'] = loss['s_loss'] + loss['occ_loss']  # Total shape loss is the sum of shape loss and occupancy loss
         
         # Final loss
-        loss['loss'] = self.o_loss_weight * loss['o_loss'] + self.s_loss_weight * loss['s_loss'] + self.p_loss_weight * loss['p_loss']
+        if not self.delete_occupancy_loss:
+            loss['loss'] = self.o_loss_weight * loss['o_loss'] + self.s_loss_weight * loss['s_loss'] + self.p_loss_weight * loss['p_loss'] + self.occ_loss_weight * loss['occ_loss']
+        else:
+            loss['loss'] = self.o_loss_weight * loss['o_loss'] + self.s_loss_weight * loss['s_loss'] + self.p_loss_weight * loss['p_loss']
 
         out_dict.update(loss)
 

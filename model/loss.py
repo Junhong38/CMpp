@@ -5,7 +5,7 @@ import torch.nn.functional as F
 
 class CircleLoss(nn.Module):
 
-    def __init__(self, log_scale=16, pos_optimal=0.1, neg_optimal=1.4):
+    def __init__(self, log_scale=24, pos_optimal=0.1, neg_optimal=1.4):
         super(CircleLoss,self).__init__()
         self.log_scale = log_scale
         self.pos_optimal = pos_optimal
@@ -20,9 +20,9 @@ class CircleLoss(nn.Module):
         # self.max_points = 128
 
     def get_circle_loss(self, coords_dist, feats_dist):
-        # [TODO] Where is the source?
         """
         Modified from: https://github.com/XuyangBai/D3Feat.pytorch
+        Trivially modified from GeoTransformer Implementation
 
         Args:
             coords_dist (torch.Tensor): (N, M)
@@ -30,8 +30,7 @@ class CircleLoss(nn.Module):
 
         Returns:
             torch.Tensor: (1, ), circle loss
-            torch.Tensor: (1, ), P_margin
-            torch.Tensor: (1, ), N_margin
+            dict: (1, ), pos_neg_distribution
         """
         pos_mask = coords_dist < self.pos_radius
         neg_mask = coords_dist > self.safe_radius
@@ -58,12 +57,11 @@ class CircleLoss(nn.Module):
         neg_mask[neg_nonsampled[:,0], neg_nonsampled[:,1]] = False
 
         # get anchors that have both positive and negative pairs
-        # [TODO] Why not handling only postitive or negative?
         row_sel = ((pos_mask.sum(-1)>0) * (neg_mask.sum(-1)>0)) # (N,M) -> (N, )
         col_sel = ((pos_mask.sum(-2)>0) * (neg_mask.sum(-2)>0)) # (N,M) -> (M, )
 
         # get alpha for both positive and negative pairs
-        pos_weight = feats_dist - 1e5 * (~pos_mask).float() # mask the non-positive # [TODO] If feats_dis higher but not pos_mask, then it can be bug
+        pos_weight = feats_dist - 1e5 * (~pos_mask).float() # mask the non-positive
         pos_weight = (pos_weight - self.pos_optimal) # mask the uninformative positive
         pos_weight = torch.max(torch.zeros_like(pos_weight), pos_weight) # (N,M)
 
@@ -81,16 +79,12 @@ class CircleLoss(nn.Module):
 
         # Softplus = log(1+exp(x))
         # So, log(1+exp(x)) / log_scale -> log(1 + Σ exp(γ * (d - m_pos) * w_pos) + Σ exp(γ * (m_neg - d) * w_neg)) / log_scale
-        loss_row = F.softplus(lse_pos_row + lse_neg_row)/self.log_scale # (N, ) # [TODO] Why do we need to divide by log_scale?
-        loss_col = F.softplus(lse_pos_col + lse_neg_col)/self.log_scale # (M, ) # [TODO] Why do we need to divide by log_scale?
+        loss_row = F.softplus(lse_pos_row + lse_neg_row)/self.log_scale # (N, )
+        loss_col = F.softplus(lse_pos_col + lse_neg_col)/self.log_scale # (M, )
 
         circle_loss = (loss_row[row_sel].mean() + loss_col[col_sel].mean()) / 2
 
-        P_margin = (lse_pos_row[row_sel].mean().detach().cpu() + lse_pos_col[col_sel].mean().detach().cpu()) / 2
-        N_margin = (lse_neg_row[row_sel].mean().detach().cpu() + lse_neg_col[col_sel].mean().detach().cpu()) / 2
-
-        return circle_loss, P_margin.mean().detach().cpu(), N_margin.mean().detach().cpu(), pos_neg_distribution
-
+        return circle_loss, pos_neg_distribution
 
 
     def forward(self, src_pcd, tgt_pcd, src_feats, tgt_feats, correspondence):
@@ -103,35 +97,48 @@ class CircleLoss(nn.Module):
             correspondence (torch.Tensor): (P, 2)
 
         Returns:
-            _type_: _description_
+            torch.Tensor: (1, ), circle loss
+            dict: (1, ), pos_neg_distribution
         """
 
         if len(correspondence) == 0:
             print('[circle loss] No correspondence!')
-            return (torch.tensor(0.).to(src_feats.device), torch.tensor(0.).to(src_feats.device), torch.tensor(0.).to(src_feats.device), None)
+            return (torch.tensor(0.).to(src_feats.device), None)
 
         # Get coordinate distance
         coords_dist = torch.sqrt(torch.clamp(torch.sum((src_pcd[:, None, :] - tgt_pcd[None, :, :]) ** 2, dim=-1), min=0.0))
-        # breakpoint()
+
 
         # Get feature distance (from GeoTransformer Implementation)
         src_feats = F.normalize(src_feats.squeeze(0), p=2, dim=-1) # (1, N, D) -> (N, D)
         tgt_feats = F.normalize(tgt_feats.squeeze(0), p=2, dim=-1) # (1, M, D) -> (M, D)
+
+
+        # Handle NaN
         if torch.isnan(src_feats).any() or torch.isnan(tgt_feats).any():
             print("NaN detected in features!")
             src_feats = torch.nan_to_num(src_feats)
             tgt_feats = torch.nan_to_num(tgt_feats)
+        
+
+        # Get feature distance
         dot = torch.einsum('x d, y d -> x y', src_feats, tgt_feats)
         dot = torch.clamp(dot, min=-1.0, max=1.0)
         value = 2.0 - 2.0 * dot
         assert (value >= 0).all(), f"Negative value detected in sqrt input: min={value.min()}"
-        feats_dist = torch.sqrt(torch.clamp(value, min=0.0)) # Why sould we use sine?
+        # (|x| - |y|)^2 = |x|^2 - 2<x, y> + |y|^2 where <x, y> = |x||y|cos(theta)
+        # Also, we already normalized the features, so |x| = |y| = 1
+        # so, |x|^2 - 2<x, y> + |y|^2 = 2 - 2<x, y> = 2 - 2cos(theta)
+        # By, triangle formulat, 2 - 2 cos(theta) = 4 * sin(theta/2)^2
+        # Hence, feats_dist = 2 * sin(theta/2)
+        feats_dist = torch.sqrt(torch.clamp(value, min=0.0))
         
+
         # Calculate circle loss and feature matching recall (FMR)
         circle_loss = self.get_circle_loss(coords_dist, feats_dist)
         if torch.isnan(circle_loss[0]):
             print('[circle loss] NaN detected! :', circle_loss)
-            circle_loss = (torch.tensor(0.).to(src_feats.device), torch.tensor(0.).to(src_feats.device), torch.tensor(0.).to(src_feats.device), None)
+            circle_loss = (torch.tensor(0.).to(src_feats.device), None)
         
         return circle_loss
 
@@ -178,8 +185,7 @@ class OrientationLoss(nn.Module):
         super(OrientationLoss, self).__init__()
         self.loss_fn = nn.SmoothL1Loss(beta=1.0, reduction='mean')
 
-        
-
+    
     def forward(self, src_ori, trg_ori, correspondence, gt_normals):
         """
         Args:
