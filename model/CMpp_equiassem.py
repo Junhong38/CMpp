@@ -287,7 +287,7 @@ class EquiAssem(pl.LightningModule):
             num_refinement_steps=5,
         )
 
-        """
+
         from model.CM_equiassem import EquiAssem as CM_equiassem
         self.test_CM_equiassem = CM_equiassem(lr=self.lr,
                                               backbone=backbone,
@@ -297,7 +297,32 @@ class EquiAssem(pl.LightningModule):
                                               attention=self.attention,
                                               visualize=self.visualize,
                                               debug=False)
-        """
+        
+        # For debugging, synchronize the parameters of CM_equiassem
+        assert len(list(self.backbone.parameters())) == len(list(self.test_CM_equiassem.backbone.parameters())), f"backbone parameters mismatch: {len(list(self.backbone.parameters()))} != {len(list(self.test_CM_equiassem.backbone.parameters()))}"
+        for param, param_cm_equiassem in zip(self.backbone.parameters(), self.test_CM_equiassem.backbone.parameters()):
+            param_cm_equiassem.data.copy_(param.data)
+
+
+        assert len(list(self.proj.parameters())) == len(list(self.test_CM_equiassem.proj.parameters())), f"proj parameters mismatch: {len(list(self.proj.parameters()))} != {len(list(self.test_CM_equiassem.proj.parameters()))}"
+        for param, param_cm_equiassem in zip(self.proj.parameters(), self.test_CM_equiassem.proj.parameters()):
+            param_cm_equiassem.data.copy_(param.data)
+
+        assert len(list(self.c_attn.parameters())) == len(list(self.test_CM_equiassem.c_attn.parameters())), f"c_attn parameters mismatch: {len(list(self.c_attn.parameters()))} != {len(list(self.test_CM_equiassem.c_attn.parameters()))}"
+        for param, param_cm_equiassem in zip(self.c_attn.parameters(), self.test_CM_equiassem.c_attn.parameters()):
+            param_cm_equiassem.data.copy_(param.data)
+
+        assert len(list(self.shape_mlp.parameters())) == len(list(self.test_CM_equiassem.shape_mlp.parameters())), f"shape_mlp parameters mismatch: {len(list(self.shape_mlp.parameters()))} != {len(list(self.test_CM_equiassem.shape_mlp.parameters()))}"
+        for param, param_cm_equiassem in zip(self.shape_mlp.parameters(), self.test_CM_equiassem.shape_mlp.parameters()):
+            param_cm_equiassem.data.copy_(param.data)
+
+        assert len(list(self.occ_mlp.parameters())) == len(list(self.test_CM_equiassem.occ_mlp.parameters())), f"occ_mlp parameters mismatch: {len(list(self.occ_mlp.parameters()))} != {len(list(self.test_CM_equiassem.occ_mlp.parameters()))}"
+        for param, param_cm_equiassem in zip(self.occ_mlp.parameters(), self.test_CM_equiassem.occ_mlp.parameters()):
+            param_cm_equiassem.data.copy_(param.data)
+
+        assert len(list(self.optimal_transport.parameters())) == len(list(self.test_CM_equiassem.optimal_transport.parameters())), f"optimal_transport parameters mismatch: {len(list(self.optimal_transport.parameters()))} != {len(list(self.test_CM_equiassem.optimal_transport.parameters()))}"
+        for param, param_cm_equiassem in zip(self.optimal_transport.parameters(), self.test_CM_equiassem.optimal_transport.parameters()):
+            param_cm_equiassem.data.copy_(param.data)
 
     
     def configure_optimizers(self):
@@ -433,7 +458,7 @@ class EquiAssem(pl.LightningModule):
                     - trmse: (1, )
                     - crd: (1, )
         """
-        out_dict, loss = {}, {}
+        out_dict, loss, temp_output = {}, {}, {}
 
 
         # 0. Get Point Clouds and Ground Truth Correspondence
@@ -447,6 +472,8 @@ class EquiAssem(pl.LightningModule):
         # 1. SO(3)-Equivariant Feature Extractor
         src_equi_feats_backbone = self.backbone(src_pcd) # (1, C, 3, N)
         trg_equi_feats_backbone = self.backbone(trg_pcd) # (1, C, 3, M)
+
+        temp_output['backbone_feats'] = src_equi_feats_backbone
 
 
         # 2. Start frame prediction
@@ -467,6 +494,9 @@ class EquiAssem(pl.LightningModule):
             # 2. Basis Vector Projection 
             src_vecs = self.proj(src_equi_feats_backbone).permute(0, 3, 1, 2) # (1, N, 2, 3)
             trg_vecs = self.proj(trg_equi_feats_backbone).permute(0, 3, 1, 2) # (1, M, 2, 3)
+        
+
+        temp_output['src_vecs'] = src_vecs
 
         
         # 3. Calculate equivariant shape features
@@ -478,12 +508,16 @@ class EquiAssem(pl.LightningModule):
         src_ori = ortho2rotation(src_vecs, optimum=self.use_opt_gram) # (1, N, 2, 3) -> (1, N, 3, 3)
         trg_ori = ortho2rotation(trg_vecs, optimum=self.use_opt_gram) # (1, M, 2, 3) -> (1, M, 3, 3)
 
+        temp_output['src_ori'] = src_ori
+
 
         # 5. Invariant Features
         src_inv_feats = torch.matmul(src_equi_feats.permute(0, 3, 1, 2).float(), src_ori.transpose(-2,-1).float()) # (1, N, C, 3) x (1, N, 3, 3) -> (1, N, C, 3)
         trg_inv_feats = torch.matmul(trg_equi_feats.permute(0, 3, 1, 2).float(), trg_ori.transpose(-2,-1).float()) # (1, M, C, 3) x (1, M, 3, 3) -> (1, M, C, 3)
         src_inv_feats = rearrange(src_inv_feats, 'b n c r -> b (c r) n') # (1, N, C, 3) -> (1, C*3, N)
         trg_inv_feats = rearrange(trg_inv_feats, 'b n c r -> b (c r) n') # (1, M, C, 3) -> (1, C*3, M)
+
+        temp_output['src_inv_feats'] = src_inv_feats
         
 
         # OPTIONAL 5. Chaneel Attention Map
@@ -504,6 +538,9 @@ class EquiAssem(pl.LightningModule):
         if self.attention == 'channel': # (1, D, M) * channel attention
             trg_shape_feats = trg_shape_feats * shape_attention
 
+        temp_output['src_shape_feats'] = src_shape_feats
+
+
 
         if not self.delete_occupancy_loss:
             # 6-2. OCCUPANCY DESCRIPTOR
@@ -514,20 +551,35 @@ class EquiAssem(pl.LightningModule):
             trg_occ_feats = self.occ_mlp(trg_inv_feats) # (1, 1023, M) -> (1, 512, M)
             if self.attention == 'channel': 
                 trg_occ_feats = trg_occ_feats * occ_attention
+        
+
+        temp_output['src_occ_feats'] = src_occ_feats
             
 
         # 7. Optimal Transport
         shape_matching_scores = torch.einsum('b c n , b c m -> b n m', src_shape_feats, trg_shape_feats) # (1, N, M)
-        shape_matching_scores = shape_matching_scores / (src_shape_feats.shape[1] ** 0.5 + 1e-8) # 1e-8 is for avoiding division by zero
+        
+        
+        
         if not self.delete_occupancy_loss: # Only negative occupancy loss is used
+            shape_matching_scores = shape_matching_scores / src_shape_feats.shape[1] ** 0.5
+            temp_output['shape_matching_scores'] = shape_matching_scores
+
             occ_matching_scores = - torch.einsum('b c n , b c m -> b n m', src_occ_feats, trg_occ_feats) # (1, N, M)
             occ_matching_scores = occ_matching_scores / src_occ_feats.shape[1] ** 0.5
             shape_matching_scores = shape_matching_scores + occ_matching_scores # Combine shape and occupancy scores
+        
+        else:
+            shape_matching_scores = shape_matching_scores / (src_shape_feats.shape[1] ** 0.5 + 1e-8) # 1e-8 is for avoiding division by zero
+        
 
         matching_scores = self.optimal_transport(shape_matching_scores)
         if self.debugged_point_matching_loss:
             matching_scores = torch.exp(matching_scores) # Optimal Transport is in log space, so before registration, we need to exp it
         matching_scores_drop = matching_scores[:,:-1,:-1]   
+
+        temp_output['matching_scores'] = matching_scores
+        
 
 
         # 8. Calculate Loss
@@ -564,19 +616,29 @@ class EquiAssem(pl.LightningModule):
         out_dict.update(loss)
 
 
-        """
-        test_CM_equiassem_out_dict, test_CM_equiassem_loss_dict = self.test_CM_equiassem.forward_pass(in_dict, mode)
 
+        # For debugging, compare the output of CMpp_equiassem with CM_equiassem
+        test_CM_equiassem_out_dict, test_CM_equiassem_loss_dict, test_CM_equiassem_temp_output = self.test_CM_equiassem.forward_pass(in_dict, mode)
+
+        for k, v in temp_output.items():
+            test_k = test_CM_equiassem_temp_output[k]
+            print(f"key: {k}, is same: {torch.all(v == test_k)}")
+
+        print("--------------------------------")
         for k, v in loss.items():
             print(f"key: {k}, value: {v}")
-        
         print("--------------------------------")
-        
         for k, v in test_CM_equiassem_loss_dict.items():
             print(f"key: {k}, value: {v}")
 
+        print(f"key: {'s_loss'}, is same: {loss['s_loss'] == test_CM_equiassem_loss_dict['c_loss']}, {loss['s_loss']}, {test_CM_equiassem_loss_dict['c_loss']}")
+        print(f"key: {'p_loss'}, is same: {loss['p_loss'] == test_CM_equiassem_loss_dict['p_loss']}, {loss['p_loss']}, {test_CM_equiassem_loss_dict['p_loss']}")
+        print(f"key: {'o_loss'}, is same: {loss['o_loss'] == test_CM_equiassem_loss_dict['o_loss']}, {loss['o_loss']}, {test_CM_equiassem_loss_dict['o_loss']}")
+        print(f"key: {'occ_loss'}, is same: {loss['occ_loss'] == test_CM_equiassem_loss_dict['occ_loss']}, {loss['occ_loss']}, {test_CM_equiassem_loss_dict['occ_loss']}")
+        print(f"key: {'loss'}, is same: {loss['loss'] == test_CM_equiassem_loss_dict['loss']}, {loss['loss']}, {test_CM_equiassem_loss_dict['loss']}")
+
         exit("stop")
-        """
+
 
 
         # 9. Evaluation

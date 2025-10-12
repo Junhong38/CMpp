@@ -205,7 +205,7 @@ class EquiAssem(pl.LightningModule):
 
     def forward_pass(self, in_dict, mode):
 
-        out_dict, loss = {}, {}
+        out_dict, loss, temp_output = {}, {}, {}
         # exit("stop")
         src_pcd_raw = in_dict['pcd'][0].squeeze(0)
         trg_pcd_raw = in_dict['pcd'][1].squeeze(0)
@@ -216,19 +216,28 @@ class EquiAssem(pl.LightningModule):
         src_equi_feats = self.backbone(src_pcd) # (1, 341, 3, N)
         trg_equi_feats = self.backbone(trg_pcd) # (1, 341, 3, M)
 
+
+        temp_output['backbone_feats'] = src_equi_feats
+
         # 2. Basis Vector Projection 
         src_vecs = self.proj(src_equi_feats).permute(0, 3, 1, 2) # (1, 341, 3, N) -> (1, 2, 3, N) -> (1, N, 2, 3)
         trg_vecs = self.proj(trg_equi_feats).permute(0, 3, 1, 2) # (1, 341, 3, M) -> (1, 2, 3, M) -> (1, M, 2, 3)
 
+        temp_output['src_vecs'] = src_vecs
+
         # 3. Gram Schmidt & Cross-product
         src_ori = ortho2rotation(src_vecs) # (1, N, 2, 3) -> (1, N, 3, 3)
         trg_ori = ortho2rotation(trg_vecs) # (1, M, 2, 3) -> (1, M, 3, 3)
+
+        temp_output['src_ori'] = src_ori
 
         # 4. Invariant Features
         src_inv_feats = torch.matmul(src_equi_feats.permute(0, 3, 1, 2), src_ori.transpose(-2,-1)) # (1, N, 341, 3) x (1, N, 3, 3) -> (1, N, 341, 3)
         trg_inv_feats = torch.matmul(trg_equi_feats.permute(0, 3, 1, 2), trg_ori.transpose(-2,-1)) # (1, M, 341, 3) x (1, M, 3, 3) -> (1, M, 341, 3)
         src_inv_feats = rearrange(src_inv_feats, 'b n c r -> b (c r) n') # (1, N, 341, 3) -> (1, 1023, N)
         trg_inv_feats = rearrange(trg_inv_feats, 'b n c r -> b (c r) n') # (1, M, 341, 3) -> (1, 1023, M)
+
+        temp_output['src_inv_feats'] = src_inv_feats
         
         # 5. Chaneel Attention Map
         if self.attention == 'channel':
@@ -246,6 +255,8 @@ class EquiAssem(pl.LightningModule):
         if self.attention == 'channel': trg_shape_feats = trg_shape_feats * shape_attention
         #### 6. SHAPE DESCRIPTOR ####
 
+        temp_output['src_shape_feats'] = src_shape_feats
+
         #### 7. OCCUPANCY DESCRIPTOR ####
         src_occ_feats = self.occ_mlp(src_inv_feats) # (1, 1023, N) -> (1, 512, N)
         if self.attention == 'channel': src_occ_feats = src_occ_feats * occ_attention
@@ -253,9 +264,13 @@ class EquiAssem(pl.LightningModule):
         if self.attention == 'channel': trg_occ_feats = trg_occ_feats * occ_attention
         #### 7. OCCUPANCY DESCRIPTOR ####
 
+        temp_output['src_occ_feats'] = src_occ_feats
+
         # 8. Optimal Transport
         shape_matching_scores = torch.einsum('b c n , b c m -> b n m', src_shape_feats, trg_shape_feats) # (1, N, M)
         shape_matching_scores = shape_matching_scores / src_shape_feats.shape[1] ** 0.5
+
+        temp_output['shape_matching_scores'] = shape_matching_scores
 
         if self.occ_loss=='positive': 
             occ_matching_scores = torch.einsum('b c n , b c m -> b n m', src_occ_feats, trg_occ_feats) # (1, N, M)
@@ -265,6 +280,8 @@ class EquiAssem(pl.LightningModule):
 
         matching_scores = self.optimal_transport(shape_matching_scores + occ_matching_scores) # (1, N, M) -> (1, N+1, M+1)
         matching_scores_drop = matching_scores[:,:-1,:-1]
+
+        temp_output['matching_scores'] = matching_scores
 
         # 9. Weighted SVD with top-k correspondence selections
         if mode in ['val', 'test']:
@@ -332,7 +349,7 @@ class EquiAssem(pl.LightningModule):
             self.log_dict(log_dict, logger=True, sync_dist=True, rank_zero_only=True, on_step=False, on_epoch=True, batch_size=1)
             lr = self.trainer.optimizers[0].param_groups[0]['lr']
             self.log('learning_rate', lr, prog_bar=True, logger=True)
-        return out_dict, loss
+        return out_dict, loss, temp_output
 
     @torch.no_grad()
     def evaluate_prediction(self, in_dict, out_dict, gt_corr, multi_part=False):
