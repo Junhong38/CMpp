@@ -519,6 +519,12 @@ class EquiAssem(pl.LightningModule):
 
             # TODO, MESH AND FRAME VISUALIZATION
 
+            # FRAME VIZ
+            # ROTATE SRC FRAME
+            # ROTATE TRG FRAME
+            # DRAW ARROW
+            # DRAW ARROW
+
         return eval_result
     
 
