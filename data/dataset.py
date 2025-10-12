@@ -10,7 +10,7 @@ from data.ambiguous import DatasetAmbiguous
 class GADataset:
 
     @classmethod
-    def initialize(cls, datapath, data_category, sub_category, min_part, max_part, n_pts, scale):
+    def initialize(cls, datapath, data_category, sub_category, min_part, max_part, n_pts, scale, multiplicity):
         cls.datapath = datapath
         cls.data_category = data_category
         cls.sub_category = sub_category
@@ -18,7 +18,8 @@ class GADataset:
         cls.scale = scale
         cls.min_part = min_part
         cls.max_part = max_part
-
+        cls.multiplicity = multiplicity
+        
     @classmethod
     def build_dataloader(cls, batch_size, nworker, split, visualize=False):
         training = split == 'train'
@@ -28,7 +29,7 @@ class GADataset:
         elif cls.data_category == 'ambiguous':
             dataset = DatasetAmbiguous(cls.datapath, cls.data_category, cls.sub_category, cls.min_part, cls.max_part, cls.n_pts, split, cls.scale, visualize)
         else:
-            dataset = DatasetBreakingBad(cls.datapath, cls.data_category, cls.sub_category, cls.min_part, cls.max_part, cls.n_pts, split, cls.scale, visualize)
+            dataset = DatasetBreakingBad(cls.datapath, cls.data_category, cls.sub_category, cls.min_part, cls.max_part, cls.n_pts, split, cls.scale, cls.multiplicity, visualize)
         dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=shuffle, num_workers=nworker, pin_memory=False)
 
         return dataloader

@@ -56,7 +56,7 @@ def main(args):
 
 
     # Dataset initialization
-    GADataset.initialize(args.datapath, args.data_category, args.sub_category, args.min_part, args.max_part, args.n_pts, args.scale)
+    GADataset.initialize(args.datapath, args.data_category, args.sub_category, args.min_part, args.max_part, args.n_pts, args.scale, args.multiplicity)
     dataloader_trn = GADataset.build_dataloader(args.batch_size, args.n_worker, 'train')
     dataloader_val = GADataset.build_dataloader(args.batch_size, args.n_worker, 'val')
 
@@ -195,6 +195,7 @@ if __name__ == '__main__':
     parser.add_argument('--n_pts', type=int, default=5000)
     parser.add_argument('--min_part', type=int, default=2)
     parser.add_argument('--max_part', type=int, default=2)
+    parser.add_argument('--multiplicity', type=int, default=1, help='Multiplicity of the dataset')
 
 
     # Training arguments

@@ -287,6 +287,7 @@ class EquiAssem(pl.LightningModule):
             num_refinement_steps=5,
         )
 
+        """
         from model.CM_equiassem import EquiAssem as CM_equiassem
         self.test_CM_equiassem = CM_equiassem(lr=self.lr,
                                               backbone=backbone,
@@ -296,6 +297,7 @@ class EquiAssem(pl.LightningModule):
                                               attention=self.attention,
                                               visualize=self.visualize,
                                               debug=False)
+        """
 
     
     def configure_optimizers(self):
@@ -561,8 +563,9 @@ class EquiAssem(pl.LightningModule):
 
         out_dict.update(loss)
 
-        test_CM_equiassem_out_dict, test_CM_equiassem_loss_dict = self.test_CM_equiassem.forward_pass(in_dict, mode)
 
+        """
+        test_CM_equiassem_out_dict, test_CM_equiassem_loss_dict = self.test_CM_equiassem.forward_pass(in_dict, mode)
 
         for k, v in loss.items():
             print(f"key: {k}, value: {v}")
@@ -573,6 +576,7 @@ class EquiAssem(pl.LightningModule):
             print(f"key: {k}, value: {v}")
 
         exit("stop")
+        """
 
 
         # 9. Evaluation
@@ -611,8 +615,10 @@ class EquiAssem(pl.LightningModule):
         # in training we log for every step
         if mode == 'train':
             log_dict = {f'{mode}/{k}': v.item() for k, v in loss.items()}
-            pos_neg_distribution = {f'{mode}/{k}': v for k, v in pos_neg_distribution.items()}
-            log_dict.update(pos_neg_distribution)
+
+            if self.debugged_circle_loss:
+                pos_neg_distribution = {f'{mode}/{k}': v for k, v in pos_neg_distribution.items()}
+                log_dict.update(pos_neg_distribution)
 
             training_loss = log_dict.pop(f'{mode}/loss')
             current_lr = self.trainer.optimizers[0].param_groups[0]['lr']

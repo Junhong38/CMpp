@@ -13,7 +13,7 @@ from data.utils import to_o3d_pcd, get_correspondences
 
 
 class DatasetBreakingBad(Dataset):
-    def __init__(self, datapath, data_category, sub_category, min_part, max_part, n_pts, split, scale, visualize=False):
+    def __init__(self, datapath, data_category, sub_category, min_part, max_part, n_pts, split, scale, multiplicity, visualize=False):
         """Dataset for Breaking Bad
 
         Args:
@@ -25,6 +25,7 @@ class DatasetBreakingBad(Dataset):
             n_pts (int): number of points to sample
             split (str): ['train', 'val', 'test']
             scale (str): ['full', 'small', 'overfitting', 'tiny'], candidates are fixed by argparse
+            multiplicity (int): multiplicity of the dataset
             visualize (bool, optional): whether to visualize the dataset. Defaults to False.
         """
         # Assertion
@@ -32,14 +33,18 @@ class DatasetBreakingBad(Dataset):
 
         self.datapath = datapath
         self.data_category = data_category 
-        self.split = split
         self.sub_category = sub_category
-        self.n_pts = n_pts
-        self.visualize = visualize
 
         self.min_n_pts = 256
         self.min_part = min_part
         self.max_part = max_part
+        self.n_pts = n_pts
+
+        self.split = split
+        
+        self.multiplicity = multiplicity if split == 'train' else 1
+        self.visualize = visualize
+
         self.mpa = True if self.max_part > 2 else False
         self.anchor_idx = 0
 
@@ -70,6 +75,7 @@ class DatasetBreakingBad(Dataset):
 
         self.n_frac = [int(x.split()[0]) for x in self.filepaths]
         self.filepaths = [x.split()[1] for x in self.filepaths]
+        self.len_filepaths = len(self.filepaths)
         
         self.overlap_radius = 0.018
 
@@ -98,7 +104,7 @@ class DatasetBreakingBad(Dataset):
         
 
     def __len__(self):
-        return len(self.filepaths)
+        return self.len_filepaths * self.multiplicity
 
 
     def _translate(self, mesh, pcd):
@@ -195,6 +201,7 @@ class DatasetBreakingBad(Dataset):
             np.random.seed(idx)
             random.seed(idx)
         """
+        idx = idx % self.len_filepaths
 
         # Read mesh, point cloud of a fractured object
         mesh, pcd, face = self.read_obj_data(idx)
