@@ -64,9 +64,7 @@ class CircleLoss(nn.Module):
         correspondence = correspondence[c_select]
         
         if correspondence.size(0) > self.max_points:
-            # choice = np.random.permutation(correspondence.size(0))[:self.max_points]
-            # For debugging, remove randomness
-            choice = torch.arange(self.max_points)
+            choice = np.random.permutation(correspondence.size(0))[:self.max_points]
             correspondence = correspondence[choice]
 
         # Use only correspondence points
