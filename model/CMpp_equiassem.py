@@ -57,7 +57,7 @@ class EquiAssem(pl.LightningModule):
             lr, backbone='vn_unet', attention='channel', 
             pos_margin=0.1, neg_margin=1.4, log_scale=24,
             s_loss_weight=1.0, p_loss_weight=1.0, o_loss_weight=1.0,
-            visualize=False, debug=False,
+            visualize=False, ckp_dir=None, debug=False,
 
             # Developing temporarily used experiments arguments
             additional_VNLinearLeakyReLU=False,
@@ -81,6 +81,7 @@ class EquiAssem(pl.LightningModule):
             p_loss_weight (float, optional): Weight for point loss. Defaults to 1.0.
             o_loss_weight (float, optional): Weight for orientation loss. Defaults to 1.0.
             visualize (bool, optional): Whether to save visualization results. Defaults to False.
+            ckp_dir (str, optional): Checkpoint directory. Defaults to None.
             debug (bool, optional): Whether to enable debug mode. Defaults to False.
 
 
@@ -108,6 +109,7 @@ class EquiAssem(pl.LightningModule):
         print(f"p_loss_weight: {p_loss_weight}")
         print(f"o_loss_weight: {o_loss_weight}")
         print(f"visualize: {visualize}")
+        print(f"ckp_dir: {ckp_dir}")
         print(f"debug: {debug}")
         print(f"additional_VNLinearLeakyReLU: {additional_VNLinearLeakyReLU}")
         print(f"debugged_circle_loss: {debugged_circle_loss}")
@@ -121,6 +123,7 @@ class EquiAssem(pl.LightningModule):
         self.lr = lr
         self.attention = attention
         self.visualize = visualize
+        self.ckp_dir = ckp_dir
         self.debug = debug
 
         self.additional_VNLinearLeakyReLU = additional_VNLinearLeakyReLU
@@ -437,8 +440,8 @@ class EquiAssem(pl.LightningModule):
         trg_equi_feats_backbone = self.backbone(trg_pcd) # (1, C, 3, M)
 
 
-        # 2. Start frame prediction
-        if self.additional_VNLinearLeakyReLU:
+        
+        if self.additional_VNLinearLeakyReLU: # 2. Frame Prediction
             # 2-1. Merge global information by averaging
             # (1, C, 3, N) -> (1, C, 3, 1) -> (1, C, 3, N)
             src_equi_feats_backbone_mean = src_equi_feats_backbone.mean(dim=-1, keepdim=True).expand(src_equi_feats_backbone.size())
@@ -451,12 +454,10 @@ class EquiAssem(pl.LightningModule):
             # (1, C, 3, M) concat (1, C, 3, M) ->  (1, 2C, 3, M) -> (1, 2C, 3, M, 1) -> (1, 2, 3, M, 1) -> (1, 2, 3, M) -> (1, M, 2, 3)
             trg_vecs = self.proj(torch.cat((trg_equi_feats_backbone, trg_equi_feats_backbone_mean), 1).unsqueeze(-1)).squeeze(-1).permute(0, 3, 1, 2) 
 
-        else:
-            # 2. Basis Vector Projection 
+        else: # 2. Basis Vector Projection 
             src_vecs = self.proj(src_equi_feats_backbone).permute(0, 3, 1, 2) # (1, N, 2, 3)
             trg_vecs = self.proj(trg_equi_feats_backbone).permute(0, 3, 1, 2) # (1, M, 2, 3)
         
-
 
         # 3. Calculate equivariant shape features
         src_equi_feats = self.equi_layer(src_equi_feats_backbone.unsqueeze(-1)).squeeze(-1) # (1, C, 3, N)
@@ -508,8 +509,6 @@ class EquiAssem(pl.LightningModule):
         # 7. Optimal Transport
         shape_matching_scores = torch.einsum('b c n , b c m -> b n m', src_shape_feats, trg_shape_feats) # (1, N, M)
         
-        
-        
         if not self.delete_occupancy_loss: # Only negative occupancy loss is used
             shape_matching_scores = shape_matching_scores / src_shape_feats.shape[1] ** 0.5
             occ_matching_scores = - torch.einsum('b c n , b c m -> b n m', src_occ_feats, trg_occ_feats) # (1, N, M)
@@ -519,12 +518,10 @@ class EquiAssem(pl.LightningModule):
         else:
             shape_matching_scores = shape_matching_scores / (src_shape_feats.shape[1] ** 0.5 + 1e-8) # 1e-8 is for avoiding division by zero
         
-
         matching_scores = self.optimal_transport(shape_matching_scores)
         if self.debugged_point_matching_loss:
             matching_scores = torch.exp(matching_scores) # Optimal Transport is in log space, so before registration, we need to exp it
         matching_scores_drop = matching_scores[:,:-1,:-1]   
-
 
 
         # 8. Calculate Loss
@@ -552,6 +549,7 @@ class EquiAssem(pl.LightningModule):
         if not self.delete_occupancy_loss:
             loss['occ_loss'] = self.occupancy_loss(src_pcd_raw, trg_pcd_raw, src_occ_feats.transpose(-2,-1), -trg_occ_feats.transpose(-2,-1), gt_corr)
         
+
         # Final loss
         if not self.delete_occupancy_loss:
             loss['loss'] = self.o_loss_weight * loss['o_loss'] + self.s_loss_weight * loss['s_loss'] + self.p_loss_weight * loss['p_loss'] + self.occ_loss_weight * loss['occ_loss']
@@ -559,7 +557,6 @@ class EquiAssem(pl.LightningModule):
             loss['loss'] = self.o_loss_weight * loss['o_loss'] + self.s_loss_weight * loss['s_loss'] + self.p_loss_weight * loss['p_loss']
 
         out_dict.update(loss)
-
 
 
         # 9. Evaluation
@@ -657,7 +654,7 @@ class EquiAssem(pl.LightningModule):
         eval_result['crd'] = self._correspondence_distance(assm_pred, assm_grtr, is_trg_larger)
 
         if self.visualize:
-            vis_folder = './vis/expanded_normal_reverse'
+            vis_folder = os.path.join(self.ckp_dir, 'vis')
             os.makedirs(vis_folder, exist_ok=True)
 
             pcds_pred.append(pcds_pred[0][gt_corr[:,0]])

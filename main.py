@@ -13,7 +13,17 @@ from pytorch_lightning import seed_everything
 
 def main(args):
     seed_everything(42, workers=True)
+
+
+    # Create checkpoint directory
+    cfg_name = args.logpath
+    ckp_dir = os.path.join('checkpoint', cfg_name, 'models')
+    os.makedirs(ckp_dir, exist_ok=True)
+
+    # Print checkpoint directory
+    print(f"checkpoint directory (ckp_dir): {ckp_dir}")
     
+
     # Model initialization
     # [TODO] MODEL IS CHANGED
     if args.model == 'CM_equiassem':
@@ -41,6 +51,7 @@ def main(args):
                           o_loss_weight=args.o_loss_weight,
 
                           visualize=args.visualize,
+                          ckp_dir=ckp_dir,
                           debug=args.debug,
 
                           additional_VNLinearLeakyReLU=args.additional_VNLinearLeakyReLU,
@@ -61,13 +72,9 @@ def main(args):
     dataloader_val = GADataset.build_dataloader(args.batch_size, args.n_worker, 'val')
 
 
-    # Create checkpoint directory
+    # This code is for running on clusters
     SLURM_JOB_ID = os.environ.get('SLURM_JOB_ID')
     print(f"SLURM_JOB_ID: {SLURM_JOB_ID} | if None, it is not running on cluster")
-    cfg_name = args.logpath
-    ckp_dir = os.path.join('checkpoint/', cfg_name, 'models')
-    os.makedirs(os.path.dirname(ckp_dir), exist_ok=True)
-
 
     # On clusters, quota under user dir is usually limited
     # soft link to save the weights in temp space for checkpointing
@@ -79,12 +86,6 @@ def main(args):
             # TODO: modify this if your cluster is different
             usr = pwd.getpwuid(os.getuid())[0]
             os.system(r'ln -s /checkpoint/{}/{}/ {}'.format(usr, SLURM_JOB_ID, ckp_dir))
-    else:
-        os.makedirs(ckp_dir, exist_ok=True)
-    
-    
-    # Print checkpoint directory
-    print(f"checkpoint directory (ckp_dir): {ckp_dir}")
     
 
     # it's not good to hard-code the wandb id
