@@ -123,7 +123,7 @@ class EquiAssem(pl.LightningModule):
         self.visualize = visualize
         self.debug = debug
 
-
+        self.additional_VNLinearLeakyReLU = additional_VNLinearLeakyReLU
         self.debugged_circle_loss = debugged_circle_loss
         self.debugged_point_matching_loss = debugged_point_matching_loss
         self.new_orientation_module = new_orientation_module
@@ -209,7 +209,7 @@ class EquiAssem(pl.LightningModule):
             raise NotImplementedError("DGCNN backbone not implemented")
 
  
-        if additional_VNLinearLeakyReLU:
+        if self.additional_VNLinearLeakyReLU:
             print("Using additional VNLinearLeakyReLU layers for the equivariant shape feature")
             # Layer for predicting frame vectors
             self.proj = VNLinear(2 * (self.feat_dim//3), 2)
@@ -286,6 +286,16 @@ class EquiAssem(pl.LightningModule):
             correspondence_limit=None,
             num_refinement_steps=5,
         )
+
+        from model.CM_equiassem import EquiAssem as CM_equiassem
+        self.test_CM_equiassem = CM_equiassem(lr=self.lr,
+                                              backbone=backbone,
+                                              shape_loss='positive', 
+                                              occ_loss='negative', 
+                                              no_ori=False,
+                                              attention=self.attention,
+                                              visualize=self.visualize,
+                                              debug=False)
 
     
     def configure_optimizers(self):
@@ -550,6 +560,19 @@ class EquiAssem(pl.LightningModule):
             loss['loss'] = self.o_loss_weight * loss['o_loss'] + self.s_loss_weight * loss['s_loss'] + self.p_loss_weight * loss['p_loss']
 
         out_dict.update(loss)
+
+        test_CM_equiassem_out_dict, test_CM_equiassem_loss_dict = self.test_CM_equiassem.forward_pass(in_dict, mode)
+
+
+        for k, v in loss.items():
+            print(f"key: {k}, value: {v}")
+        
+        print("--------------------------------")
+        
+        for k, v in test_CM_equiassem_loss_dict.items():
+            print(f"key: {k}, value: {v}")
+
+        exit("stop")
 
 
         # 9. Evaluation

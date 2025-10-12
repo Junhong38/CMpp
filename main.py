@@ -48,7 +48,7 @@ def main(args):
                           debugged_point_matching_loss=args.debugged_point_matching_loss,
                           n_knn=args.n_knn,
                           new_orientation_module=args.new_orientation_module,
-                          delete_occupancy_loss=args.delete_occupancy_loss
+                          delete_occupancy_loss=args.delete_occupancy_loss,
                           use_opt_gram=args.use_opt_gram)
     
     else:
@@ -278,7 +278,7 @@ if __name__ == '__main__':
             "additional_VNLinearLeakyReLU",
             "debugged_circle_loss",
             "debugged_point_matching_loss",
-            "new_orientation_module",
+            "new_orientation_module", # Use delete_occupancy_loss for automatically setting this to True
             "delete_occupancy_loss",
             "use_opt_gram",
         ]
@@ -289,7 +289,12 @@ if __name__ == '__main__':
                     setattr(args, prev_name, True)
         
         if args.delete_occupancy_loss:
+            # Now, we will test the model with normal vector method
             args.channel_attention = 'none'
+            args.s_loss_weight = 1.0
+            args.p_loss_weight = 1.0
+            args.o_loss_weight = 1.0
+
 
     # Assertions
     assert args.batch_size == 1, "Batch size must be 1"
