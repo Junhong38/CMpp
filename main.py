@@ -26,6 +26,23 @@ def main(args):
                           attention=args.attention,
                           visualize=args.visualize,
                           debug=args.debug)
+        
+    elif args.model == 'CMpp_equiassem_develop_lee': # Import developing mode model
+        from model.CMpp_equiassem_develop_lee import EquiAssem
+        model = EquiAssem(lr=args.lr,
+                          backbone=args.backbone,
+                          attention=args.attention,
+                          pos_margin=args.pos_margin,
+                          neg_margin=args.neg_margin,
+                          log_scale=args.log_scale,
+                          visualize=args.visualize,
+                          debug=args.debug,
+                          additional_VNLinearLeakyReLU=args.additional_VNLinearLeakyReLU,
+                          debugged_circle_loss=args.debugged_circle_loss,
+                          debugged_point_matching_loss=args.debugged_point_matching_loss,
+                          faster_backbone=args.faster_backbone,
+                          new_orientation_module=args.new_orientation_module,
+                          delete_occupancy_loss=args.delete_occupancy_loss)
     
     else: # CMpp_equiassem
         from model.CMpp_equiassem import EquiAssem
@@ -174,7 +191,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Equivariant Assembly Pytorch Implementation')
 
     # Dataset arguments
-    parser.add_argument('--datapath', type=str, default='/mnt/nvme2n1p1/kimsangki_datasets/breaking_bad/volume_constrained')
+    # parser.add_argument('--datapath', type=str, default='/mnt/nvme2n1p1/kimsangki_datasets/breaking_bad/volume_constrained')
+    parser.add_argument('--datapath', type=str, default='../../../../hdd/junhong/data/bbad_v2')
     parser.add_argument('--data_category', type=str, default='everyday', choices=['everyday', 'artifact', 'synthetic'])
     parser.add_argument('--sub_category', type=str, default='all')
     parser.add_argument('--n_pts', type=int, default=5000)
@@ -192,7 +210,7 @@ if __name__ == '__main__':
 
 
     # Debugging arguments
-    parser.add_argument('--model', type=str, default='CM_equiassem', choices=['CM_equiassem', 'CMpp_equiassem'])
+    parser.add_argument('--model', type=str, default='CM_equiassem', choices=['CM_equiassem', 'CMpp_equiassem', 'CMpp_equiassem_develop_lee'])
     parser.add_argument('--scale', type=str, default='full', choices=['full', 'small', 'overfitting', 'tiny'])
 
     # Debugging temporarily used
@@ -205,6 +223,15 @@ if __name__ == '__main__':
     parser.add_argument('--occ_loss', type=str, default='negative', choices=['positive', 'negative'])
     parser.add_argument('--no_ori', action='store_true')
     parser.add_argument('--attention', type=str, default='channel', choices=['channel', 'none'])
+
+    
+    # Developing experiments arguments
+    parser.add_argument('--additional_VNLinearLeakyReLU', action='store_true', help='Use VNLinearLeakyReLU layers for the equivariant shape feature')
+    parser.add_argument('--debugged_circle_loss', action='store_true', help='Debugged version of Circle Loss')
+    parser.add_argument('--debugged_point_matching_loss', action='store_true', help='Debugged version of Point Matching Loss')
+    parser.add_argument('--faster_backbone', action='store_true', help='Changing VN_DGCNN to work faster')
+    parser.add_argument('--new_orientation_module', action='store_true', help='New module for orientation')
+    parser.add_argument('--delete_occupancy_loss', action='store_true', help='Deleting the Occupancy Loss')
 
 
     # Margin arguments which are used in circle loss
@@ -245,6 +272,24 @@ if __name__ == '__main__':
     else: # Single-GPU training
         args.parallel_strategy = None
 
+    # Setting developing experiments arguments automatically
+    if args.model == 'CMpp_equiassem_develop_lee': # If the model is CMpp_equiassem_develop_lee
+        arg_order = [
+            "additional_VNLinearLeakyReLU",
+            "debugged_circle_loss",
+            "debugged_point_matching_loss",
+            "faster_backbone",
+            "new_orientation_module",
+            "delete_occupancy_loss",
+        ]
+
+        for i, name in enumerate(arg_order):
+            if getattr(args, name):
+                for prev_name in arg_order[:i]:
+                    setattr(args, prev_name, True)
+        
+        if args.delete_occupancy_loss:
+            args.channel_attention = 'none'
 
     # Assertions
     assert args.batch_size == 1, "Batch size must be 1"
