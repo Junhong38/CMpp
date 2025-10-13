@@ -22,6 +22,8 @@ from common.rotation import ortho2rotation
 from common.utils import save_pc
 from common.viz import draw_frames
 
+from pytorch3d.ops import iterative_closest_point
+
 
 class ChannelAttentionModule(nn.Module):
     """ this function is used to achieve the channel attention module in CBAM paper"""
@@ -57,7 +59,7 @@ class EquiAssem(pl.LightningModule):
             lr, backbone='vn_unet', attention='channel', 
             pos_margin=0.1, neg_margin=1.4, log_scale=24,
             s_loss_weight=1.0, p_loss_weight=1.0, o_loss_weight=1.0,
-            visualize=False, mesh_vis_epoch=10, ckp_dir=None, debug=False,
+            visualize=False, viz_epoch=10, ckp_dir=None, debug=False,
 
             # Developing temporarily used experiments arguments
             additional_VNLinearLeakyReLU=False,
@@ -67,7 +69,6 @@ class EquiAssem(pl.LightningModule):
             new_orientation_module=False,
             delete_occupancy_loss=False,
             use_opt_gram=False,
-            use_RPF_metric=False,
             ):
         """Equivariant Assembly Model for 3D Object Assembly
 
@@ -82,7 +83,7 @@ class EquiAssem(pl.LightningModule):
             p_loss_weight (float, optional): Weight for point loss. Defaults to 1.0.
             o_loss_weight (float, optional): Weight for orientation loss. Defaults to 1.0.
             visualize (bool, optional): Whether to save visualization results. Defaults to False.
-            mesh_vis_epoch (int, optional): Epoch for mesh visualization. Defaults to 10.
+            viz_epoch (int, optional): Epoch for mesh visualization. Defaults to 10.
             ckp_dir (str, optional): Checkpoint directory. Defaults to None.
             debug (bool, optional): Whether to enable debug mode. Defaults to False.
 
@@ -95,7 +96,6 @@ class EquiAssem(pl.LightningModule):
             new_orientation_module (bool, optional): Whether to use the new module for orientation loss. Defaults to False.
             delete_occupancy_loss (bool, optional): Whether to delete the occupancy loss. Defaults to False.
             use_opt_gram (bool, optional): Whether to use the optimum Gram Schmidt Orthogonalization. Defaults to False.
-            use_RPF_metric (bool, optional): Whether to use the RPF metric for evaluation especially for rmse-r and rmse-t. Defaults to False.
         """
         super(EquiAssem, self).__init__()
 
@@ -112,7 +112,7 @@ class EquiAssem(pl.LightningModule):
         print(f"p_loss_weight: {p_loss_weight}")
         print(f"o_loss_weight: {o_loss_weight}")
         print(f"visualize: {visualize}")
-        print(f"mesh_vis_epoch: {mesh_vis_epoch}")
+        print(f"viz_epoch: {viz_epoch}")
         print(f"ckp_dir: {ckp_dir}")
         print(f"debug: {debug}")
         print(f"additional_VNLinearLeakyReLU: {additional_VNLinearLeakyReLU}")
@@ -122,13 +122,12 @@ class EquiAssem(pl.LightningModule):
         print(f"new_orientation_module: {new_orientation_module}")
         print(f"delete_occupancy_loss: {delete_occupancy_loss}")
         print(f"use_opt_gram: {use_opt_gram}")
-        print(f"use_RPF_metric: {use_RPF_metric}")
         print("------------------------------------------------------")
 
         self.lr = lr
         self.attention = attention
         self.visualize = visualize
-        self.mesh_vis_epoch = mesh_vis_epoch
+        self.viz_epoch = viz_epoch
         self.ckp_dir = ckp_dir
         self.debug = debug
 
@@ -138,7 +137,6 @@ class EquiAssem(pl.LightningModule):
         self.new_orientation_module = new_orientation_module
         self.delete_occupancy_loss = delete_occupancy_loss
         self.use_opt_gram = use_opt_gram
-        self.use_RPF_metric = use_RPF_metric
 
 
         # Output feature dimension of Feature Extractor
@@ -407,16 +405,19 @@ class EquiAssem(pl.LightningModule):
         Returns:
             out_dict (dict)
                 - During training,
-                    - pos_margin: (1, )
-                    - neg_margin: (1, )
                     - o_loss: (1, )
                     - s_loss: (1, )
                     - p_loss: (1, )
                     - loss: (1, )
+                    
+                    if not delete_occupancy_loss:
+                        - occ_loss: (1, )
                 
                 - During validation or test, the following keys are added
                     - estimated_rotat: (3, 3)
                     - estimated_trans: (3)
+                    - src_ori: (1, N, 3, 3)
+                    - trg_ori: (1, M, 3, 3)
 
             loss (dict)
                 - During training,
@@ -424,12 +425,17 @@ class EquiAssem(pl.LightningModule):
                     - s_loss: (1, )
                     - p_loss: (1, )
                     - loss: (1, )
+
+                    if not delete_occupancy_loss:
+                        - occ_loss: (1, )
                 
                 - During validation or test, the following keys are added
                     - cd: (1, )
                     - rrmse: (1, )
                     - trmse: (1, )
                     - crd: (1, )
+                    - rpf_rmse: (1, )
+                    - rpf_tmse: (1, )
         """
         out_dict, loss = {}, {}
 
@@ -530,7 +536,7 @@ class EquiAssem(pl.LightningModule):
         else:
             shape_matching_scores = shape_matching_scores / (src_shape_feats.shape[1] ** 0.5 + 1e-8) # 1e-8 is for avoiding division by zero
         
-        matching_scores = self.optimal_transport(shape_matching_scores)
+        matching_scores = self.optimal_transport(shape_matching_scores) # Optimal Transport is in log space, so inside registration, there is exp operation
         matching_scores_drop = matching_scores[:,:-1,:-1]   
 
 
@@ -659,15 +665,13 @@ class EquiAssem(pl.LightningModule):
         eval_result['cd'] = self._chamfer_distance(assm_pred, assm_grtr, is_trg_larger)
 
         # (b) Compute MSE between prediction & ground-truth for rotation (in degree) and translation
-        if self.use_RPF_metric:
-            eval_result['rrmse'], eval_result['trmse'] = self._transformation_error_RPFver(pcds_pred, pcds_grtr, multi_part)
-        else:
-            eval_result['rrmse'], eval_result['trmse'] = self._transformation_error(pred_relative_trsfm, grtr_relative_trsfm, multi_part)
+        eval_result['rrmse_rpf'], eval_result['trmse_rpf'] = self._transformation_error_RPFver(pcds_pred, pcds_grtr, multi_part)
+        eval_result['rrmse'], eval_result['trmse'] = self._transformation_error(pred_relative_trsfm, grtr_relative_trsfm, multi_part)
 
         # (c) Compute CoRrespondence Distance (CRD) betwween prediction & ground-truth
         eval_result['crd'] = self._correspondence_distance(assm_pred, assm_grtr, is_trg_larger)
 
-        if self.visualize:
+        if self.visualize and self.current_epoch % self.viz_epoch == 0:
             vis_folder = os.path.join(self.ckp_dir, 'vis', mode)
             os.makedirs(vis_folder, exist_ok=True)
 
@@ -681,32 +685,30 @@ class EquiAssem(pl.LightningModule):
             save_pc(f'{vis_folder}/E{self.current_epoch}_{in_dict["eval_idx"].item()}_{in_dict["obj_class"][0]}_{round(eval_result["crd"].item(),3)}_pred.pcd', pcds_pred_for_viz)
             save_pc(f"{vis_folder}/E{self.current_epoch}_{in_dict['eval_idx'].item()}_{in_dict['obj_class'][0]}_{round(eval_result['crd'].item(),3)}_grtr.pcd", pcds_grtr_for_viz)
 
+            # MESH AND FRAME VISUALIZATION
+            output_src_ori, output_trg_ori = out_dict['src_ori'][0], out_dict['trg_ori'][0] # (1,N,3,3) -> (N,3,3), (1,M,3,3) -> (M,3,3)
+            gt_src_normals, gt_trg_normals = in_dict['gt_normals'][0].float(), in_dict['gt_normals'][1].float() # (1,N,3) -> (N,3), (1,M,3) -> (M,3)
+            
+            reshaped_output_src_ori = output_src_ori.reshape(-1,3) # (N,3,3) -> (N*3,3)
+            reshaped_output_trg_ori = output_trg_ori.reshape(-1,3) # (M,3,3) -> (M*3,3)
 
-            if self.current_epoch % self.mesh_vis_epoch == 0:
-                # MESH AND FRAME VISUALIZATION
-                output_src_ori, output_trg_ori = out_dict['src_ori'][0], out_dict['trg_ori'][0] # (1,N,3,3) -> (N,3,3), (1,M,3,3) -> (M,3,3)
-                gt_src_normals, gt_trg_normals = in_dict['gt_normals'][0].float(), in_dict['gt_normals'][1].float() # (1,N,3) -> (N,3), (1,M,3) -> (M,3)
-                
-                reshaped_output_src_ori = output_src_ori.reshape(-1,3) # (N,3,3) -> (N*3,3)
-                reshaped_output_trg_ori = output_trg_ori.reshape(-1,3) # (M,3,3) -> (M*3,3)
+            zero_trans = torch.zeros(3).to(grtr_relative_trsfm[0].device)
 
-                zero_trans = torch.zeros(3).to(grtr_relative_trsfm[0].device)
+            # Rotate by using gt
+            _, rot_frame_ori_in_gt = self._pairwise_mating(reshaped_output_src_ori, reshaped_output_trg_ori, grtr_relative_trsfm[0], zero_trans, is_trg_larger)
+            _, rot_gt_normals_in_gt = self._pairwise_mating(gt_src_normals, gt_trg_normals, grtr_relative_trsfm[0], zero_trans, is_trg_larger)
 
-                # Rotate by using gt
-                _, rot_frame_ori_in_gt = self._pairwise_mating(reshaped_output_src_ori, reshaped_output_trg_ori, grtr_relative_trsfm[0], zero_trans, is_trg_larger)
-                _, rot_gt_normals_in_gt = self._pairwise_mating(gt_src_normals, gt_trg_normals, grtr_relative_trsfm[0], zero_trans, is_trg_larger)
+            # DRAW FRAME by using gt
+            draw_frames(frame_ori=rot_frame_ori_in_gt, gt_normals=rot_gt_normals_in_gt, pcds_list=pcds_grtr, dir_path=vis_folder, 
+                        filename=f'E{self.current_epoch}_{in_dict["eval_idx"].item()}_{in_dict["obj_class"][0]}_{round(eval_result["crd"].item(),3)}_in_gt')
 
-                # DRAW FRAME by using gt
-                draw_frames(frame_ori=rot_frame_ori_in_gt, gt_normals=rot_gt_normals_in_gt, pcds_list=pcds_grtr, dir_path=vis_folder, 
-                            filename=f'E{self.current_epoch}_{in_dict["eval_idx"].item()}_{in_dict["obj_class"][0]}_{round(eval_result["crd"].item(),3)}_in_gt')
+            # Rotate by using pred
+            _, rot_frame_ori_in_pred = self._pairwise_mating(reshaped_output_src_ori, reshaped_output_trg_ori, pred_relative_trsfm[0], zero_trans, is_trg_larger)
+            _, rot_gt_normals_in_pred = self._pairwise_mating(gt_src_normals, gt_trg_normals, pred_relative_trsfm[0], zero_trans, is_trg_larger)
 
-                # Rotate by using pred
-                _, rot_frame_ori_in_pred = self._pairwise_mating(reshaped_output_src_ori, reshaped_output_trg_ori, pred_relative_trsfm[0], zero_trans, is_trg_larger)
-                _, rot_gt_normals_in_pred = self._pairwise_mating(gt_src_normals, gt_trg_normals, pred_relative_trsfm[0], zero_trans, is_trg_larger)
-
-                # DRAW FRAME by using prediction
-                draw_frames(frame_ori=rot_frame_ori_in_pred, gt_normals=rot_gt_normals_in_pred, pcds_list=pcds_pred, dir_path=vis_folder, 
-                            filename=f'E{self.current_epoch}_{in_dict["eval_idx"].item()}_{in_dict["obj_class"][0]}_{round(eval_result["crd"].item(),3)}_in_pred')
+            # DRAW FRAME by using prediction
+            draw_frames(frame_ori=rot_frame_ori_in_pred, gt_normals=rot_gt_normals_in_pred, pcds_list=pcds_pred, dir_path=vis_folder, 
+                        filename=f'E{self.current_epoch}_{in_dict["eval_idx"].item()}_{in_dict["obj_class"][0]}_{round(eval_result["crd"].item(),3)}_in_pred')
 
         return eval_result
     
@@ -848,32 +850,35 @@ class EquiAssem(pl.LightningModule):
         div = len(rotat1) if multi_part else 1
         return (rrmse / div).to(trmse.device), trmse / div
 
+
     def _transformation_error_RPFver(self, pcds_pred, pcds_grtr, multi_part, scaling=100):
         """
         Args:
+            # [TODO] WEIRD COMMENT
             pcds_pred (list): [(N, 3), (M, 3)] if is_trg_larger else [(N, 3), (M, 3)]
             pcds_grtr (list): [(N, 3), (M, 3)] if is_trg_larger else [(N, 3), (M, 3)]
             multi_part (bool): True if multi-part
+            scaling (int, optional): Scaling factor for TMSE. Defaults to 100. # [TODO] WHY FOR TMSE?
 
         Returns:
             rrmse (torch.Tensor): (1)
             trmse (torch.Tensor): (1)
         """
-
-        from pytorch3d.ops import iterative_closest_point
+        
         num_parts = len(pcds_grtr)
-        rot_errors = torch.zeros(num_parts, device=pcds_grtr[0].device) # (K)
-        trans_errors = torch.zeros(num_parts, device=pcds_grtr[0].device)  # (K)
+        rot_errors = torch.zeros(num_parts, device=pcds_grtr[0].device) # (K), rotation error
+        trans_errors = torch.zeros(num_parts, device=pcds_grtr[0].device)  # (K), translation error
 
         for p in range(num_parts):
             pcd_pred = pcds_pred[p].unsqueeze(0) # (N, 3) -> (1, N, 3)
             pcd_grtr = pcds_grtr[p].unsqueeze(0) # (N, 3) -> (1, N, 3)
-            assert pcd_pred.shape == pcd_grtr.shape, "Point clouds should be same size"
+            assert pcd_pred.shape == pcd_grtr.shape, f"Point clouds should be same size, but got {pcd_pred.shape} and {pcd_grtr.shape}"
 
+            # ICP algorithm
             error = iterative_closest_point(pcd_grtr, pcd_pred).RTs
-            rot_errors[p] = torch.rad2deg(
-                torch.acos(torch.clamp(0.5 * (torch.trace(error.R[0]) - 1.0), -1.0, 1.0))
-            )
+            
+            # tr(R) = 1 + 2cos(θ) -> θ = acos((tr(R) - 1) / 2), torch.acos is in radian, so we need to convert to degree
+            rot_errors[p] = torch.rad2deg(torch.acos(torch.clamp(0.5 * (torch.trace(error.R[0]) - 1.0), -1.0, 1.0)))
             trans_errors[p] = torch.norm(error.T[0]) * scaling
 
         div = len(pcds_grtr)

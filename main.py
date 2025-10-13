@@ -51,7 +51,7 @@ def main(args):
                           o_loss_weight=args.o_loss_weight,
 
                           visualize=args.visualize,
-                          mesh_vis_epoch=args.mesh_vis_epoch,
+                          viz_epoch=args.viz_epoch,
                           ckp_dir=ckp_dir,
                           debug=args.debug,
 
@@ -61,8 +61,7 @@ def main(args):
                           n_knn=args.n_knn,
                           new_orientation_module=args.new_orientation_module,
                           delete_occupancy_loss=args.delete_occupancy_loss,
-                          use_opt_gram=args.use_opt_gram,
-                          use_RPF_metric=args.use_RPF_metric)
+                          use_opt_gram=args.use_opt_gram)
     
     else:
         raise NotImplementedError("Model not implemented")
@@ -192,7 +191,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Equivariant Assembly Pytorch Implementation')
 
     # Dataset arguments
-    parser.add_argument('--datapath', type=str, default='../../data/bbad_v2')
+    parser.add_argument('--datapath', type=str, default='/mnt/nvme2n1p1/kimsangki_datasets/breaking_bad/volume_constrained')
     parser.add_argument('--data_category', type=str, default='everyday', choices=['everyday', 'artifact', 'synthetic'])
     parser.add_argument('--sub_category', type=str, default='all')
     parser.add_argument('--n_pts', type=int, default=5000)
@@ -231,7 +230,6 @@ if __name__ == '__main__':
     parser.add_argument('--new_orientation_module', action='store_true', help='If True, use New module for orientation')
     parser.add_argument('--delete_occupancy_loss', action='store_true', help='If True, delete the Occupancy Loss')
     parser.add_argument('--use_opt_gram', action='store_true', help='If True, use Optimum Gram Schmidt Orthogonalization')
-    parser.add_argument('--use_RPF_metric', action='store_true', help='If True, use RPF metric for evaluation especially for rmse-r and rmse-t')
 
     # Weights for losses
     parser.add_argument('--s_loss_weight', type=float, default=0.5, help='Weight for shape loss, in the future, we will change this into 1.0')
@@ -247,7 +245,7 @@ if __name__ == '__main__':
 
     # Additional experiments
     parser.add_argument('--visualize', action='store_true')
-    parser.add_argument('--mesh_vis_epoch', type=int, default=10, help='Epoch for mesh visualization. This only works when visualize is True')
+    parser.add_argument('--viz_epoch', type=int, default=10, help='Epoch for visualization. This only works when visualize is True')
     parser.add_argument('--debug', action='store_true')
         
 
@@ -276,7 +274,9 @@ if __name__ == '__main__':
         args.n_worker = min(len(args.gpus) * 8, 48) # Number of workers is multiplied by the number of GPUs
     
     else: # Single-GPU training
-        args.parallel_strategy = "auto"
+        # [TODO] WHY SETTING THIS TO AUTO BEFORE?
+        args.parallel_strategy = None
+
 
     # Setting developing experiments arguments automatically
     if args.model == 'CMpp_equiassem': # If the model is CMpp_equiassem
