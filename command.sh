@@ -2,4 +2,6 @@ rm -rf checkpoint/default_logpath/ && CUDA_VISIBLE_DEVICES=0 python main.py --mo
 
 rm -rf checkpoint/default_logpath/ && CUDA_VISIBLE_DEVICES=0 python main.py --scale overfitting
 
+rm -rf checkpoint/default_logpath/ && CUDA_VISIBLE_DEVICES=0 python main.py --scale overfitting --use_opt_gram --visualize
+
 # parser.add_argument('--datapath', type=str, default='../../../../hdd/junhong/data/bbad_v2')

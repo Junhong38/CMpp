@@ -27,6 +27,22 @@ class CircleLoss(nn.Module):
         pos_mask = coords_dist < self.pos_radius
         neg_mask = coords_dist > self.safe_radius
 
+        # Calculate Positive/Negative feats_dist distribution
+        with torch.no_grad():
+            pos_dists = feats_dist[pos_mask]
+            neg_dists = feats_dist[neg_mask]
+
+            pos_neg_distribution = {
+                'pos_mean': pos_dists.mean().item(),
+                'pos_std': pos_dists.std().item(),
+                'pos_min': pos_dists.min().item(),
+                'pos_max': pos_dists.max().item(),
+                'neg_mean': neg_dists.mean().item(),
+                'neg_std': neg_dists.std().item(),
+                'neg_min': neg_dists.min().item(),
+                'neg_max': neg_dists.max().item(),
+            }
+
         # get anchors that have both positive and negative pairs
         row_sel = ((pos_mask.sum(-1)>0) * (neg_mask.sum(-1)>0)).detach()
         col_sel = ((pos_mask.sum(-2)>0) * (neg_mask.sum(-2)>0)).detach()
@@ -51,13 +67,13 @@ class CircleLoss(nn.Module):
 
         circle_loss = (loss_row[row_sel].mean() + loss_col[col_sel].mean()) / 2
 
-        return circle_loss
+        return circle_loss, pos_neg_distribution
 
 
     def forward(self, src_pcd, tgt_pcd, src_feats, tgt_feats, correspondence):
         if len(correspondence) == 0:
             print('[circle loss] No correspondence!')
-            return torch.tensor(0.).to(src_feats.device)
+            return torch.tensor(0.).to(src_feats.device), None
 
         c_dist = torch.norm(src_pcd[correspondence[:,0]] - tgt_pcd[correspondence[:,1]], dim = 1)
         c_select = c_dist < self.pos_radius - 0.001
@@ -86,9 +102,9 @@ class CircleLoss(nn.Module):
         
         if circle_loss != circle_loss:
             # print('[circle loss] NaN detected!')
-            circle_loss = torch.tensor(0.).to(src_feats.device)
+            circle_loss = (torch.tensor(0.).to(src_feats.device), None)
             
-        return circle_loss
+        return circle_loss, pos_neg_distribution
 
 class PointMatchingLoss(nn.Module):
     def __init__(self):

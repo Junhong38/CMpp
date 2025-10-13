@@ -51,6 +51,7 @@ def main(args):
                           o_loss_weight=args.o_loss_weight,
 
                           visualize=args.visualize,
+                          mesh_vis_epoch=args.mesh_vis_epoch,
                           ckp_dir=ckp_dir,
                           debug=args.debug,
 
@@ -244,6 +245,7 @@ if __name__ == '__main__':
 
     # Additional experiments
     parser.add_argument('--visualize', action='store_true')
+    parser.add_argument('--mesh_vis_epoch', type=int, default=10, help='Epoch for mesh visualization. This only works when visualize is True')
     parser.add_argument('--debug', action='store_true')
         
 
@@ -292,7 +294,7 @@ if __name__ == '__main__':
         
         if args.delete_occupancy_loss:
             # Now, we will test the model with normal vector method
-            args.channel_attention = 'none'
+            args.attention = 'none'
             args.s_loss_weight = 1.0
             args.p_loss_weight = 1.0
             args.o_loss_weight = 1.0

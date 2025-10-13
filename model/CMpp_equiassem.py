@@ -20,7 +20,7 @@ from model.local_global_registration import LocalGlobalRegistration
 
 from common.rotation import ortho2rotation
 from common.utils import save_pc
-
+from common.viz import draw_frames
 
 
 class ChannelAttentionModule(nn.Module):
@@ -57,7 +57,7 @@ class EquiAssem(pl.LightningModule):
             lr, backbone='vn_unet', attention='channel', 
             pos_margin=0.1, neg_margin=1.4, log_scale=24,
             s_loss_weight=1.0, p_loss_weight=1.0, o_loss_weight=1.0,
-            visualize=False, ckp_dir=None, debug=False,
+            visualize=False, mesh_vis_epoch=10, ckp_dir=None, debug=False,
 
             # Developing temporarily used experiments arguments
             additional_VNLinearLeakyReLU=False,
@@ -81,6 +81,7 @@ class EquiAssem(pl.LightningModule):
             p_loss_weight (float, optional): Weight for point loss. Defaults to 1.0.
             o_loss_weight (float, optional): Weight for orientation loss. Defaults to 1.0.
             visualize (bool, optional): Whether to save visualization results. Defaults to False.
+            mesh_vis_epoch (int, optional): Epoch for mesh visualization. Defaults to 10.
             ckp_dir (str, optional): Checkpoint directory. Defaults to None.
             debug (bool, optional): Whether to enable debug mode. Defaults to False.
 
@@ -109,6 +110,7 @@ class EquiAssem(pl.LightningModule):
         print(f"p_loss_weight: {p_loss_weight}")
         print(f"o_loss_weight: {o_loss_weight}")
         print(f"visualize: {visualize}")
+        print(f"mesh_vis_epoch: {mesh_vis_epoch}")
         print(f"ckp_dir: {ckp_dir}")
         print(f"debug: {debug}")
         print(f"additional_VNLinearLeakyReLU: {additional_VNLinearLeakyReLU}")
@@ -123,6 +125,7 @@ class EquiAssem(pl.LightningModule):
         self.lr = lr
         self.attention = attention
         self.visualize = visualize
+        self.mesh_vis_epoch = mesh_vis_epoch
         self.ckp_dir = ckp_dir
         self.debug = debug
 
@@ -469,6 +472,11 @@ class EquiAssem(pl.LightningModule):
         trg_ori = ortho2rotation(trg_vecs, optimum=self.use_opt_gram) # (1, M, 2, 3) -> (1, M, 3, 3)
 
 
+        # Save for visualization
+        out_dict['src_ori'] = src_ori
+        out_dict['trg_ori'] = trg_ori
+
+
         # 5. Invariant Features
         src_inv_feats = torch.matmul(src_equi_feats.permute(0, 3, 1, 2).float(), src_ori.transpose(-2,-1).float()) # (1, N, C, 3) x (1, N, 3, 3) -> (1, N, C, 3)
         trg_inv_feats = torch.matmul(trg_equi_feats.permute(0, 3, 1, 2).float(), trg_ori.transpose(-2,-1).float()) # (1, M, C, 3) x (1, M, 3, 3) -> (1, M, C, 3)
@@ -536,7 +544,7 @@ class EquiAssem(pl.LightningModule):
         if self.debugged_circle_loss:
             loss['s_loss'], pos_neg_distribution = self.shape_loss(src_pcd_raw, trg_pcd_raw, src_shape_feats.transpose(-2,-1), trg_shape_feats.transpose(-2,-1), gt_corr)
         else:
-            loss['s_loss'] = self.shape_loss(src_pcd_raw, trg_pcd_raw, src_shape_feats.transpose(-2,-1), trg_shape_feats.transpose(-2,-1), gt_corr)
+            loss['s_loss'], pos_neg_distribution = self.shape_loss(src_pcd_raw, trg_pcd_raw, src_shape_feats.transpose(-2,-1), trg_shape_feats.transpose(-2,-1), gt_corr)
 
         
         # Point matching loss
@@ -547,7 +555,7 @@ class EquiAssem(pl.LightningModule):
         
 
         if not self.delete_occupancy_loss:
-            loss['occ_loss'] = self.occupancy_loss(src_pcd_raw, trg_pcd_raw, src_occ_feats.transpose(-2,-1), -trg_occ_feats.transpose(-2,-1), gt_corr)
+            loss['occ_loss'], _ = self.occupancy_loss(src_pcd_raw, trg_pcd_raw, src_occ_feats.transpose(-2,-1), -trg_occ_feats.transpose(-2,-1), gt_corr)
         
 
         # Final loss
@@ -570,7 +578,7 @@ class EquiAssem(pl.LightningModule):
             out_dict['estimated_trans'] = -(estimated_transform[:3, :3].inverse() @ -estimated_transform[:3, 3]) # R.T @ t
 
             # Evaluation
-            eval_dict = self.evaluate_prediction(in_dict, out_dict, gt_corr)
+            eval_dict = self.evaluate_prediction(in_dict, out_dict, gt_corr, mode)
             loss.update(eval_dict)
         
 
@@ -596,9 +604,8 @@ class EquiAssem(pl.LightningModule):
         if mode == 'train':
             log_dict = {f'{mode}/{k}': v.item() for k, v in loss.items()}
 
-            if self.debugged_circle_loss:
-                pos_neg_distribution = {f'{mode}/{k}': v for k, v in pos_neg_distribution.items()}
-                log_dict.update(pos_neg_distribution)
+            pos_neg_distribution = {f'{mode}/{k}': v for k, v in pos_neg_distribution.items()}
+            log_dict.update(pos_neg_distribution)
 
             training_loss = log_dict.pop(f'{mode}/loss')
             current_lr = self.trainer.optimizers[0].param_groups[0]['lr']
@@ -614,12 +621,13 @@ class EquiAssem(pl.LightningModule):
 
 
     @torch.no_grad()
-    def evaluate_prediction(self, in_dict, out_dict, gt_corr, multi_part=False):
+    def evaluate_prediction(self, in_dict, out_dict, gt_corr, mode, multi_part=False):
         """
         Args:
             in_dict (dict): it is same as forward_pass
             out_dict (dict): it is same as forward_pass
             gt_corr (torch.Tensor): (P, 2)
+            mode (str): 'val' or 'test'
             multi_part (bool, optional): _description_. Defaults to False.
 
         Returns:
@@ -629,6 +637,7 @@ class EquiAssem(pl.LightningModule):
                 - trmse (float): MSE between prediction & ground-truth for translation (in cm)
                 - crd (float): CoRrespondence Distance (CRD) betwween prediction & ground-truth
         """
+        assert mode in ['val', 'test'], f"mode must be in ['val', 'test'], but got {mode}"
 
         # Init return buffer
         eval_result = {}
@@ -654,23 +663,45 @@ class EquiAssem(pl.LightningModule):
         eval_result['crd'] = self._correspondence_distance(assm_pred, assm_grtr, is_trg_larger)
 
         if self.visualize:
-            vis_folder = os.path.join(self.ckp_dir, 'vis')
+            vis_folder = os.path.join(self.ckp_dir, 'vis', mode)
             os.makedirs(vis_folder, exist_ok=True)
 
-            pcds_pred.append(pcds_pred[0][gt_corr[:,0]])
-            pcds_pred.append(pcds_pred[1][gt_corr[:,1]])
-            pcds_grtr.append(pcds_grtr[0][gt_corr[:,0]])
-            pcds_grtr.append(pcds_grtr[1][gt_corr[:,1]])
-            save_pc(f'{vis_folder}/{in_dict["eval_idx"].item()}_{in_dict["obj_class"][0]}_{round(eval_result["crd"].item(),3)}_pred.pcd', pcds_pred)
-            save_pc(f"{vis_folder}/{in_dict['eval_idx'].item()}_{in_dict['obj_class'][0]}_{round(eval_result['crd'].item(),3)}_grtr.pcd", pcds_grtr)
+            # PCD light visualization
+            pcds_pred_for_viz = [] + pcds_pred
+            pcds_grtr_for_viz = [] + pcds_grtr
+            pcds_pred_for_viz.append(pcds_pred[0][gt_corr[:,0]])
+            pcds_pred_for_viz.append(pcds_pred[1][gt_corr[:,1]])
+            pcds_grtr_for_viz.append(pcds_grtr[0][gt_corr[:,0]])
+            pcds_grtr_for_viz.append(pcds_grtr[1][gt_corr[:,1]])
+            save_pc(f'{vis_folder}/E{self.current_epoch}_{in_dict["eval_idx"].item()}_{in_dict["obj_class"][0]}_{round(eval_result["crd"].item(),3)}_pred.pcd', pcds_pred_for_viz)
+            save_pc(f"{vis_folder}/E{self.current_epoch}_{in_dict['eval_idx'].item()}_{in_dict['obj_class'][0]}_{round(eval_result['crd'].item(),3)}_grtr.pcd", pcds_grtr_for_viz)
 
-            # TODO, MESH AND FRAME VISUALIZATION
 
-            # FRAME VIZ
-            # ROTATE SRC FRAME
-            # ROTATE TRG FRAME
-            # DRAW ARROW
-            # DRAW ARROW
+            if self.current_epoch % self.mesh_vis_epoch == 0:
+                # MESH AND FRAME VISUALIZATION
+                output_src_ori, output_trg_ori = out_dict['src_ori'][0], out_dict['trg_ori'][0] # (1,N,3,3) -> (N,3,3), (1,M,3,3) -> (M,3,3)
+                gt_src_normals, gt_trg_normals = in_dict['gt_normals'][0].float(), in_dict['gt_normals'][1].float() # (1,N,3) -> (N,3), (1,M,3) -> (M,3)
+                
+                reshaped_output_src_ori = output_src_ori.reshape(-1,3) # (N,3,3) -> (N*3,3)
+                reshaped_output_trg_ori = output_trg_ori.reshape(-1,3) # (M,3,3) -> (M*3,3)
+
+                zero_trans = torch.zeros(3).to(grtr_relative_trsfm[0].device)
+
+                # Rotate by using gt
+                _, rot_frame_ori_in_gt = self._pairwise_mating(reshaped_output_src_ori, reshaped_output_trg_ori, grtr_relative_trsfm[0], zero_trans, is_trg_larger)
+                _, rot_gt_normals_in_gt = self._pairwise_mating(gt_src_normals, gt_trg_normals, grtr_relative_trsfm[0], zero_trans, is_trg_larger)
+
+                # DRAW FRAME by using gt
+                draw_frames(frame_ori=rot_frame_ori_in_gt, gt_normals=rot_gt_normals_in_gt, pcds_list=pcds_grtr, dir_path=vis_folder, 
+                            filename=f'E{self.current_epoch}_{in_dict["eval_idx"].item()}_{in_dict["obj_class"][0]}_{round(eval_result["crd"].item(),3)}_in_gt')
+
+                # Rotate by using pred
+                _, rot_frame_ori_in_pred = self._pairwise_mating(reshaped_output_src_ori, reshaped_output_trg_ori, pred_relative_trsfm[0], zero_trans, is_trg_larger)
+                _, rot_gt_normals_in_pred = self._pairwise_mating(gt_src_normals, gt_trg_normals, pred_relative_trsfm[0], zero_trans, is_trg_larger)
+
+                # DRAW FRAME by using prediction
+                draw_frames(frame_ori=rot_frame_ori_in_pred, gt_normals=rot_gt_normals_in_pred, pcds_list=pcds_pred, dir_path=vis_folder, 
+                            filename=f'E{self.current_epoch}_{in_dict["eval_idx"].item()}_{in_dict["obj_class"][0]}_{round(eval_result["crd"].item(),3)}_in_pred')
 
         return eval_result
     
