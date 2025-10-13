@@ -61,7 +61,8 @@ def main(args):
                           n_knn=args.n_knn,
                           new_orientation_module=args.new_orientation_module,
                           delete_occupancy_loss=args.delete_occupancy_loss,
-                          use_opt_gram=args.use_opt_gram)
+                          use_opt_gram=args.use_opt_gram,
+                          use_RPF_metric=args.use_RPF_metric)
     
     else:
         raise NotImplementedError("Model not implemented")
@@ -191,7 +192,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Equivariant Assembly Pytorch Implementation')
 
     # Dataset arguments
-    parser.add_argument('--datapath', type=str, default='/mnt/nvme2n1p1/kimsangki_datasets/breaking_bad/volume_constrained') # '../../../../hdd/junhong/data/bbad_v2'
+    parser.add_argument('--datapath', type=str, default='../../data/bbad_v2')
     parser.add_argument('--data_category', type=str, default='everyday', choices=['everyday', 'artifact', 'synthetic'])
     parser.add_argument('--sub_category', type=str, default='all')
     parser.add_argument('--n_pts', type=int, default=5000)
@@ -230,6 +231,7 @@ if __name__ == '__main__':
     parser.add_argument('--new_orientation_module', action='store_true', help='If True, use New module for orientation')
     parser.add_argument('--delete_occupancy_loss', action='store_true', help='If True, delete the Occupancy Loss')
     parser.add_argument('--use_opt_gram', action='store_true', help='If True, use Optimum Gram Schmidt Orthogonalization')
+    parser.add_argument('--use_RPF_metric', action='store_true', help='If True, use RPF metric for evaluation especially for rmse-r and rmse-t')
 
     # Weights for losses
     parser.add_argument('--s_loss_weight', type=float, default=0.5, help='Weight for shape loss, in the future, we will change this into 1.0')
@@ -238,9 +240,9 @@ if __name__ == '__main__':
 
 
     # Margin arguments which are used in circle loss
-    parser.add_argument('--pos_margin', type=float, default=0.1, help='Margin for positive samples in loss computation')
-    parser.add_argument('--neg_margin', type=float, default=1.4, help='Margin for negative samples in loss computation')
-    parser.add_argument('--log_scale', type=float, default=24, help='Log scale for loss computation')
+    parser.add_argument('--pos_margin', type=float, default=0.1, help='Margin for positive samples in Circle loss computation')
+    parser.add_argument('--neg_margin', type=float, default=1.4, help='Margin for negative samples in Circle loss computation')
+    parser.add_argument('--log_scale', type=float, default=24, help='Log scale for Circle loss computation')
     
 
     # Additional experiments
@@ -274,7 +276,7 @@ if __name__ == '__main__':
         args.n_worker = min(len(args.gpus) * 8, 48) # Number of workers is multiplied by the number of GPUs
     
     else: # Single-GPU training
-        args.parallel_strategy = None
+        args.parallel_strategy = "auto"
 
     # Setting developing experiments arguments automatically
     if args.model == 'CMpp_equiassem': # If the model is CMpp_equiassem
