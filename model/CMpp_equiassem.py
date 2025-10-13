@@ -67,6 +67,7 @@ class EquiAssem(pl.LightningModule):
             new_orientation_module=False,
             delete_occupancy_loss=False,
             use_opt_gram=False,
+            use_RPF_metric=False,
             ):
         """Equivariant Assembly Model for 3D Object Assembly
 
@@ -92,6 +93,7 @@ class EquiAssem(pl.LightningModule):
             new_orientation_module (bool, optional): Whether to use the new module for orientation loss. Defaults to False.
             delete_occupancy_loss (bool, optional): Whether to delete the occupancy loss. Defaults to False.
             use_opt_gram (bool, optional): Whether to use the optimum Gram Schmidt Orthogonalization. Defaults to False.
+            use_RPF_metric (bool, optional): Whether to use the RPF metric for evaluation especially for rmse-r and rmse-t. Defaults to False.
         """
         super(EquiAssem, self).__init__()
 
@@ -116,6 +118,7 @@ class EquiAssem(pl.LightningModule):
         print(f"new_orientation_module: {new_orientation_module}")
         print(f"delete_occupancy_loss: {delete_occupancy_loss}")
         print(f"use_opt_gram: {use_opt_gram}")
+        print(f"use_RPF_metric: {use_RPF_metric}")
         print("------------------------------------------------------")
 
         self.lr = lr
@@ -129,6 +132,7 @@ class EquiAssem(pl.LightningModule):
         self.new_orientation_module = new_orientation_module
         self.delete_occupancy_loss = delete_occupancy_loss
         self.use_opt_gram = use_opt_gram
+        self.use_RPF_metric = use_RPF_metric
 
 
         # Output feature dimension of Feature Extractor
@@ -525,8 +529,6 @@ class EquiAssem(pl.LightningModule):
             shape_matching_scores = shape_matching_scores + occ_matching_scores # Combine shape and occupancy scores
 
         matching_scores = self.optimal_transport(shape_matching_scores)
-        if self.debugged_point_matching_loss:
-            matching_scores = torch.exp(matching_scores) # Optimal Transport is in log space, so before registration, we need to exp it
         matching_scores_drop = matching_scores[:,:-1,:-1]   
 
 
@@ -547,7 +549,7 @@ class EquiAssem(pl.LightningModule):
         
         # Point matching loss
         if self.debugged_point_matching_loss:
-            loss['p_loss'] = 1.0 + self.matching_loss(matching_scores, gt_corr, src_pcd_raw, trg_pcd_raw).float()
+            loss['p_loss'] = 1.0 + self.matching_loss(torch.exp(matching_scores), gt_corr, src_pcd_raw, trg_pcd_raw).float() # Optimal Transport is in log space, so before registration, we need to exp it
         else:
             loss['p_loss'] = self.matching_loss(matching_scores, gt_corr, src_pcd_raw, trg_pcd_raw).float()
         
@@ -668,7 +670,10 @@ class EquiAssem(pl.LightningModule):
         eval_result['cd'] = self._chamfer_distance(assm_pred, assm_grtr, is_trg_larger)
 
         # (b) Compute MSE between prediction & ground-truth for rotation (in degree) and translation
-        eval_result['rrmse'], eval_result['trmse'] = self._transformation_error(pred_relative_trsfm, grtr_relative_trsfm, multi_part)
+        if self.use_RPF_metric:
+            eval_result['rrmse'], eval_result['trmse'] = self._transformation_error_RPFver(pcds_pred, pcds_grtr, multi_part)
+        else:
+            eval_result['rrmse'], eval_result['trmse'] = self._transformation_error(pred_relative_trsfm, grtr_relative_trsfm, multi_part)
 
         # (c) Compute CoRrespondence Distance (CRD) betwween prediction & ground-truth
         eval_result['crd'] = self._correspondence_distance(assm_pred, assm_grtr, is_trg_larger)
@@ -831,5 +836,37 @@ class EquiAssem(pl.LightningModule):
             trmse += (t1 - t2).pow(2).mean().pow(0.5) * rrmse_scaling
         div = len(rotat1) if multi_part else 1
         return (rrmse / div).to(trmse.device), trmse / div
+
+    def _transformation_error_RPFver(self, pcds_pred, pcds_grtr, multi_part, scaling=100):
+        """
+        Args:
+            pcds_pred (list): [(N, 3), (M, 3)] if is_trg_larger else [(N, 3), (M, 3)]
+            pcds_grtr (list): [(N, 3), (M, 3)] if is_trg_larger else [(N, 3), (M, 3)]
+            multi_part (bool): True if multi-part
+
+        Returns:
+            rrmse (torch.Tensor): (1)
+            trmse (torch.Tensor): (1)
+        """
+
+        from pytorch3d.ops import iterative_closest_point
+        num_parts = len(pcds_grtr)
+        rot_errors = torch.zeros(num_parts, device=pcds_grtr[0].device) # (K)
+        trans_errors = torch.zeros(num_parts, device=pcds_grtr[0].device)  # (K)
+
+        for p in range(num_parts):
+            pcd_pred = pcds_pred[p].unsqueeze(0) # (N, 3) -> (1, N, 3)
+            pcd_grtr = pcds_grtr[p].unsqueeze(0) # (N, 3) -> (1, N, 3)
+            assert pcd_pred.shape == pcd_grtr.shape, "Point clouds should be same size"
+
+            error = iterative_closest_point(pcd_grtr, pcd_pred).RTs
+            rot_errors[p] = torch.rad2deg(
+                torch.acos(torch.clamp(0.5 * (torch.trace(error.R[0]) - 1.0), -1.0, 1.0))
+            )
+            trans_errors[p] = torch.norm(error.T[0]) * scaling
+
+        div = len(pcds_grtr)
+        return rot_errors.sum() / div, trans_errors.sum() / div 
+
 
 
