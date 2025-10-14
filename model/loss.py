@@ -120,11 +120,9 @@ class CircleLoss(nn.Module):
         tgt_feats = F.normalize(tgt_feats.squeeze(0), p=2, dim=-1) # (1, M, D) -> (M, D)
 
 
-        # Handle NaN
+        # Check NaN
         if torch.isnan(src_feats).any() or torch.isnan(tgt_feats).any():
-            print("NaN detected in features!")
-            src_feats = torch.nan_to_num(src_feats)
-            tgt_feats = torch.nan_to_num(tgt_feats)
+            assert False, "[Circle Loss] Features are nan"
         
 
         # Get feature distance
