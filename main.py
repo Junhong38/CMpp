@@ -247,7 +247,7 @@ if __name__ == '__main__':
 
     # Additional experiments
     parser.add_argument('--visualize', action='store_true')
-    parser.add_argument('--viz_epoch', type=int, default=10, help='Epoch for visualization. This only works when visualize is True')
+    parser.add_argument('--viz_epoch', type=int, default=30, help='Epoch for visualization. This only works when visualize is True')
     parser.add_argument('--debug', action='store_true')
         
 

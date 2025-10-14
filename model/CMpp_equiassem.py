@@ -59,7 +59,7 @@ class EquiAssem(pl.LightningModule):
             lr, backbone='vn_unet', attention='channel', 
             pos_margin=0.1, neg_margin=1.4, log_scale=24,
             s_loss_weight=1.0, p_loss_weight=1.0, o_loss_weight=1.0,
-            visualize=False, viz_epoch=10, ckp_dir=None, debug=False,
+            visualize=False, viz_epoch=30, ckp_dir=None, debug=False,
 
             # Developing temporarily used experiments arguments
             additional_VNLinearLeakyReLU=False,
@@ -84,7 +84,7 @@ class EquiAssem(pl.LightningModule):
             p_loss_weight (float, optional): Weight for point loss. Defaults to 1.0.
             o_loss_weight (float, optional): Weight for orientation loss. Defaults to 1.0.
             visualize (bool, optional): Whether to save visualization results. Defaults to False.
-            viz_epoch (int, optional): Epoch for mesh visualization. Defaults to 10.
+            viz_epoch (int, optional): Epoch for mesh visualization. Defaults to 30.
             ckp_dir (str, optional): Checkpoint directory. Defaults to None.
             debug (bool, optional): Whether to enable debug mode. Defaults to False.
 

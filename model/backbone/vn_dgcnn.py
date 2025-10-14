@@ -1,14 +1,9 @@
 import torch
 import torch.nn as nn
 from model.backbone.vn_layers import knn, get_graph_feature, mean_pool
-from model.backbone.vn_layers import VNLinearLeakyReLU, VNStdFeature, VNMaxPool
-from model.backbone.vn_layers import VNLinear, VNInstanceNorm
+from model.backbone.vn_layers import VNLinearLeakyReLU, VNMaxPool
 
 from lib.pointops.functions import pointops
-from common.utils import fix_randseed
-
-import open3d as o3d
-import numpy as np
 
 
 class TransitionDown(nn.Module):
@@ -71,7 +66,6 @@ class TransitionUp(nn.Module):
             x = self.linear1(x)
         else:
             p1, x1, o1 = pxo1; p2, x2, o2 = pxo2
-            self.mlp1(x1) 
             x = self.mlp1(x1) + pointops.interpolation(p2, p1, self.mlp2(x2).squeeze(0).contiguous(), o2, o1)
         return x
 
