@@ -103,7 +103,7 @@ class CircleLoss(nn.Module):
 
         if len(correspondence) == 0:
             print('[circle loss] No correspondence!')
-            return (torch.tensor(0.).to(src_feats.device), None)
+            return torch.tensor(0.).to(src_feats.device), None
 
         # Get coordinate distance
         coords_dist = torch.sqrt(torch.clamp(torch.sum((src_pcd[:, None, :] - tgt_pcd[None, :, :]) ** 2, dim=-1), min=0.0))
@@ -135,12 +135,13 @@ class CircleLoss(nn.Module):
         
 
         # Calculate circle loss and feature matching recall (FMR)
-        circle_loss = self.get_circle_loss(coords_dist, feats_dist)
-        if torch.isnan(circle_loss[0]):
+        circle_loss, pos_neg_distribution = self.get_circle_loss(coords_dist, feats_dist)
+
+        if torch.isnan(circle_loss):
             print('[circle loss] NaN detected! :', circle_loss)
-            circle_loss = (torch.tensor(0.).to(src_feats.device), None)
+            circle_loss = torch.tensor(0.).to(src_feats.device)
         
-        return circle_loss
+        return circle_loss, pos_neg_distribution
 
 
 class PointMatchingLoss(nn.Module):

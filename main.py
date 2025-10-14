@@ -205,7 +205,7 @@ if __name__ == '__main__':
     parser.add_argument('--logpath', type=str, default='default_logpath', help='Log path and name for project')
     parser.add_argument('--batch_size', type=int, default=1, help='Batch size. DO NOT CHANGE THIS VALUE. WE ASSUME THAT BATCH SIZE IS 1')
     parser.add_argument('--lr', type=float, default=1e-2, help='Learning rate. If you use multi-GPU training, the learning rate is multiplied by the number of GPUs.')
-    parser.add_argument('--epochs', type=int, default=90, help='Number of epochs. This is automatically set to 200 for everyday dataset and 300 for other datasets.')
+    parser.add_argument('--epochs', type=int, default=0, help='Number of epochs. If 0, it is automatically set to 200 for everyday dataset and 300 for other datasets.')
     parser.add_argument('--n_worker', type=int, default=4, help='Number of workers. If you use multi-GPU training, the number of workers is multiplied by the number of GPUs.')
     parser.add_argument('--load', type=str, default='')
 
@@ -263,9 +263,11 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
 
-    # Set number of epochs automatically
-    args.epochs = 90 if args.data_category == 'everyday' else 120
-    args.epochs = 300 if args.max_part > 2 else args.epochs
+    if args.epochs <= 0: # If epochs is not set, set number of epochs automatically
+        args.epochs = 90 if args.data_category == 'everyday' else 120
+        args.epochs = 300 if args.max_part > 2 else args.epochs
+    else:
+        args.epochs = args.epochs # If epochs is set, use the set value
 
 
     # Set number of workers automatically

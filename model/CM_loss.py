@@ -102,7 +102,7 @@ class CircleLoss(nn.Module):
         
         if circle_loss != circle_loss:
             print('[circle loss] NaN detected!')
-            circle_loss = (torch.tensor(0.).to(src_feats.device), None)
+            circle_loss = torch.tensor(0.).to(src_feats.device)
             
         return circle_loss, pos_neg_distribution
 

@@ -578,7 +578,6 @@ class EquiAssem(pl.LightningModule):
 
         out_dict.update(loss)
 
-
         # 9. Evaluation
         if mode in ['val', 'test']:
             # Point cloud registration
