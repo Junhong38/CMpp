@@ -93,6 +93,8 @@ class DatasetBreakingBad(Dataset):
         print(f"mpa: {self.mpa}")
         print(f"anchor_idx: {self.anchor_idx}")
         print(f"overlap_radius: {self.overlap_radius}") 
+        print(f"scale: {scale}")
+        print(f"multiplicity: {self.multiplicity}")
 
         print(f"n_frac: {self.n_frac}")
         print(f"filepaths: {self.filepaths}")

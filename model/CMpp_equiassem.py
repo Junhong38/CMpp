@@ -822,13 +822,13 @@ class EquiAssem(pl.LightningModule):
         return cd
     
 
-    def _transformation_error(self, trnsf1, trnsf2, multi_part, rrmse_scaling=100):
+    def _transformation_error(self, trnsf1, trnsf2, multi_part, trmse_scaling=100):
         """
         Args:
             trnsf1 (tuple): (3, 3), (3)
             trnsf2 (tuple): (3, 3), (3)
             multi_part (bool): True if multi-part
-            rrmse_scaling (int, optional): Scaling factor for RMSE. Defaults to 100.
+            trmse_scaling (int, optional): Scaling factor for TRMSE. Defaults to 100.
 
         Returns:
             rrmse (torch.Tensor): (1)
@@ -849,7 +849,7 @@ class EquiAssem(pl.LightningModule):
             diff2 = 360. - (r1_deg - r2_deg).abs()
             diff = torch.minimum(diff1, diff2)
             rrmse += diff.pow(2).mean().pow(0.5)
-            trmse += (t1 - t2).pow(2).mean().pow(0.5) * rrmse_scaling
+            trmse += (t1 - t2).pow(2).mean().pow(0.5) * trmse_scaling
         div = len(rotat1) if multi_part else 1
         return (rrmse / div).to(trmse.device), trmse / div
 
@@ -861,7 +861,7 @@ class EquiAssem(pl.LightningModule):
             pcds_pred (list): [(N, 3), (M, 3)] if is_trg_larger else [(N, 3), (M, 3)]
             pcds_grtr (list): [(N, 3), (M, 3)] if is_trg_larger else [(N, 3), (M, 3)]
             multi_part (bool): True if multi-part
-            scaling (int, optional): Scaling factor for TMSE. Defaults to 100. # [TODO] WHY FOR TMSE?
+            scaling (int, optional): Scaling factor for TRMSE. Defaults to 100. 
 
         Returns:
             rrmse (torch.Tensor): (1)
