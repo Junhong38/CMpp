@@ -58,6 +58,7 @@ def main(args):
                           additional_VNLinearLeakyReLU=args.additional_VNLinearLeakyReLU,
                           debugged_circle_loss=args.debugged_circle_loss,
                           debugged_point_matching_loss=args.debugged_point_matching_loss,
+                          exp_scale_for_point_matching_loss=args.exp_scale_for_point_matching_loss,
                           n_knn=args.n_knn,
                           new_orientation_module=args.new_orientation_module,
                           delete_occupancy_loss=args.delete_occupancy_loss,
@@ -191,7 +192,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Equivariant Assembly Pytorch Implementation')
 
     # Dataset arguments
-    parser.add_argument('--datapath', type=str, default='/mnt/nvme2n1p1/kimsangki_datasets/breaking_bad/volume_constrained')
+    parser.add_argument('--datapath', type=str, default='../../../../hdd/junhong/data/bbad_v2') #'/mnt/nvme2n1p1/kimsangki_datasets/breaking_bad/volume_constrained')
     parser.add_argument('--data_category', type=str, default='everyday', choices=['everyday', 'artifact', 'synthetic'])
     parser.add_argument('--sub_category', type=str, default='all')
     parser.add_argument('--n_pts', type=int, default=5000)
@@ -226,6 +227,7 @@ if __name__ == '__main__':
     parser.add_argument('--additional_VNLinearLeakyReLU', action='store_true', help='If True, use VNLinearLeakyReLU layers for the equivariant shape feature')
     parser.add_argument('--debugged_circle_loss', action='store_true', help='If True, use Debugged version of Circle Loss')
     parser.add_argument('--debugged_point_matching_loss', action='store_true', help='If True, use Debugged version of Point Matching Loss')
+    parser.add_argument('--exp_scale_for_point_matching_loss', action='store_true', help='If True, make the matching score to exp-scaled value before computing point matching loss')
     parser.add_argument('--n_knn', type=int, default=20, help='Number of nearest neighbors for KNN')
     parser.add_argument('--new_orientation_module', action='store_true', help='If True, use New module for orientation')
     parser.add_argument('--delete_occupancy_loss', action='store_true', help='If True, delete the Occupancy Loss')
