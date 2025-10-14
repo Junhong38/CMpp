@@ -16,3 +16,6 @@ rm -rf checkpoint/default_logpath/ && CUDA_VISIBLE_DEVICES=0 python main.py --ep
 rm -rf checkpoint/default_logpath/ && CUDA_VISIBLE_DEVICES=0 python main.py --epochs 10 --scale overfitting --use_opt_gram --visualize --multiplicity 100 
 
 
+
+rm -rf checkpoint/default_logpath/ && CUDA_VISIBLE_DEVICES=0 python main.py --scale tiny --visualize --multiplicity 33 
+rm -rf checkpoint/default_logpath/ && CUDA_VISIBLE_DEVICES=0 python main.py --scale tiny --visualize --multiplicity 33 --debugged_circle_loss

@@ -19,6 +19,7 @@ class CircleLoss(nn.Module):
 
         # self.max_points = 128
 
+    
     def get_circle_loss(self, coords_dist, feats_dist):
         """
         Modified from: https://github.com/XuyangBai/D3Feat.pytorch
@@ -52,6 +53,7 @@ class CircleLoss(nn.Module):
             }
         
         # sample the neg_mask to match proportions
+        # TODO: Weird, is this really necessary?
         neg_indices = neg_mask.nonzero(as_tuple=False)
         neg_nonsampled = neg_indices[torch.randperm(neg_indices.size(0))[pos_mask.sum():]]
         neg_mask[neg_nonsampled[:,0], neg_nonsampled[:,1]] = False
@@ -82,7 +84,11 @@ class CircleLoss(nn.Module):
         loss_row = F.softplus(lse_pos_row + lse_neg_row)/self.log_scale # (N, )
         loss_col = F.softplus(lse_pos_col + lse_neg_col)/self.log_scale # (M, )
 
-        circle_loss = (loss_row[row_sel].mean() + loss_col[col_sel].mean()) / 2
+        # Prevent NaN
+        anchor_loss_row = loss_row[row_sel].mean() if row_sel.sum() > 0 else torch.tensor(0.).to(loss_row.device)
+        anchor_loss_col = loss_col[col_sel].mean() if col_sel.sum() > 0 else torch.tensor(0.).to(loss_col.device)
+
+        circle_loss = (anchor_loss_row + anchor_loss_col) / 2
 
         return circle_loss, pos_neg_distribution
 
@@ -132,14 +138,12 @@ class CircleLoss(nn.Module):
         # By, triangle formulat, 2 - 2 cos(theta) = 4 * sin(theta/2)^2
         # Hence, feats_dist = 2 * sin(theta/2)
         feats_dist = torch.sqrt(torch.clamp(value, min=0.0))
-        
 
         # Calculate circle loss and feature matching recall (FMR)
         circle_loss, pos_neg_distribution = self.get_circle_loss(coords_dist, feats_dist)
 
         if torch.isnan(circle_loss):
-            print('[circle loss] NaN detected! :', circle_loss)
-            circle_loss = torch.tensor(0.).to(src_feats.device)
+            assert False, "Circle loss is nan"
         
         return circle_loss, pos_neg_distribution
 

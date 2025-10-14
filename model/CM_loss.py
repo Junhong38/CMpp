@@ -19,6 +19,7 @@ class CircleLoss(nn.Module):
 
         self.max_points = 128
 
+
     def get_circle_loss(self, coords_dist, feats_dist):
         """
         Modified from: https://github.com/XuyangBai/D3Feat.pytorch

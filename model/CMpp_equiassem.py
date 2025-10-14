@@ -674,7 +674,7 @@ class EquiAssem(pl.LightningModule):
         # (c) Compute CoRrespondence Distance (CRD) betwween prediction & ground-truth
         eval_result['crd'] = self._correspondence_distance(assm_pred, assm_grtr, is_trg_larger)
 
-        if self.visualize and self.current_epoch % self.viz_epoch == 0:
+        if self.visualize and self.current_epoch % self.viz_epoch == 0 and in_dict['eval_idx'].item() == 0:
             vis_folder = os.path.join(self.ckp_dir, 'vis', mode)
             os.makedirs(vis_folder, exist_ok=True)
 
