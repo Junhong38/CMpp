@@ -278,7 +278,6 @@ if __name__ == '__main__':
         args.n_worker = min(len(args.gpus) * 8, 48) # Number of workers is multiplied by the number of GPUs
     
     else: # Single-GPU training
-        # [TODO] WHY SETTING THIS TO AUTO BEFORE?
         args.parallel_strategy = None
 
 

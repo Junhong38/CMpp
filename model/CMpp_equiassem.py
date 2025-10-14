@@ -857,9 +857,8 @@ class EquiAssem(pl.LightningModule):
     def _transformation_error_RPFver(self, pcds_pred, pcds_grtr, multi_part, scaling=100):
         """
         Args:
-            # [TODO] WEIRD COMMENT
-            pcds_pred (list): [(N, 3), (M, 3)] if is_trg_larger else [(N, 3), (M, 3)]
-            pcds_grtr (list): [(N, 3), (M, 3)] if is_trg_larger else [(N, 3), (M, 3)]
+            pcds_pred (list): [(N, 3), (M, 3)]
+            pcds_grtr (list): [(N, 3), (M, 3)]
             multi_part (bool): True if multi-part
             scaling (int, optional): Scaling factor for TRMSE. Defaults to 100. 
 

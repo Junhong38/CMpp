@@ -53,9 +53,8 @@ class CircleLoss(nn.Module):
             }
         
         # sample the neg_mask to match proportions
-        # TODO: Weird, is this really necessary?
         neg_indices = neg_mask.nonzero(as_tuple=False)
-        neg_nonsampled = neg_indices[torch.randperm(neg_indices.size(0))[pos_mask.sum():]]
+        neg_nonsampled = neg_indices[torch.randperm(neg_indices.size(0))[:pos_mask.sum()]]
         neg_mask[neg_nonsampled[:,0], neg_nonsampled[:,1]] = False
 
         # get anchors that have both positive and negative pairs

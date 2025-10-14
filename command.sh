@@ -10,7 +10,6 @@ rm -rf checkpoint/OVER_CM_AVN_NC_NPM_EXP_NODOCC/ && CUDA_VISIBLE_DEVICES=0 pytho
 rm -rf checkpoint/OVER_CM_AVN_NC_NPM_EXP_NODOCC_OG/ && CUDA_VISIBLE_DEVICES=0 python main.py --model CMpp_equiassem --logpath OVER_CM_AVN_NC_NPM_EXP_NODOCC_OG --scale overfitting --multiplicity 100 --epochs 1 --visualize --use_opt_gram --exp_scale_for_point_matching_loss # --wandb --wandb_project CMpp_debugging 
 
 
-
 rm -rf checkpoint/TINY_CM_origin/ && CUDA_VISIBLE_DEVICES=0 python main.py --model CM_equiassem --logpath TINY_CM_origin --scale tiny --multiplicity 33 --epochs 1 --visualize # --wandb --wandb_project CMpp_debugging 
 rm -rf checkpoint/TINY_CM_by_CMpp/ && CUDA_VISIBLE_DEVICES=0 python main.py --model CMpp_equiassem --logpath TINY_CM_by_CMpp --scale tiny --multiplicity 33 --epochs 1 --visualize # --wandb --wandb_project CMpp_debugging 
 rm -rf checkpoint/TINY_CM_AVN/ && CUDA_VISIBLE_DEVICES=0 python main.py --model CMpp_equiassem --logpath TINY_CM_AVN --scale tiny --multiplicity 33 --epochs 1 --visualize --additional_VNLinearLeakyReLU # --wandb --wandb_project CMpp_debugging 
@@ -21,7 +20,7 @@ rm -rf checkpoint/TINY_CM_AVN_NC_NPM_EXP_NODOCC/ && CUDA_VISIBLE_DEVICES=0 pytho
 rm -rf checkpoint/TINY_CM_AVN_NC_NPM_EXP_NODOCC_OG/ && CUDA_VISIBLE_DEVICES=0 python main.py --model CMpp_equiassem --logpath TINY_CM_AVN_NC_NPM_EXP_NODOCC_OG --scale tiny --multiplicity 33 --epochs 1 --visualize --use_opt_gram --exp_scale_for_point_matching_loss # --wandb --wandb_project CMpp_debugging 
 
 
-rm -rf checkpoint/SMALL_CM_origin/ && CUDA_VISIBLE_DEVICES=0 python main.py --model CM_equiassem --logpath SMALL_CM_origin --scale small --multiplicity 1 --epochs 1 --visualize # --wandb --wandb_project CMpp_debugging 
+rm -rf checkpoint/SMALL_CM_origin/ && CUDA_VISIBLE_DEVICES=0 python main.py --model CM_equiassem --logpath SMALL_CM_origin --scale small --multiplicity 1 --epochs 1 # --wandb --wandb_project CMpp_debugging 
 rm -rf checkpoint/SMALL_CM_by_CMpp/ && CUDA_VISIBLE_DEVICES=0 python main.py --model CMpp_equiassem --logpath SMALL_CM_by_CMpp --scale small --multiplicity 1 --epochs 1 --visualize # --wandb --wandb_project CMpp_debugging 
 rm -rf checkpoint/SMALL_CM_AVN/ && CUDA_VISIBLE_DEVICES=0 python main.py --model CMpp_equiassem --logpath SMALL_CM_AVN --scale small --multiplicity 1 --epochs 1 --visualize --additional_VNLinearLeakyReLU # --wandb --wandb_project CMpp_debugging 
 rm -rf checkpoint/SMALL_CM_AVN_NC/ && CUDA_VISIBLE_DEVICES=0 python main.py --model CMpp_equiassem --logpath SMALL_CM_AVN_NC --scale small --multiplicity 1 --epochs 1 --visualize --debugged_circle_loss # --wandb --wandb_project CMpp_debugging 
