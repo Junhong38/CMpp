@@ -36,7 +36,6 @@ def get_graph_feature(x, k=20, idx=None, x_coord=None):
         if x_coord is None: # dynamic knn graph
             idx = knn(x, k=k)   # (batch_size, num_points, k)
         else:          # fixed knn graph with input point coordinates
-            x_coord = x_coord.view(batch_size, -1, num_points)
             idx = knn(x_coord, k=k)
     device = torch.device('cuda')
 
