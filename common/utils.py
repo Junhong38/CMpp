@@ -8,14 +8,10 @@ import plotly.graph_objects as go
 
 import torch
 
+from common.viz import global_colors_for_objs
 
 def save_pc(filename: str, pcd_tensors: list):
-    colors = [
-        [1, 0.996, 0.804],
-        [0.804, 0.98, 1],
-        [1, 0.376, 0],
-        [0, 0.055, 1]
-    ]
+    colors = list(global_colors_for_objs.values())
 
     pcds = []
     for i, tensor_ in enumerate(pcd_tensors):

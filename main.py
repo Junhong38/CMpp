@@ -192,7 +192,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Equivariant Assembly Pytorch Implementation')
 
     # Dataset arguments
-    parser.add_argument('--datapath', type=str, default='../../../../hdd/junhong/data/bbad_v2') #'/mnt/nvme2n1p1/kimsangki_datasets/breaking_bad/volume_constrained')
+    parser.add_argument('--datapath', type=str, default='/mnt/nvme2n1p1/kimsangki_datasets/breaking_bad/volume_constrained') #'../../../../hdd/junhong/data/bbad_v2'
     parser.add_argument('--data_category', type=str, default='everyday', choices=['everyday', 'artifact', 'synthetic'])
     parser.add_argument('--sub_category', type=str, default='all')
     parser.add_argument('--n_pts', type=int, default=5000)
