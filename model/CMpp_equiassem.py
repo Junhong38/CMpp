@@ -65,6 +65,7 @@ class EquiAssem(pl.LightningModule):
             additional_VNLinearLeakyReLU=False,
             debugged_circle_loss=False,
             debugged_point_matching_loss=False,
+            exp_scale_for_point_matching_loss=False,
             n_knn=20,
             new_orientation_module=False,
             delete_occupancy_loss=False,
@@ -92,6 +93,7 @@ class EquiAssem(pl.LightningModule):
             additional_VNLinearLeakyReLU (bool, optional): Whether to use additional VNLinearLeakyReLU layers for the equivariant shape feature. Defaults to False.
             debugged_circle_loss (bool, optional): Whether to use the debugged version of Circle Loss. Defaults to False.
             debugged_point_matching_loss (bool, optional): Whether to use the debugged version of Point Matching Loss. Defaults to False.
+            exp_scale_for_point_matching_loss (bool, optional): Whether to make the matching score to exp-scaled value before computing point matching loss. Defaults to False.
             n_knn (int, optional): Number of nearest neighbors for KNN. Defaults to 20.
             new_orientation_module (bool, optional): Whether to use the new module for orientation loss. Defaults to False.
             delete_occupancy_loss (bool, optional): Whether to delete the occupancy loss. Defaults to False.
@@ -118,6 +120,7 @@ class EquiAssem(pl.LightningModule):
         print(f"additional_VNLinearLeakyReLU: {additional_VNLinearLeakyReLU}")
         print(f"debugged_circle_loss: {debugged_circle_loss}")
         print(f"debugged_point_matching_loss: {debugged_point_matching_loss}")
+        print(f"exp_scale_for_point_matching_loss: {exp_scale_for_point_matching_loss}")
         print(f"n_knn: {n_knn}")
         print(f"new_orientation_module: {new_orientation_module}")
         print(f"delete_occupancy_loss: {delete_occupancy_loss}")
@@ -134,6 +137,7 @@ class EquiAssem(pl.LightningModule):
         self.additional_VNLinearLeakyReLU = additional_VNLinearLeakyReLU
         self.debugged_circle_loss = debugged_circle_loss
         self.debugged_point_matching_loss = debugged_point_matching_loss
+        self.exp_scale_for_point_matching_loss = exp_scale_for_point_matching_loss
         self.new_orientation_module = new_orientation_module
         self.delete_occupancy_loss = delete_occupancy_loss
         self.use_opt_gram = use_opt_gram
@@ -556,11 +560,11 @@ class EquiAssem(pl.LightningModule):
 
         
         # Point matching loss
-        if self.debugged_point_matching_loss:
+        if self.exp_scale_for_point_matching_loss:
             loss['p_loss'] = 1.0 + self.matching_loss(torch.exp(matching_scores), gt_corr, src_pcd_raw, trg_pcd_raw).float() # Optimal Transport is in log space, so before registration, we need to exp it
         else:
             loss['p_loss'] = self.matching_loss(matching_scores, gt_corr, src_pcd_raw, trg_pcd_raw).float()
-        
+
 
         if not self.delete_occupancy_loss:
             loss['occ_loss'], _ = self.occupancy_loss(src_pcd_raw, trg_pcd_raw, src_occ_feats.transpose(-2,-1), -trg_occ_feats.transpose(-2,-1), gt_corr)
