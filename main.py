@@ -275,7 +275,7 @@ if __name__ == '__main__':
         from pytorch_lightning.strategies import DDPStrategy
         args.parallel_strategy = DDPStrategy(find_unused_parameters=False)
         args.lr = len(args.gpus) * args.lr # Learning rate is multiplied by the number of GPUs
-        args.n_worker = min(len(args.gpus) * 8, 48) # Number of workers is multiplied by the number of GPUs
+        args.n_worker = min(len(args.gpus) * 4, 48) # Number of workers is multiplied by the number of GPUs
     
     else: # Single-GPU training
         args.parallel_strategy = None

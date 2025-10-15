@@ -51,7 +51,7 @@ class CircleLoss(nn.Module):
                 'neg_min': neg_dists.min().item(),
                 'neg_max': neg_dists.max().item(),
             }
-        
+            
         # sample the neg_mask to match proportions
         neg_indices = neg_mask.nonzero(as_tuple=False)
         neg_nonsampled = neg_indices[torch.randperm(neg_indices.size(0))[:pos_mask.sum()]]

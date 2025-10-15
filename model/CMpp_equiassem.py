@@ -671,11 +671,13 @@ class EquiAssem(pl.LightningModule):
         # (c) Compute CoRrespondence Distance (CRD) betwween prediction & ground-truth
         eval_result['crd'] = self._correspondence_distance(assm_pred, assm_grtr, is_trg_larger)
 
-
-        if (not self.trainer.sanity_checking) and self.visualize and \
+        if (not self.trainer.sanity_checking) and \
+            self.trainer.global_rank == 0 and \
+            self.visualize and \
             (self.current_epoch % self.viz_epoch == 0 or self.current_epoch == self.trainer.max_epochs-1) and \
             in_dict['eval_idx'].item() == 0:
             # Do not visualize in sanity checking
+            # Only rank 0 should do visualization to avoid file I/O conflicts in DDP
             # Visualize for every self.viz_epoch
             # However, if it is the last epoch, then visualize
 
