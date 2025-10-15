@@ -350,8 +350,40 @@ class EquiAssem(pl.LightningModule):
         # this is a hack to get results outside `Trainer.test()` function
         self.test_results = avg_loss
         self.test_step_outputs.clear()
+    
 
+    def on_train_batch_end(self, outputs, batch, batch_idx):
+        self.check_grad_from_backbone_and_nan()
 
+    
+    def check_grad_from_backbone_and_nan(self):
+        total_modules = [self.backbone, self.proj, self.equi_layer, self.shape_mlp]
+
+        if self.attention == 'channel':
+            total_modules.append(self.c_attn)
+        
+        if not self.delete_occupancy_loss:
+            total_modules.append(self.occ_mlp)
+        
+        total_grad_mean = 0
+        nan_param_dict = {}
+        for module in total_modules:
+            for name, param in module.named_parameters():
+                if param.requires_grad:
+                    total_grad_mean += torch.abs(param.grad).mean()
+                
+                if torch.isnan(param).any():
+                    nan_param_dict[name] = param
+
+        total_grad_mean /= len(total_modules)
+        self.log('train-grad/abs_mean', total_grad_mean, prog_bar=True, logger=True, sync_dist=True, rank_zero_only=True, on_step=True, on_epoch=False, batch_size=1)
+
+        if len(nan_param_dict) > 0:
+            for key, value in nan_param_dict.items():
+                print(f"key: {key}, value: {value}")
+            assert False, "NaN parameters found"
+    
+    
     # @torch.no_grad()
     def forward_pass(self, in_dict, mode):
         """
