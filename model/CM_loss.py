@@ -69,7 +69,12 @@ class CircleLoss(nn.Module):
         loss_row = F.softplus(lse_pos_row + lse_neg_row)/self.log_scale
         loss_col = F.softplus(lse_pos_col + lse_neg_col)/self.log_scale
 
-        circle_loss = (loss_row[row_sel].mean() + loss_col[col_sel].mean()) / 2
+
+        # Prevent NaN
+        anchor_loss_row = loss_row[row_sel].mean() if row_sel.sum() > 0 else torch.tensor(0.).to(loss_row.device)
+        anchor_loss_col = loss_col[col_sel].mean() if col_sel.sum() > 0 else torch.tensor(0.).to(loss_col.device)
+
+        circle_loss = (anchor_loss_row + anchor_loss_col) / 2
 
         return circle_loss, pos_neg_distribution
 

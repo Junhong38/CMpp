@@ -39,3 +39,4 @@ end
 
 
 
+rm -rf checkpoint/debug/ && CUDA_VISIBLE_DEVICES=6 python main.py --model CMpp_equiassem --logpath debug --scale small --multiplicity 1 --epochs 0 --visualize --delete_occupancy_loss --load 

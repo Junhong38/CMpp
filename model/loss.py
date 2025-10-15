@@ -109,6 +109,11 @@ class CircleLoss(nn.Module):
             dict: (1, ), pos_neg_distribution
         """
 
+        # Check NaN
+        if torch.isnan(src_pcd).any() or torch.isnan(tgt_pcd).any() or torch.isnan(src_feats).any() or torch.isnan(tgt_feats).any():
+            assert False, "[Circle Loss] Input features are nan\n src_pcd: {}\n tgt_pcd: {}\n src_feats: {}\n tgt_feats: {}".format(src_pcd, tgt_pcd, src_feats, tgt_feats)
+
+
         if len(correspondence) == 0:
             print('[circle loss] No correspondence!')
             return torch.tensor(0.).to(src_feats.device), None
@@ -124,7 +129,7 @@ class CircleLoss(nn.Module):
 
         # Check NaN
         if torch.isnan(src_feats).any() or torch.isnan(tgt_feats).any():
-            assert False, "[Circle Loss] Features are nan"
+            assert False, "[Circle Loss] Normalized features are nan\n src_feats: {}\n tgt_feats: {}".format(src_feats, tgt_feats)
         
 
         # Get feature distance
