@@ -118,8 +118,8 @@ class CircleLoss(nn.Module):
 
 
         # Get feature distance (from GeoTransformer Implementation)
-        src_feats = F.normalize(src_feats.squeeze(0), p=2, dim=-1) # (1, N, D) -> (N, D)
-        tgt_feats = F.normalize(tgt_feats.squeeze(0), p=2, dim=-1) # (1, M, D) -> (M, D)
+        src_feats = F.normalize(src_feats.squeeze(0), p=2, dim=-1, eps=1e-8) # (1, N, D) -> (N, D)
+        tgt_feats = F.normalize(tgt_feats.squeeze(0), p=2, dim=-1, eps=1e-8) # (1, M, D) -> (M, D)
 
 
         # Check NaN
