@@ -353,10 +353,10 @@ class EquiAssem(pl.LightningModule):
     
 
     def on_train_batch_end(self, outputs, batch, batch_idx):
-        self.check_grad_from_backbone_and_nan()
+        self.check_grad_and_nan()
 
     
-    def check_grad_from_backbone_and_nan(self):
+    def check_grad_and_nan(self):
         total_modules = [self.backbone, self.proj, self.equi_layer, self.shape_mlp]
 
         if self.attention == 'channel':
