@@ -33,15 +33,18 @@ class CircleLoss(nn.Module):
             pos_dists = feats_dist[pos_mask]
             neg_dists = feats_dist[neg_mask]
 
+            does_pos_mask_exist = pos_mask.sum() > 0
+            does_neg_mask_exist = neg_mask.sum() > 0
+
             pos_neg_distribution = {
-                'pos_mean': pos_dists.mean().item(),
-                'pos_std': pos_dists.std().item(),
-                'pos_min': pos_dists.min().item(),
-                'pos_max': pos_dists.max().item(),
-                'neg_mean': neg_dists.mean().item(),
-                'neg_std': neg_dists.std().item(),
-                'neg_min': neg_dists.min().item(),
-                'neg_max': neg_dists.max().item(),
+                'pos_mean': pos_dists.mean().item() if does_pos_mask_exist else 0,
+                'pos_std': pos_dists.std().item() if does_pos_mask_exist else 0,
+                'pos_min': pos_dists.min().item() if does_pos_mask_exist else 0,
+                'pos_max': pos_dists.max().item() if does_pos_mask_exist else 0,
+                'neg_mean': neg_dists.mean().item() if does_neg_mask_exist else 0,
+                'neg_std': neg_dists.std().item() if does_neg_mask_exist else 0,
+                'neg_min': neg_dists.min().item() if does_neg_mask_exist else 0,
+                'neg_max': neg_dists.max().item() if does_neg_mask_exist else 0,
             }
 
         # get anchors that have both positive and negative pairs
