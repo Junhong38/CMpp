@@ -503,8 +503,6 @@ class EquiAssem(pl.LightningModule):
             inv_feats = torch.cat([src_inv_feats, trg_inv_feats], dim=-1)  # (1, C*3, N+M)
             attention = self.c_attn(inv_feats) # (1, C*3, N+M) -> (1, D, N+M)
             shape_attention, occ_attention = attention[:, :512], attention[:, 512:] # [TODO] We should check this part, This can incurr problem
-            loss['shape_attn_ratio'] = shape_attention.sum() / (shape_attention.sum()+occ_attention.sum())
-            loss['occ_attn_ratio'] = occ_attention.sum() / (shape_attention.sum()+occ_attention.sum())
         
 
         # 6. SHAPE DESCRIPTOR 
@@ -614,9 +612,8 @@ class EquiAssem(pl.LightningModule):
         # in training we log for every step
         if mode == 'train':
             log_dict = {f'{mode}/{k}': v.item() for k, v in loss.items()}
-
-            pos_neg_distribution = {f'{mode}/{k}': v for k, v in pos_neg_distribution.items()}
-            log_dict.update(pos_neg_distribution)
+            log_pos_neg_distribution = {f'{mode}-dist/{k}': v for k, v in pos_neg_distribution.items()}
+            log_dict.update(log_pos_neg_distribution)
 
             training_loss = log_dict.pop(f'{mode}/loss')
             current_lr = self.trainer.optimizers[0].param_groups[0]['lr']
@@ -674,7 +671,14 @@ class EquiAssem(pl.LightningModule):
         # (c) Compute CoRrespondence Distance (CRD) betwween prediction & ground-truth
         eval_result['crd'] = self._correspondence_distance(assm_pred, assm_grtr, is_trg_larger)
 
-        if self.visualize and self.current_epoch % self.viz_epoch == 0 and in_dict['eval_idx'].item() == 0:
+
+        if (not self.trainer.sanity_checking) and self.visualize and \
+            (self.current_epoch % self.viz_epoch == 0 or self.current_epoch == self.trainer.max_epochs-1) and \
+            in_dict['eval_idx'].item() == 0:
+            # Do not visualize in sanity checking
+            # Visualize for every self.viz_epoch
+            # However, if it is the last epoch, then visualize
+
             vis_folder = os.path.join(self.ckp_dir, 'vis', mode)
             os.makedirs(vis_folder, exist_ok=True)
 

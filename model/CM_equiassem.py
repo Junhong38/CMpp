@@ -235,8 +235,6 @@ class EquiAssem(pl.LightningModule):
             attention = self.c_attn(inv_feats) # (1, 1023, N+M) -> (1, 1023, N+M)
             
             shape_attention, occ_attention = attention[:, :512], attention[:, 512:]
-            loss['shape_attn_ratio'] = shape_attention.sum() / (shape_attention.sum()+occ_attention.sum())
-            loss['occ_attn_ratio'] = occ_attention.sum() / (shape_attention.sum()+occ_attention.sum())
         
         #### 6. SHAPE DESCRIPTOR ####
         src_shape_feats = self.shape_mlp(src_inv_feats) # (1, 1023, M) -> (1, 512, M)
@@ -328,9 +326,14 @@ class EquiAssem(pl.LightningModule):
         # in training we log for every step
         if mode == 'train':
             log_dict = {f'{mode}/{k}': v.item() for k, v in loss.items()}
-            self.log_dict(log_dict, logger=True, sync_dist=True, rank_zero_only=True, on_step=False, on_epoch=True, batch_size=1)
-            lr = self.trainer.optimizers[0].param_groups[0]['lr']
-            self.log('learning_rate', lr, prog_bar=True, logger=True)
+
+            training_loss = log_dict.pop(f'{mode}/loss')
+            current_lr = self.trainer.optimizers[0].param_groups[0]['lr']
+
+            self.log_dict(log_dict, prog_bar=False, logger=True, sync_dist=True, rank_zero_only=True, on_step=True, on_epoch=True, batch_size=1)
+            self.log(f'{mode}/loss', training_loss, prog_bar=True, logger=True, sync_dist=True, rank_zero_only=True, on_step=True, on_epoch=True, batch_size=1)
+            self.log('current_lr', current_lr, prog_bar=True, logger=True, sync_dist=True, rank_zero_only=True, on_step=True, on_epoch=False, batch_size=1)
+
         return out_dict, loss
 
     @torch.no_grad()

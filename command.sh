@@ -31,3 +31,10 @@ rm -rf checkpoint/SMALL_CM_AVN_NC_NPM_EXP_NODOCC_OG/ && CUDA_VISIBLE_DEVICES=0 p
 end
 
 
+
+
+rm -rf checkpoint/test_imple && CUDA_VISIBLE_DEVICES=7 python main.py --model CMpp_equiassem --logpath test_imple --scale overfitting --multiplicity 100 --epochs 0 --visualize --use_opt_gram
+
+
+rm -rf checkpoint/test_imple && CUDA_VISIBLE_DEVICES=7 python main.py --model CMpp_equiassem --logpath test_imple --scale overfitting --multiplicity 100 --epochs 0 --visualize --use_opt_gram --wandb --wandb_project test_imple_CMpp 
+rm -rf checkpoint/test_CM_origin/ && CUDA_VISIBLE_DEVICES=0 python main.py --model CM_equiassem --logpath test_CM_origin --scale overfitting --multiplicity 100 --epochs 0 --wandb --wandb_project test_imple_CMpp 
