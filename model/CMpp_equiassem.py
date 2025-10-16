@@ -71,7 +71,7 @@ class EquiAssem(pl.LightningModule):
             delete_occupancy_loss=False,
             use_opt_gram=False,
 
-            only_one_batchnorm=False,
+            only_one_norm=False,
             n_avn=5,
             ):
         """Equivariant Assembly Model for 3D Object Assembly
@@ -103,7 +103,7 @@ class EquiAssem(pl.LightningModule):
             use_opt_gram (bool, optional): Whether to use the optimum Gram Schmidt Orthogonalization. Defaults to False.
 
 
-            only_one_batchnorm (bool, optional): Whether to use only one BatchNorm layer for the equivariant shape feature. Defaults to False.
+            only_one_norm (bool, optional): Whether to use only one Normalization layer for the equivariant shape feature. Defaults to False.
             n_avn (int, optional): Number of AVN layers for the equivariant shape feature. Defaults to 5.
         """
         super(EquiAssem, self).__init__()
@@ -133,7 +133,7 @@ class EquiAssem(pl.LightningModule):
         print(f"delete_occupancy_loss: {delete_occupancy_loss}")
         print(f"use_opt_gram: {use_opt_gram}")
 
-        print(f"only_one_batchnorm: {only_one_batchnorm}")
+        print(f"only_one_norm: {only_one_norm}")
         print(f"n_avn: {n_avn}")
         print("------------------------------------------------------")
 
@@ -238,7 +238,7 @@ class EquiAssem(pl.LightningModule):
             # Layer for Equivariant feature
 
             assert n_avn > 0, "n_avn must be greater than 0"
-            self.equi_layer = nn.Sequential(*([VNLinearLeakyReLU(self.feat_dim//3, self.feat_dim//3, no_batchnorm=False)] + [VNLinearLeakyReLU(self.feat_dim//3, self.feat_dim//3, no_batchnorm=only_one_batchnorm) for _ in range(n_avn-1)]))
+            self.equi_layer = nn.Sequential(*([VNLinearLeakyReLU(self.feat_dim//3, self.feat_dim//3, no_norm=False)] + [VNLinearLeakyReLU(self.feat_dim//3, self.feat_dim//3, no_norm=only_one_norm) for _ in range(n_avn-1)]))
             # print(f"self.equi_layer: {self.equi_layer}")
             # exit("stop")
 

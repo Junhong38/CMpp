@@ -65,7 +65,7 @@ def main(args):
                           use_opt_gram=args.use_opt_gram,
                           
                           
-                          only_one_batchnorm=args.only_one_batchnorm,
+                          only_one_norm=args.only_one_norm,
                           n_avn=args.n_avn)
     
     else:
@@ -237,7 +237,7 @@ if __name__ == '__main__':
     parser.add_argument('--delete_occupancy_loss', action='store_true', help='If True, delete the Occupancy Loss')
     parser.add_argument('--use_opt_gram', action='store_true', help='If True, use Optimum Gram Schmidt Orthogonalization')
 
-    parser.add_argument('--only_one_batchnorm', action='store_true', help='If True, use only one BatchNorm layer for the equivariant shape feature')
+    parser.add_argument('--only_one_norm', action='store_true', help='If True, use only one Normalization layer for the equivariant shape feature')
     parser.add_argument('--n_avn', type=int, default=5, help='Number of AVN layers for the equivariant shape feature')
 
     # Weights for losses
