@@ -374,24 +374,35 @@ class EquiAssem(pl.LightningModule):
         if not self.delete_occupancy_loss:
             total_modules.append(self.occ_mlp)
         
-        total_grad_mean = 0
-        total_grad_mean_count = 0
+        total_grad_abs_sum = 0.0
+        total_grad_abs_max = 0.0
+        total_grad_count = 0
         nan_param_dict = {}
+        
         for module in total_modules:
             for name, param in module.named_parameters():
-                if param.requires_grad:
-                    total_grad_mean += torch.abs(param.grad).mean()
-                    total_grad_mean_count += 1
+                if param.requires_grad and param.grad is not None:
+                    total_grad_abs_sum += torch.abs(param.grad).sum().item()
+                    total_grad_count += param.numel()
+                    current_grad_abs_max = torch.abs(param.grad).max().item()
+                    if current_grad_abs_max > total_grad_abs_max:
+                        total_grad_abs_max = current_grad_abs_max
                 
+                # Check for NaN parameters
                 if torch.isnan(param).any():
                     nan_param_dict[name] = param
 
-        total_grad_mean /= total_grad_mean_count
-        self.log('train-grad/abs_mean', total_grad_mean, prog_bar=True, logger=True, sync_dist=True, rank_zero_only=True, on_step=True, on_epoch=False, batch_size=1)
+        if total_grad_count > 0:
+            total_grad_abs_mean = total_grad_abs_sum / total_grad_count
+            self.log('train-grad/abs_mean', total_grad_abs_mean, prog_bar=True, logger=True, sync_dist=True, rank_zero_only=True, on_step=True, on_epoch=False, batch_size=1)
+            self.log('train-grad/abs_max', total_grad_abs_max, prog_bar=True, logger=True, sync_dist=True, rank_zero_only=True, on_step=True, on_epoch=False, batch_size=1)
+        else:
+            assert False, "total_grad_count is 0"
+        
 
         if len(nan_param_dict) > 0:
             for key, value in nan_param_dict.items():
-                print(f"key: {key}, value: {value}")
+                print(f"NaN parameter found - key: {key}, value: {value}")
             assert False, "NaN parameters found"
     
     
