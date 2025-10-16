@@ -38,4 +38,9 @@ rm -rf checkpoint/SMALL_CM_AVN_NC_NPM_NODOCC_OG/ && CUDA_VISIBLE_DEVICES=7 pytho
 end
 
 
-
+# rm -rf checkpoint/debug_VN_N0/ && CUDA_VISIBLE_DEVICES=0 python main.py --model CMpp_equiassem --logpath debug_VN_N0 --scale overfitting --multiplicity 100 --epochs 1 --visualize --n_avn 0 --wandb --wandb_project CMpp_debug_NaN &
+rm -rf checkpoint/debug_VN_N1_OnlyOneBatchNorm/ && CUDA_VISIBLE_DEVICES=1 python main.py --model CMpp_equiassem --logpath debug_VN_N1_OnlyOneBatchNorm --scale overfitting --multiplicity 100 --epochs 1 --visualize --additional_VNLinearLeakyReLU --n_avn 1 --wandb --wandb_project CMpp_debug_NaN & 
+rm -rf checkpoint/debug_VN_N2_OnlyOneBatchNorm/ && CUDA_VISIBLE_DEVICES=2 python main.py --model CMpp_equiassem --logpath debug_VN_N2_OnlyOneBatchNorm --scale overfitting --multiplicity 100 --epochs 1 --visualize --additional_VNLinearLeakyReLU --n_avn 2 --wandb --wandb_project CMpp_debug_NaN & 
+rm -rf checkpoint/debug_VN_N3_OnlyOneBatchNorm/ && CUDA_VISIBLE_DEVICES=3 python main.py --model CMpp_equiassem --logpath debug_VN_N3_OnlyOneBatchNorm --scale overfitting --multiplicity 100 --epochs 1 --visualize --additional_VNLinearLeakyReLU --n_avn 3 --wandb --wandb_project CMpp_debug_NaN & 
+rm -rf checkpoint/debug_VN_N4_OnlyOneBatchNorm/ && CUDA_VISIBLE_DEVICES=4 python main.py --model CMpp_equiassem --logpath debug_VN_N4_OnlyOneBatchNorm --scale overfitting --multiplicity 100 --epochs 1 --visualize --additional_VNLinearLeakyReLU --n_avn 4 --wandb --wandb_project CMpp_debug_NaN & 
+rm -rf checkpoint/debug_VN_N5_OnlyOneBatchNorm/ && CUDA_VISIBLE_DEVICES=5 python main.py --model CMpp_equiassem --logpath debug_VN_N5_OnlyOneBatchNorm --scale overfitting --multiplicity 100 --epochs 1 --visualize --additional_VNLinearLeakyReLU --n_avn 5 --wandb --wandb_project CMpp_debug_NaN & 

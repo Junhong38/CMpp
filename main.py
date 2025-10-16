@@ -62,7 +62,11 @@ def main(args):
                           n_knn=args.n_knn,
                           new_orientation_module=args.new_orientation_module,
                           delete_occupancy_loss=args.delete_occupancy_loss,
-                          use_opt_gram=args.use_opt_gram)
+                          use_opt_gram=args.use_opt_gram,
+                          
+                          
+                          only_one_batchnorm=args.only_one_batchnorm,
+                          n_avn=args.n_avn)
     
     else:
         raise NotImplementedError("Model not implemented")
@@ -232,6 +236,9 @@ if __name__ == '__main__':
     parser.add_argument('--new_orientation_module', action='store_true', help='If True, use New module for orientation')
     parser.add_argument('--delete_occupancy_loss', action='store_true', help='If True, delete the Occupancy Loss')
     parser.add_argument('--use_opt_gram', action='store_true', help='If True, use Optimum Gram Schmidt Orthogonalization')
+
+    parser.add_argument('--only_one_batchnorm', action='store_true', help='If True, use only one BatchNorm layer for the equivariant shape feature')
+    parser.add_argument('--n_avn', type=int, default=5, help='Number of AVN layers for the equivariant shape feature')
 
     # Weights for losses
     parser.add_argument('--s_loss_weight', type=float, default=0.5, help='Weight for shape loss, in the future, we will change this into 1.0')

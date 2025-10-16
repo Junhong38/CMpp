@@ -70,6 +70,9 @@ class EquiAssem(pl.LightningModule):
             new_orientation_module=False,
             delete_occupancy_loss=False,
             use_opt_gram=False,
+
+            only_one_batchnorm=False,
+            n_avn=5,
             ):
         """Equivariant Assembly Model for 3D Object Assembly
 
@@ -98,6 +101,10 @@ class EquiAssem(pl.LightningModule):
             new_orientation_module (bool, optional): Whether to use the new module for orientation loss. Defaults to False.
             delete_occupancy_loss (bool, optional): Whether to delete the occupancy loss. Defaults to False.
             use_opt_gram (bool, optional): Whether to use the optimum Gram Schmidt Orthogonalization. Defaults to False.
+
+
+            only_one_batchnorm (bool, optional): Whether to use only one BatchNorm layer for the equivariant shape feature. Defaults to False.
+            n_avn (int, optional): Number of AVN layers for the equivariant shape feature. Defaults to 5.
         """
         super(EquiAssem, self).__init__()
 
@@ -125,6 +132,9 @@ class EquiAssem(pl.LightningModule):
         print(f"new_orientation_module: {new_orientation_module}")
         print(f"delete_occupancy_loss: {delete_occupancy_loss}")
         print(f"use_opt_gram: {use_opt_gram}")
+
+        print(f"only_one_batchnorm: {only_one_batchnorm}")
+        print(f"n_avn: {n_avn}")
         print("------------------------------------------------------")
 
         self.lr = lr
@@ -226,13 +236,12 @@ class EquiAssem(pl.LightningModule):
             # Layer for predicting frame vectors
             self.proj = VNLinear(2 * (self.feat_dim//3), 2)
             # Layer for Equivariant feature
-            self.equi_layer = nn.Sequential(
-                VNLinearLeakyReLU(self.feat_dim//3, self.feat_dim//3),
-                VNLinearLeakyReLU(self.feat_dim//3, self.feat_dim//3),
-                VNLinearLeakyReLU(self.feat_dim//3, self.feat_dim//3),
-                VNLinearLeakyReLU(self.feat_dim//3, self.feat_dim//3),
-                VNLinearLeakyReLU(self.feat_dim//3, self.feat_dim//3),
-                )
+
+            assert n_avn > 0, "n_avn must be greater than 0"
+            self.equi_layer = nn.Sequential(*([VNLinearLeakyReLU(self.feat_dim//3, self.feat_dim//3, no_batchnorm=False)] + [VNLinearLeakyReLU(self.feat_dim//3, self.feat_dim//3, no_batchnorm=only_one_batchnorm) for _ in range(n_avn-1)]))
+            # print(f"self.equi_layer: {self.equi_layer}")
+            # exit("stop")
+
         else:
             # Layer for predicting frame vectors
             self.proj = VNLinear(self.feat_dim//3, 2)
@@ -366,16 +375,18 @@ class EquiAssem(pl.LightningModule):
             total_modules.append(self.occ_mlp)
         
         total_grad_mean = 0
+        total_grad_mean_count = 0
         nan_param_dict = {}
         for module in total_modules:
             for name, param in module.named_parameters():
                 if param.requires_grad:
                     total_grad_mean += torch.abs(param.grad).mean()
+                    total_grad_mean_count += 1
                 
                 if torch.isnan(param).any():
                     nan_param_dict[name] = param
 
-        total_grad_mean /= len(total_modules)
+        total_grad_mean /= total_grad_mean_count
         self.log('train-grad/abs_mean', total_grad_mean, prog_bar=True, logger=True, sync_dist=True, rank_zero_only=True, on_step=True, on_epoch=False, batch_size=1)
 
         if len(nan_param_dict) > 0:
