@@ -90,11 +90,11 @@ class CircleLoss(nn.Module):
         # get alpha for both positive and negative pairs
         pos_weight = feats_dist - 1e5 * (~pos_mask).float() # mask the non-positive
         pos_weight = (pos_weight - self.pos_optimal) # mask the uninformative positive
-        pos_weight = torch.max(torch.zeros_like(pos_weight), pos_weight).detach() # (N,M)
+        pos_weight = torch.max(torch.zeros_like(pos_weight), pos_weight) # (N,M)
 
         neg_weight = feats_dist + 1e5 * (~neg_mask).float() # mask the non-negative
         neg_weight = (self.neg_optimal - neg_weight) # mask the uninformative negative
-        neg_weight = torch.max(torch.zeros_like(neg_weight),neg_weight).detach() # (N,M)
+        neg_weight = torch.max(torch.zeros_like(neg_weight),neg_weight) # (N,M)
         
 
         if self.detach_mode:
