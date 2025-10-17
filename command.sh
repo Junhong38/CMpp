@@ -76,5 +76,3 @@ rm -rf checkpoint/L3_SMALL_CM_AVNOON_NC_NPM_NODOCC/ && CUDA_VISIBLE_DEVICES=6 py
 rm -rf checkpoint/L3_SMALL_CM_AVNOON_NC_NPM_NODOCC_OG/ && CUDA_VISIBLE_DEVICES=7 python main.py --model CMpp_equiassem --logpath L3_SMALL_CM_AVNOON_NC_NPM_NODOCC_OG --scale small --multiplicity 1 --epochs 0 --visualize --only_one_norm --use_opt_gram --wandb --wandb_project CMpp 
 end
 
-
-

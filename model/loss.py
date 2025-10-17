@@ -61,17 +61,17 @@ class CircleLoss(nn.Module):
         neg_mask[neg_nonsampled[:,0], neg_nonsampled[:,1]] = False
 
         # get anchors that have both positive and negative pairs
-        row_sel = ((pos_mask.sum(-1)>0) * (neg_mask.sum(-1)>0)) # (N,M) -> (N, )
-        col_sel = ((pos_mask.sum(-2)>0) * (neg_mask.sum(-2)>0)) # (N,M) -> (M, )
+        row_sel = ((pos_mask.sum(-1)>0) * (neg_mask.sum(-1)>0)).detach() # (N,M) -> (N, )
+        col_sel = ((pos_mask.sum(-2)>0) * (neg_mask.sum(-2)>0)).detach() # (N,M) -> (M, )
 
         # get alpha for both positive and negative pairs
         pos_weight = feats_dist - 1e5 * (~pos_mask).float() # mask the non-positive
         pos_weight = (pos_weight - self.pos_optimal) # mask the uninformative positive
-        pos_weight = torch.max(torch.zeros_like(pos_weight), pos_weight) # (N,M)
+        pos_weight = torch.max(torch.zeros_like(pos_weight), pos_weight).detach() # (N,M)
 
         neg_weight = feats_dist + 1e5 * (~neg_mask).float() # mask the non-negative
         neg_weight = (self.neg_optimal - neg_weight) # mask the uninformative negative
-        neg_weight = torch.max(torch.zeros_like(neg_weight),neg_weight) # (N,M)
+        neg_weight = torch.max(torch.zeros_like(neg_weight),neg_weight).detach() # (N,M)
 
         # log(Σ exp(γ * (d - m_pos) * w_pos))
         lse_pos_row = torch.logsumexp(self.log_scale * (feats_dist - self.pos_margin) * pos_weight, dim=-1) # (N, )
