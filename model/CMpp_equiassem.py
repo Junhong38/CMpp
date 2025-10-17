@@ -57,7 +57,7 @@ class EquiAssem(pl.LightningModule):
     def __init__(
             self, 
             lr, backbone='vn_unet', attention='channel', 
-            pos_margin=0.1, neg_margin=1.4, log_scale=24,
+            pos_margin=0.1, neg_margin=1.4, log_scale=24, detach_mode=False, same_opt=False,
             s_loss_weight=1.0, p_loss_weight=1.0, o_loss_weight=1.0,
             visualize=False, viz_epoch=30, ckp_dir=None, debug=False,
 
@@ -83,6 +83,8 @@ class EquiAssem(pl.LightningModule):
             pos_margin (float, optional): Margin for positive samples in loss computation. Defaults to 0.1.
             neg_margin (float, optional): Margin for negative samples in loss computation. Defaults to 1.4.
             log_scale (int, optional): Log scaling factor for loss computation. Defaults to 24.
+            detach_mode (bool, optional): Whether to use the detach mode for circle loss computation. Defaults to False.
+            same_opt (bool, optional): Whether to use the same optimal value for positive and negative samples in loss computation. Defaults to False.
             s_loss_weight (float, optional): Weight for shape loss. Defaults to 1.0.
             p_loss_weight (float, optional): Weight for point loss. Defaults to 1.0.
             o_loss_weight (float, optional): Weight for orientation loss. Defaults to 1.0.
@@ -117,6 +119,8 @@ class EquiAssem(pl.LightningModule):
         print(f"pos_margin: {pos_margin}")
         print(f"neg_margin: {neg_margin}")
         print(f"log_scale: {log_scale}")
+        print(f"detach_mode: {detach_mode}")
+        print(f"same_opt: {same_opt}")
         print(f"s_loss_weight: {s_loss_weight}")
         print(f"p_loss_weight: {p_loss_weight}")
         print(f"o_loss_weight: {o_loss_weight}")
@@ -161,8 +165,12 @@ class EquiAssem(pl.LightningModule):
         if debugged_circle_loss:
             print("Using the debugged version of Circle Loss")
             from model.loss import CircleLoss
+            self.shape_loss = CircleLoss(pos_optimal=pos_margin, neg_optimal=neg_margin, log_scale=log_scale, detach_mode=detach_mode, same_opt=same_opt)
+
         else:
             from model.CM_loss import CircleLoss
+            self.shape_loss = CircleLoss(pos_optimal=pos_margin, neg_optimal=neg_margin, log_scale=log_scale)
+
 
         if debugged_point_matching_loss:
             print("Using the debugged version of Point Matching Loss")
@@ -179,11 +187,13 @@ class EquiAssem(pl.LightningModule):
         if delete_occupancy_loss:
             print("Deleting the occupancy loss")
         else:
-            self.occupancy_loss = CircleLoss(pos_optimal=pos_margin, neg_optimal=neg_margin, log_scale=log_scale)
+            if debugged_circle_loss:
+                self.occupancy_loss = CircleLoss(pos_optimal=pos_margin, neg_optimal=neg_margin, log_scale=log_scale, detach_mode=detach_mode, same_opt=same_opt)
+            else:
+                self.occupancy_loss = CircleLoss(pos_optimal=pos_margin, neg_optimal=neg_margin, log_scale=log_scale)
 
 
         self.matching_loss = PointMatchingLoss()
-        self.shape_loss = CircleLoss(pos_optimal=pos_margin, neg_optimal=neg_margin, log_scale=log_scale)
         self.orientation_loss = OrientationLoss()
 
 

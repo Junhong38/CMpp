@@ -45,6 +45,8 @@ def main(args):
                           pos_margin=args.pos_margin,
                           neg_margin=args.neg_margin,
                           log_scale=args.log_scale,
+                          detach_mode=args.detach_mode,
+                          same_opt=args.same_opt,
 
                           s_loss_weight=args.s_loss_weight,
                           p_loss_weight=args.p_loss_weight,
@@ -250,6 +252,8 @@ if __name__ == '__main__':
     parser.add_argument('--pos_margin', type=float, default=0.1, help='Margin for positive samples in Circle loss computation')
     parser.add_argument('--neg_margin', type=float, default=1.4, help='Margin for negative samples in Circle loss computation')
     parser.add_argument('--log_scale', type=float, default=24, help='Log scale for Circle loss computation')
+    parser.add_argument('--detach_mode', action='store_true', help='')
+    parser.add_argument('--same_opt', action='store_true', help='')
     
 
     # Additional experiments

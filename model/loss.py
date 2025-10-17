@@ -5,19 +5,35 @@ import torch.nn.functional as F
 
 class CircleLoss(nn.Module):
 
-    def __init__(self, log_scale=24, pos_optimal=0.1, neg_optimal=1.4):
+    def __init__(self, log_scale=24, pos_optimal=0.1, neg_optimal=1.4, detach_mode=False, same_opt=False):
         super(CircleLoss,self).__init__()
         self.log_scale = log_scale
         self.pos_optimal = pos_optimal
         self.neg_optimal = neg_optimal
-
-        self.pos_margin = pos_optimal - 0.05
-        self.neg_margin = neg_optimal + 0.05
+        self.detach_mode = detach_mode
+        self.same_opt = same_opt
         
+        if same_opt:
+            self.pos_margin = pos_optimal
+            self.neg_margin = neg_optimal
+        else:
+            self.pos_margin = pos_optimal - 0.05
+            self.neg_margin = neg_optimal + 0.05
+
         self.pos_radius = 0.018
         self.safe_radius = 0.03
 
         # self.max_points = 128
+
+        print("------------------------------------------------------")
+        print("INITIALIZING CircleLoss")
+        print("------------------------------------------------------")
+        print(f"log_scale: {log_scale}")
+        print(f"pos_optimal: {pos_optimal}, pos_margin: {self.pos_margin}")
+        print(f"neg_optimal: {neg_optimal}, neg_margin: {self.neg_margin}")
+        print(f"detach_mode: {detach_mode}")
+        print(f"same_opt: {same_opt}")
+        print("------------------------------------------------------")
 
     
     def get_circle_loss(self, coords_dist, feats_dist):
@@ -64,6 +80,13 @@ class CircleLoss(nn.Module):
         row_sel = ((pos_mask.sum(-1)>0) * (neg_mask.sum(-1)>0)).detach() # (N,M) -> (N, )
         col_sel = ((pos_mask.sum(-2)>0) * (neg_mask.sum(-2)>0)).detach() # (N,M) -> (M, )
 
+
+        if self.detach_mode:
+            # print("Using detach mode")
+            row_sel = row_sel.detach()
+            col_sel = col_sel.detach()
+
+
         # get alpha for both positive and negative pairs
         pos_weight = feats_dist - 1e5 * (~pos_mask).float() # mask the non-positive
         pos_weight = (pos_weight - self.pos_optimal) # mask the uninformative positive
@@ -72,6 +95,13 @@ class CircleLoss(nn.Module):
         neg_weight = feats_dist + 1e5 * (~neg_mask).float() # mask the non-negative
         neg_weight = (self.neg_optimal - neg_weight) # mask the uninformative negative
         neg_weight = torch.max(torch.zeros_like(neg_weight),neg_weight).detach() # (N,M)
+        
+
+        if self.detach_mode:
+            # print("Using detach mode")
+            pos_weight = pos_weight.detach()
+            neg_weight = neg_weight.detach()
+
 
         # log(Σ exp(γ * (d - m_pos) * w_pos))
         lse_pos_row = torch.logsumexp(self.log_scale * (feats_dist - self.pos_margin) * pos_weight, dim=-1) # (N, )
