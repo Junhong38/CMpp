@@ -89,8 +89,8 @@ end
 
 
 
-rm -rf checkpoint/L3_DEBUG_SMALL_CM_AVNOON_NC/ && CUDA_VISIBLE_DEVICES=0 python main.py --model CMpp_equiassem --logpath L3_DEBUG_SMALL_CM_AVNOON_NC --scale overfitting --multiplicity 100 --epochs 0 --visualize --only_one_norm --debugged_circle_loss --wandb --wandb_project CMpp 
-rm -rf checkpoint/L3_DEBUG_SMALL_CM_AVNOON_NCD/ && CUDA_VISIBLE_DEVICES=1 python main.py --model CMpp_equiassem --logpath L3_DEBUG_SMALL_CM_AVNOON_NCD --scale overfitting --multiplicity 100 --epochs 0 --visualize --only_one_norm --detach_mode --debugged_circle_loss --wandb --wandb_project CMpp 
-rm -rf checkpoint/L3_DEBUG_SMALL_CM_AVNOON_NCSO/ && CUDA_VISIBLE_DEVICES=2 python main.py --model CMpp_equiassem --logpath L3_DEBUG_SMALL_CM_AVNOON_NCSO --scale overfitting --multiplicity 100 --epochs 0 --visualize --only_one_norm --same_opt --debugged_circle_loss --wandb --wandb_project CMpp 
-rm -rf checkpoint/L3_DEBUG_SMALL_CM_AVNOON_NCDSO/ && CUDA_VISIBLE_DEVICES=3 python main.py --model CMpp_equiassem --logpath L3_DEBUG_SMALL_CM_AVNOON_NCDSO --scale overfitting --multiplicity 100 --epochs 0 --visualize --only_one_norm --detach_mode --same_opt --debugged_circle_loss --wandb --wandb_project CMpp 
+rm -rf checkpoint/L3_DEBUG_SMALL_CM_AVNOON_NC/ && CUDA_VISIBLE_DEVICES=0 python main.py --model CMpp_equiassem --logpath L3_DEBUG_SMALL_CM_AVNOON_NC --scale small --multiplicity 1 --epochs 0 --visualize --only_one_norm --debugged_circle_loss --wandb --wandb_project CMpp &
+rm -rf checkpoint/L3_DEBUG_SMALL_CM_AVNOON_NCD/ && CUDA_VISIBLE_DEVICES=1 python main.py --model CMpp_equiassem --logpath L3_DEBUG_SMALL_CM_AVNOON_NCD --scale small --multiplicity 1 --epochs 0 --visualize --only_one_norm --detach_mode --debugged_circle_loss --wandb --wandb_project CMpp &
+rm -rf checkpoint/L3_DEBUG_SMALL_CM_AVNOON_NCSO/ && CUDA_VISIBLE_DEVICES=2 python main.py --model CMpp_equiassem --logpath L3_DEBUG_SMALL_CM_AVNOON_NCSO --scale small --multiplicity 1 --epochs 0 --visualize --only_one_norm --same_opt --debugged_circle_loss --wandb --wandb_project CMpp &
+rm -rf checkpoint/L3_DEBUG_SMALL_CM_AVNOON_NCDSO/ && CUDA_VISIBLE_DEVICES=3 python main.py --model CMpp_equiassem --logpath L3_DEBUG_SMALL_CM_AVNOON_NCDSO --scale small --multiplicity 1 --epochs 0 --visualize --only_one_norm --detach_mode --same_opt --debugged_circle_loss --wandb --wandb_project CMpp &
 
