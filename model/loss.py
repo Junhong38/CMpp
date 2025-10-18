@@ -198,17 +198,17 @@ class CircleLoss(nn.Module):
 
 
         # Get feature distance (from GeoTransformer Implementation)
-        src_feats = F.normalize(src_feats_selected.squeeze(0), p=2, dim=-1) # (1, N, D) -> (N, D)
-        tgt_feats = F.normalize(tgt_feats_selected.squeeze(0), p=2, dim=-1) # (1, M, D) -> (M, D)
+        normalized_src_feats = F.normalize(src_feats_selected.squeeze(0), p=2, dim=-1) # (1, N, D) -> (N, D)
+        normalized_tgt_feats = F.normalize(tgt_feats_selected.squeeze(0), p=2, dim=-1) # (1, M, D) -> (M, D)
 
 
         # Check NaN
-        if torch.isnan(src_feats).any() or torch.isnan(tgt_feats).any():
-            assert False, "[Circle Loss] Normalized features are nan\n src_feats: {}\n tgt_feats: {}".format(src_feats, tgt_feats)
+        if torch.isnan(normalized_src_feats).any() or torch.isnan(normalized_tgt_feats).any():
+            assert False, "[Circle Loss] Normalized features are nan\n src_feats: {}\n tgt_feats: {}".format(normalized_src_feats, normalized_tgt_feats)
         
 
         # Get feature distance
-        dot = torch.einsum('x d, y d -> x y', src_feats, tgt_feats)
+        dot = torch.einsum('x d, y d -> x y', normalized_src_feats, normalized_tgt_feats)
         dot = torch.clamp(dot, min=-1.0, max=1.0)
         value = 2.0 - 2.0 * dot
         assert (value >= 0).all(), f"Negative value detected in sqrt input: min={value.min()}"
