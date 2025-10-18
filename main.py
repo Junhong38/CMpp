@@ -62,7 +62,10 @@ def main(args):
                           log_scale=args.log_scale,
                           detach_mode=args.detach_mode,
                           same_opt=args.same_opt,
-
+                          only_correspondence=args.only_correspondence,
+                          pos_neg_balance=args.pos_neg_balance,
+                          division_mode=args.division_mode,
+                          
                           s_loss_weight=args.s_loss_weight,
                           p_loss_weight=args.p_loss_weight,
                           o_loss_weight=args.o_loss_weight,
@@ -264,7 +267,9 @@ if __name__ == '__main__':
     parser.add_argument('--log_scale', type=float, default=24, help='Log scale for Circle loss computation')
     parser.add_argument('--detach_mode', action='store_true', help='')
     parser.add_argument('--same_opt', action='store_true', help='')
-    
+    parser.add_argument('--only_correspondence', action='store_true', help='')
+    parser.add_argument('--pos_neg_balance', action='store_true', help='')
+    parser.add_argument('--division_mode', action='store_true', help='')
 
     # Additional experiments
     parser.add_argument('--visualize', action='store_true')

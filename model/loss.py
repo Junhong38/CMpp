@@ -5,14 +5,22 @@ import torch.nn.functional as F
 
 class CircleLoss(nn.Module):
 
-    def __init__(self, log_scale=24, pos_optimal=0.1, neg_optimal=1.4, detach_mode=False, same_opt=False):
+    def __init__(self, log_scale=24, pos_optimal=0.1, neg_optimal=1.4, 
+                 detach_mode=False, same_opt=False, only_correspondence=False,
+                 pos_neg_balance=False, divisioon_mode=False):
+
+
         super(CircleLoss,self).__init__()
         self.log_scale = log_scale
         self.pos_optimal = pos_optimal
         self.neg_optimal = neg_optimal
+
         self.detach_mode = detach_mode
         self.same_opt = same_opt
-        
+        self.only_correspondence = only_correspondence
+        self.pos_neg_balance = pos_neg_balance
+        self.division_mode = division_mode
+
         if same_opt:
             self.pos_margin = pos_optimal
             self.neg_margin = neg_optimal
@@ -23,7 +31,7 @@ class CircleLoss(nn.Module):
         self.pos_radius = 0.018
         self.safe_radius = 0.03
 
-        # self.max_points = 128
+        self.max_points = 128
 
         print("------------------------------------------------------")
         print("INITIALIZING CircleLoss")
@@ -33,6 +41,9 @@ class CircleLoss(nn.Module):
         print(f"neg_optimal: {neg_optimal}, neg_margin: {self.neg_margin}")
         print(f"detach_mode: {detach_mode}")
         print(f"same_opt: {same_opt}")
+        print(f"only_correspondence: {only_correspondence}")
+        print(f"pos_neg_balance: {pos_neg_balance}")
+        print(f"division_mode: {division_mode}")
         print("------------------------------------------------------")
 
     
@@ -71,15 +82,16 @@ class CircleLoss(nn.Module):
                 'neg_max': neg_dists.max().item() if does_neg_mask_exist else 0,
             }
             
-        # sample the neg_mask to match proportions
-        neg_indices = neg_mask.nonzero(as_tuple=False)
-        neg_nonsampled = neg_indices[torch.randperm(neg_indices.size(0))[pos_mask.sum():]]
-        neg_mask[neg_nonsampled[:,0], neg_nonsampled[:,1]] = False
+        if self.pos_neg_balance:
+            # sample the neg_mask to match proportions
+            neg_indices = neg_mask.nonzero(as_tuple=False)
+            neg_nonsampled = neg_indices[torch.randperm(neg_indices.size(0))[pos_mask.sum():]]
+            neg_mask[neg_nonsampled[:,0], neg_nonsampled[:,1]] = False
+
 
         # get anchors that have both positive and negative pairs
         row_sel = ((pos_mask.sum(-1)>0) * (neg_mask.sum(-1)>0)).detach() # (N,M) -> (N, )
         col_sel = ((pos_mask.sum(-2)>0) * (neg_mask.sum(-2)>0)).detach() # (N,M) -> (M, )
-
 
         if self.detach_mode:
             # print("Using detach mode")
@@ -95,7 +107,6 @@ class CircleLoss(nn.Module):
         neg_weight = feats_dist + 1e5 * (~neg_mask).float() # mask the non-negative
         neg_weight = (self.neg_optimal - neg_weight) # mask the uninformative negative
         neg_weight = torch.max(torch.zeros_like(neg_weight),neg_weight) # (N,M)
-        
 
         if self.detach_mode:
             # print("Using detach mode")
@@ -111,16 +122,29 @@ class CircleLoss(nn.Module):
         lse_neg_row = torch.logsumexp(self.log_scale * (self.neg_margin - feats_dist) * neg_weight, dim=-1) # (N, )
         lse_neg_col = torch.logsumexp(self.log_scale * (self.neg_margin - feats_dist) * neg_weight, dim=-2) # (M, )
 
+
+        pos_part = self.log_scale * (feats_dist - self.pos_margin) * pos_weight
+        neg_part = self.log_scale * (self.neg_margin - feats_dist) * neg_weight
+
         # Softplus = log(1+exp(x))
         # So, log(1+exp(x)) / log_scale -> log(1 + Σ exp(γ * (d - m_pos) * w_pos) + Σ exp(γ * (m_neg - d) * w_neg)) / log_scale
-        loss_row = F.softplus(lse_pos_row + lse_neg_row)/self.log_scale # (N, )
-        loss_col = F.softplus(lse_pos_col + lse_neg_col)/self.log_scale # (M, )
+        loss_row = F.softplus(lse_pos_row + lse_neg_row)
+        loss_col = F.softplus(lse_pos_col + lse_neg_col)
+
+        if self.division_mode:
+            loss_row = loss_row / loss_col.shape[0] # divide by M
+            loss_col = loss_col / loss_row.shape[0] # divide by N
+        
+        else:
+            loss_row = loss_row / self.log_scale
+            loss_col = loss_col / self.log_scale
 
         # Prevent NaN
         anchor_loss_row = loss_row[row_sel].mean() if row_sel.sum() > 0 else torch.tensor(0.).to(loss_row.device)
         anchor_loss_col = loss_col[col_sel].mean() if col_sel.sum() > 0 else torch.tensor(0.).to(loss_col.device)
 
-        circle_loss = (anchor_loss_row + anchor_loss_col) / 2
+        # circle_loss = (anchor_loss_row + anchor_loss_col) / 2
+        circle_loss = (anchor_loss_row + anchor_loss_col)
 
         return circle_loss, pos_neg_distribution
 
@@ -148,13 +172,34 @@ class CircleLoss(nn.Module):
             print('[circle loss] No correspondence!')
             return torch.tensor(0.).to(src_feats.device), None
 
+        
+        if self.only_correspondence:
+            correspondence_mask = torch.zeros((src_pcd.size(0), tgt_pcd.size(0)), device=src_feats.device)
+            correspondence_mask[correspondence[:,0], correspondence[:,1]] = True
+            correspondence_mask_src = correspondence_mask.sum(dim=-1) > 0 # N
+            correspondence_mask_tgt = correspondence_mask.sum(dim=-2) > 0 # M
+
+            src_pcd_selected = src_pcd[correspondence_mask_src, :]
+            tgt_pcd_selected = tgt_pcd[correspondence_mask_tgt, :]
+
+            src_feats_selected = src_feats[:, correspondence_mask_src, :]
+            tgt_feats_selected = tgt_feats[:, correspondence_mask_tgt, :]
+        
+        else:
+            src_pcd_selected = src_pcd
+            tgt_pcd_selected = tgt_pcd
+            src_feats_selected = src_feats
+            tgt_feats_selected = tgt_feats
+
+
+        
         # Get coordinate distance
-        coords_dist = torch.sqrt(torch.clamp(torch.sum((src_pcd[:, None, :] - tgt_pcd[None, :, :]) ** 2, dim=-1), min=0.0))
+        coords_dist = torch.sqrt(torch.clamp(torch.sum((src_pcd_selected[:, None, :] - tgt_pcd_selected[None, :, :]) ** 2, dim=-1), min=0.0))
 
 
         # Get feature distance (from GeoTransformer Implementation)
-        src_feats = F.normalize(src_feats.squeeze(0), p=2, dim=-1) # (1, N, D) -> (N, D)
-        tgt_feats = F.normalize(tgt_feats.squeeze(0), p=2, dim=-1) # (1, M, D) -> (M, D)
+        src_feats = F.normalize(src_feats_selected.squeeze(0), p=2, dim=-1) # (1, N, D) -> (N, D)
+        tgt_feats = F.normalize(tgt_feats_selected.squeeze(0), p=2, dim=-1) # (1, M, D) -> (M, D)
 
 
         # Check NaN

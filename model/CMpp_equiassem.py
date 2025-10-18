@@ -59,7 +59,7 @@ class EquiAssem(pl.LightningModule):
             lr, 
             scheduler='cos', total_steps=-1,
             backbone='vn_unet', attention='channel', 
-            pos_margin=0.1, neg_margin=1.4, log_scale=24, detach_mode=False, same_opt=False,
+            pos_margin=0.1, neg_margin=1.4, log_scale=24, detach_mode=False, same_opt=False, only_correspondence=False, pos_neg_balance=False, division_mode=False,
             s_loss_weight=1.0, p_loss_weight=1.0, o_loss_weight=1.0,
             visualize=False, viz_epoch=30, ckp_dir=None, debug=False,
 
@@ -84,11 +84,16 @@ class EquiAssem(pl.LightningModule):
             total_steps (int, optional): Total steps for scheduler. Defaults to -1.
             backbone (str, optional): Backbone network architecture. Defaults to 'vn_unet'.
             attention (str, optional): Attention mechanism type ('channel' or 'none'). Defaults to 'channel'.
+            
             pos_margin (float, optional): Margin for positive samples in loss computation. Defaults to 0.1.
             neg_margin (float, optional): Margin for negative samples in loss computation. Defaults to 1.4.
             log_scale (int, optional): Log scaling factor for loss computation. Defaults to 24.
             detach_mode (bool, optional): Whether to use the detach mode for circle loss computation. Defaults to False.
             same_opt (bool, optional): Whether to use the same optimal value for positive and negative samples in loss computation. Defaults to False.
+            only_correspondence (bool, optional): Whether to use only correspondence for circle loss computation. Defaults to False.
+            pos_neg_balance (bool, optional): Whether to use positive and negative balance for circle loss computation. Defaults to False.
+            division_mode (bool, optional): Whether to use division mode for circle loss computation. Defaults to False.
+            
             s_loss_weight (float, optional): Weight for shape loss. Defaults to 1.0.
             p_loss_weight (float, optional): Weight for point loss. Defaults to 1.0.
             o_loss_weight (float, optional): Weight for orientation loss. Defaults to 1.0.
@@ -122,14 +127,20 @@ class EquiAssem(pl.LightningModule):
         print(f"total_steps: {total_steps}")
         print(f"backbone: {backbone}")
         print(f"attention: {attention}")
+        
         print(f"pos_margin: {pos_margin}")
         print(f"neg_margin: {neg_margin}")
         print(f"log_scale: {log_scale}")
         print(f"detach_mode: {detach_mode}")
         print(f"same_opt: {same_opt}")
+        print(f"only_correspondence: {only_correspondence}")
+        print(f"pos_neg_balance: {pos_neg_balance}")
+        print(f"division_mode: {division_mode}")
+
         print(f"s_loss_weight: {s_loss_weight}")
         print(f"p_loss_weight: {p_loss_weight}")
         print(f"o_loss_weight: {o_loss_weight}")
+        
         print(f"visualize: {visualize}")
         print(f"viz_epoch: {viz_epoch}")
         print(f"ckp_dir: {ckp_dir}")
@@ -173,7 +184,8 @@ class EquiAssem(pl.LightningModule):
         if debugged_circle_loss:
             print("Using the debugged version of Circle Loss")
             from model.loss import CircleLoss
-            self.shape_loss = CircleLoss(pos_optimal=pos_margin, neg_optimal=neg_margin, log_scale=log_scale, detach_mode=detach_mode, same_opt=same_opt)
+            self.shape_loss = CircleLoss(pos_optimal=pos_margin, neg_optimal=neg_margin, log_scale=log_scale, detach_mode=detach_mode, 
+                                         same_opt=same_opt, only_correspondence=only_correspondence, pos_neg_balance=pos_neg_balance, division_mode=division_mode)
 
         else:
             from model.CM_loss import CircleLoss
@@ -196,7 +208,8 @@ class EquiAssem(pl.LightningModule):
             print("Deleting the occupancy loss")
         else:
             if debugged_circle_loss:
-                self.occupancy_loss = CircleLoss(pos_optimal=pos_margin, neg_optimal=neg_margin, log_scale=log_scale, detach_mode=detach_mode, same_opt=same_opt)
+                self.occupancy_loss = CircleLoss(pos_optimal=pos_margin, neg_optimal=neg_margin, log_scale=log_scale, detach_mode=detach_mode, 
+                                                 same_opt=same_opt, only_correspondence=only_correspondence, pos_neg_balance=pos_neg_balance, division_mode=division_mode)
             else:
                 self.occupancy_loss = CircleLoss(pos_optimal=pos_margin, neg_optimal=neg_margin, log_scale=log_scale)
 
