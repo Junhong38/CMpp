@@ -154,10 +154,8 @@ class CircleLoss(nn.Module):
 
         
         if self.div_mode in ['dynamic', 'static']:
-            print("Using the average of anchor loss 11")
             circle_loss = (anchor_loss_row + anchor_loss_col)
         else:
-            print("Using the average of anchor loss 22")
             circle_loss = (anchor_loss_row + anchor_loss_col) / 2
 
         return circle_loss, pos_neg_distribution
