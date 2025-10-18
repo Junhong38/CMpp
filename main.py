@@ -63,6 +63,7 @@ def main(args):
                           detach_mode=args.detach_mode,
                           same_opt=args.same_opt,
                           only_corr=args.only_corr,
+                          max_points=args.max_points,
                           no_balance=args.no_balance,
                           div_mode=args.div_mode,
 
@@ -268,6 +269,7 @@ if __name__ == '__main__':
     parser.add_argument('--detach_mode', action='store_true', help='')
     parser.add_argument('--same_opt', action='store_true', help='')
     parser.add_argument('--only_corr', action='store_true', help='')
+    parser.add_argument('--max_points', type=int, default=0, help='Maximum number of points for Circle loss computation')
     parser.add_argument('--no_balance', action='store_true', help='')
     parser.add_argument('--div_mode', type=str, default='none', choices=['none', 'dynamic', 'static'])
 

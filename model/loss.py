@@ -6,7 +6,7 @@ import torch.nn.functional as F
 class CircleLoss(nn.Module):
 
     def __init__(self, log_scale=24, pos_optimal=0.1, neg_optimal=1.4, 
-                 detach_mode=False, same_opt=False, only_corr=False,
+                 detach_mode=False, same_opt=False, only_corr=False, max_points=0,
                  no_balance=False, div_mode='none'):
 
 
@@ -18,6 +18,7 @@ class CircleLoss(nn.Module):
         self.detach_mode = detach_mode
         self.same_opt = same_opt
         self.only_corr = only_corr
+        self.max_points = max_points
         self.no_balance = no_balance
         self.div_mode = div_mode
 
@@ -31,8 +32,6 @@ class CircleLoss(nn.Module):
         self.pos_radius = 0.018
         self.safe_radius = 0.03
 
-        # self.max_points = 128
-
         print("------------------------------------------------------")
         print("INITIALIZING CircleLoss")
         print("------------------------------------------------------")
@@ -41,7 +40,7 @@ class CircleLoss(nn.Module):
         print(f"neg_optimal: {neg_optimal}, neg_margin: {self.neg_margin}")
         print(f"detach_mode: {detach_mode}")
         print(f"same_opt: {same_opt}")
-        print(f"only_corr: {only_corr}")
+        print(f"only_corr: {only_corr}, max_points: {max_points}")
         print(f"no_balance: {no_balance}")
         print(f"div_mode: {div_mode}")
         print("------------------------------------------------------")
@@ -186,8 +185,13 @@ class CircleLoss(nn.Module):
 
         
         if self.only_corr:
+            if self.max_points > 0:
+                correspondence_selected = correspondence[torch.randperm(correspondence.size(0))[:self.max_points]]
+            else:
+                correspondence_selected = correspondence
+
             correspondence_mask = torch.zeros((src_pcd.size(0), tgt_pcd.size(0)), device=src_feats.device)
-            correspondence_mask[correspondence[:,0], correspondence[:,1]] = True
+            correspondence_mask[correspondence_selected[:,0], correspondence_selected[:,1]] = True
             correspondence_mask_src = correspondence_mask.sum(dim=-1) > 0 # N
             correspondence_mask_tgt = correspondence_mask.sum(dim=-2) > 0 # M
 
