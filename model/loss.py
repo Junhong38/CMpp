@@ -7,7 +7,7 @@ class CircleLoss(nn.Module):
 
     def __init__(self, log_scale=24, pos_optimal=0.1, neg_optimal=1.4, 
                  detach_mode=False, same_opt=False, only_corr=False,
-                 no_balance=False, div_mode=False):
+                 no_balance=False, div_mode='none'):
 
 
         super(CircleLoss,self).__init__()
@@ -125,10 +125,22 @@ class CircleLoss(nn.Module):
 
         # Softplus = log(1+exp(x))
         # So, log(1+exp(x)) / log_scale -> log(1 + Σ exp(γ * (d - m_pos) * w_pos) + Σ exp(γ * (m_neg - d) * w_neg)) / log_scale
-        loss_row = F.softplus(lse_pos_row + lse_neg_row)
-        loss_col = F.softplus(lse_pos_col + lse_neg_col)
+        loss_row = F.softplus(lse_pos_row + lse_neg_row) # (N, )
+        loss_col = F.softplus(lse_pos_col + lse_neg_col) # (M, )
 
-        if self.div_mode:
+        if self.div_mode == 'dynamic':
+            non_zero_pos_weight = (pos_weight > 0)
+            non_zero_neg_weight = (neg_weight > 0)
+            non_zero_total_weight = torch.logical_or(non_zero_pos_weight, non_zero_neg_weight) # (N, M)
+
+            non_zero_total_row = non_zero_total_weight.sum(dim=-1) # N
+            non_zero_total_col = non_zero_total_weight.sum(dim=-2) # M
+
+            loss_row = loss_row / non_zero_total_row # N
+            loss_col = loss_col / non_zero_total_col # N
+
+
+        elif self.div_mode == 'static':
             loss_row = loss_row / loss_col.shape[0] # divide by M
             loss_col = loss_col / loss_row.shape[0] # divide by N
         
@@ -141,9 +153,11 @@ class CircleLoss(nn.Module):
         anchor_loss_col = loss_col[col_sel].mean() if col_sel.sum() > 0 else torch.tensor(0.).to(loss_col.device)
 
         
-        if self.div_mode:
+        if self.div_mode in ['dynamic', 'static']:
+            print("Using the average of anchor loss 11")
             circle_loss = (anchor_loss_row + anchor_loss_col)
         else:
+            print("Using the average of anchor loss 22")
             circle_loss = (anchor_loss_row + anchor_loss_col) / 2
 
         return circle_loss, pos_neg_distribution

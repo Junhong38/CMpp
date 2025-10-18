@@ -269,7 +269,7 @@ if __name__ == '__main__':
     parser.add_argument('--same_opt', action='store_true', help='')
     parser.add_argument('--only_corr', action='store_true', help='')
     parser.add_argument('--no_balance', action='store_true', help='')
-    parser.add_argument('--div_mode', action='store_true', help='')
+    parser.add_argument('--div_mode', type=str, default='none', choices=['none', 'dynamic', 'static'])
 
     # Additional experiments
     parser.add_argument('--visualize', action='store_true')

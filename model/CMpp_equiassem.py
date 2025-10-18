@@ -59,7 +59,7 @@ class EquiAssem(pl.LightningModule):
             lr, 
             scheduler='cos', total_steps=-1,
             backbone='vn_unet', attention='channel', 
-            pos_margin=0.1, neg_margin=1.4, log_scale=24, detach_mode=False, same_opt=False, only_corr=False, no_balance=False, div_mode=False,
+            pos_margin=0.1, neg_margin=1.4, log_scale=24, detach_mode=False, same_opt=False, only_corr=False, no_balance=False, div_mode='none',
             s_loss_weight=1.0, p_loss_weight=1.0, o_loss_weight=1.0,
             visualize=False, viz_epoch=30, ckp_dir=None, debug=False,
 
@@ -92,7 +92,7 @@ class EquiAssem(pl.LightningModule):
             same_opt (bool, optional): Whether to use the same optimal value for positive and negative samples in loss computation. Defaults to False.
             only_corr (bool, optional): Whether to use only correspondence for circle loss computation. Defaults to False.
             no_balance (bool, optional): Whether to use positive and negative balance for circle loss computation. Defaults to False.
-            div_mode (bool, optional): Whether to use division mode for circle loss computation. Defaults to False.
+            div_mode (str, optional): Division mode for circle loss computation. Defaults to 'none'.
             
             s_loss_weight (float, optional): Weight for shape loss. Defaults to 1.0.
             p_loss_weight (float, optional): Weight for point loss. Defaults to 1.0.

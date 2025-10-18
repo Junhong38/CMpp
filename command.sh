@@ -84,7 +84,6 @@ rm -rf checkpoint/L3_OVER_CM_AVNOON_NCDSO/ && CUDA_VISIBLE_DEVICES=1 python main
 
 rm -rf checkpoint/L3_SMALL_CM_AVNOON_NCD/ && CUDA_VISIBLE_DEVICES=1 python main.py --model CMpp_equiassem --logpath L3_SMALL_CM_AVNOON_NCD --scale small --multiplicity 1 --epochs 0 --visualize --only_one_norm --debugged_circle_loss --wandb --wandb_project CMpp 
 rm -rf checkpoint/L3_SMALL_CM_AVNOON_NCDSO/ && CUDA_VISIBLE_DEVICES=1 python main.py --model CMpp_equiassem --logpath L3_SMALL_CM_AVNOON_NCDSO --scale small --multiplicity 1 --epochs 0 --visualize --only_one_norm --same_opt --debugged_circle_loss  --wandb --wandb_project CMpp 
-end
 
 
 
@@ -93,4 +92,25 @@ rm -rf checkpoint/L3_DEBUG_SMALL_CM_AVNOON_NC/ && CUDA_VISIBLE_DEVICES=0 python 
 rm -rf checkpoint/L3_DEBUG_SMALL_CM_AVNOON_NCD/ && CUDA_VISIBLE_DEVICES=1 python main.py --model CMpp_equiassem --logpath L3_DEBUG_SMALL_CM_AVNOON_NCD --scale small --multiplicity 1 --epochs 0 --visualize --only_one_norm --detach_mode --debugged_circle_loss --wandb --wandb_project CMpp &
 rm -rf checkpoint/L3_DEBUG_SMALL_CM_AVNOON_NCSO/ && CUDA_VISIBLE_DEVICES=2 python main.py --model CMpp_equiassem --logpath L3_DEBUG_SMALL_CM_AVNOON_NCSO --scale small --multiplicity 1 --epochs 0 --visualize --only_one_norm --same_opt --debugged_circle_loss --wandb --wandb_project CMpp &
 rm -rf checkpoint/L3_DEBUG_SMALL_CM_AVNOON_NCDSO/ && CUDA_VISIBLE_DEVICES=3 python main.py --model CMpp_equiassem --logpath L3_DEBUG_SMALL_CM_AVNOON_NCDSO --scale small --multiplicity 1 --epochs 0 --visualize --only_one_norm --detach_mode --same_opt --debugged_circle_loss --wandb --wandb_project CMpp &
+
+
+end
+
+rm -rf checkpoint/L3_DEBUG_SMALL_CM/ && CUDA_VISIBLE_DEVICES=0 python main.py --model CMpp_equiassem --logpath L3_DEBUG_SMALL_CM --scale small --multiplicity 1 --epochs 0 --visualize --wandb --wandb_project CMpp &
+rm -rf checkpoint/L3_DEBUG_SMALL_CM_AVNOON/ && CUDA_VISIBLE_DEVICES=1 python main.py --model CMpp_equiassem --logpath L3_DEBUG_SMALL_CM_AVNOON --scale small --multiplicity 1 --epochs 0 --visualize --only_one_norm --additional_VNLinearLeakyReLU --wandb --wandb_project CMpp &
+
+rm -rf checkpoint/L3_DEBUG_SMALL_CM_AVNOON_NC/ && CUDA_VISIBLE_DEVICES=2 python main.py --model CMpp_equiassem --logpath L3_DEBUG_SMALL_CM_AVNOON_NC --scale small --multiplicity 1 --epochs 0 --visualize --only_one_norm --debugged_circle_loss --wandb --wandb_project CMpp &
+rm -rf checkpoint/L3_DEBUG_SMALL_CM_AVNOON_NCD/ && CUDA_VISIBLE_DEVICES=3 python main.py --model CMpp_equiassem --logpath L3_DEBUG_SMALL_CM_AVNOON_NCD --scale small --multiplicity 1 --epochs 0 --visualize --only_one_norm --debugged_circle_loss --detach_mode --wandb --wandb_project CMpp &
+
+rm -rf checkpoint/L3_DEBUG_SMALL_CM_AVNOON_NCD+CORR+NOBAL/ && CUDA_VISIBLE_DEVICES=4 python main.py --model CMpp_equiassem --logpath L3_DEBUG_SMALL_CM_AVNOON_NCD+CORR+NOBAL --scale small --multiplicity 1 --epochs 0 --visualize --only_one_norm --debugged_circle_loss --detach_mode --only_corr --no_balance --wandb --wandb_project CMpp &
+rm -rf checkpoint/L3_DEBUG_SMALL_CM_AVNOON_NCD+NOBAL/ && CUDA_VISIBLE_DEVICES=5 python main.py --model CMpp_equiassem --logpath L3_DEBUG_SMALL_CM_AVNOON_NCD+NOBAL --scale small --multiplicity 1 --epochs 0 --visualize --only_one_norm --debugged_circle_loss --detach_mode --no_balance --wandb --wandb_project CMpp &
+
+rm -rf checkpoint/L3_DEBUG_SMALL_CM_AVNOON_NCD+DIVD/ && CUDA_VISIBLE_DEVICES=6 python main.py --model CMpp_equiassem --logpath L3_DEBUG_SMALL_CM_AVNOON_NCD+DIVD --scale small --multiplicity 1 --epochs 0 --visualize --only_one_norm --debugged_circle_loss --detach_mode --div_mode dynamic --wandb --wandb_project CMpp &
+rm -rf checkpoint/L3_DEBUG_SMALL_CM_AVNOON_NCD+DIVD+NOBAL/ && CUDA_VISIBLE_DEVICES=7 python main.py --model CMpp_equiassem --logpath L3_DEBUG_SMALL_CM_AVNOON_NCD+DIVD+NOBAL --scale small --multiplicity 1 --epochs 0 --visualize --only_one_norm --debugged_circle_loss --detach_mode --div_mode dynamic --no_balance --wandb --wandb_project CMpp &
+
+# rm -rf checkpoint/L3_DEBUG_SMALL_CM_AVNOON_NCD+DIVS/ && CUDA_VISIBLE_DEVICES=0 python main.py --model CMpp_equiassem --logpath L3_DEBUG_SMALL_CM_AVNOON_NCD+DIVS --scale small --multiplicity 1 --epochs 0 --visualize --only_one_norm --debugged_circle_loss --detach_mode --div_mode static --wandb --wandb_project CMpp &
+# rm -rf checkpoint/L3_DEBUG_SMALL_CM_AVNOON_NCD+DIVS+NOBAL/ && CUDA_VISIBLE_DEVICES=1 python main.py --model CMpp_equiassem --logpath L3_DEBUG_SMALL_CM_AVNOON_NCD+DIVS+NOBAL --scale small --multiplicity 1 --epochs 0 --visualize --only_one_norm --debugged_circle_loss --detach_mode --div_mode static --no_balance --wandb --wandb_project CMpp &
+
+# rm -rf checkpoint/L3_DEBUG_SMALL_CM_AVNOON_NCD+DIVD+NOBAL_NODOCC_OG/ && CUDA_VISIBLE_DEVICES=2 python main.py --model CMpp_equiassem --logpath L3_DEBUG_SMALL_CM_AVNOON_NCD+DIVD+NOBAL_NODOCC_OG --scale small --multiplicity 1 --epochs 0 --visualize --only_one_norm --detach_mode --div_mode dynamic --no_balance --use_opt_gram --wandb --wandb_project CMpp &
+# rm -rf checkpoint/L3_DEBUG_SMALL_CM_AVNOON_NCD+DIVS+NOBAL_NODOCC_OG/ && CUDA_VISIBLE_DEVICES=3 python main.py --model CMpp_equiassem --logpath L3_DEBUG_SMALL_CM_AVNOON_NCD+DIVS+NOBAL_NODOCC_OG --scale small --multiplicity 1 --epochs 0 --visualize --only_one_norm --detach_mode --div_mode static --no_balance --use_opt_gram --wandb --wandb_project CMpp &
 
