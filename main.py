@@ -22,7 +22,18 @@ def main(args):
 
     # Print checkpoint directory
     print(f"checkpoint directory (ckp_dir): {ckp_dir}")
-    
+
+
+    # Dataset initialization
+    GADataset.initialize(args.datapath, args.data_category, args.sub_category, args.min_part, args.max_part, args.n_pts, args.scale, args.multiplicity)
+    dataloader_trn = GADataset.build_dataloader(args.batch_size, args.n_worker, 'train')
+    dataloader_val = GADataset.build_dataloader(args.batch_size, args.n_worker, 'val')
+
+
+    # Training total steps
+    training_total_steps = len(dataloader_trn) * args.epochs
+    print(f"training_total_steps: {training_total_steps}")
+
 
     # Model initialization
     # [TODO] MODEL IS CHANGED
@@ -40,6 +51,10 @@ def main(args):
     elif args.model == 'CMpp_equiassem': # Import developing mode model
         from model.CMpp_equiassem import EquiAssem
         model = EquiAssem(lr=args.lr,
+                          
+                          scheduler=args.scheduler,
+                          total_steps=training_total_steps,
+
                           backbone=args.backbone,
                           attention=args.attention,
                           pos_margin=args.pos_margin,
@@ -72,12 +87,6 @@ def main(args):
     
     else:
         raise NotImplementedError("Model not implemented")
-
-
-    # Dataset initialization
-    GADataset.initialize(args.datapath, args.data_category, args.sub_category, args.min_part, args.max_part, args.n_pts, args.scale, args.multiplicity)
-    dataloader_trn = GADataset.build_dataloader(args.batch_size, args.n_worker, 'train')
-    dataloader_val = GADataset.build_dataloader(args.batch_size, args.n_worker, 'val')
 
 
     # This code is for running on clusters
@@ -214,6 +223,7 @@ if __name__ == '__main__':
     parser.add_argument('--epochs', type=int, default=0, help='Number of epochs. If 0, it is automatically set to 200 for everyday dataset and 300 for other datasets.')
     parser.add_argument('--n_worker', type=int, default=4, help='Number of workers. If you use multi-GPU training, the number of workers is multiplied by the number of GPUs.')
     parser.add_argument('--load', type=str, default='')
+    parser.add_argument('--scheduler', type=str, default='cos', choices=['cos', 'oncycle'])
 
 
     # Debugging arguments
