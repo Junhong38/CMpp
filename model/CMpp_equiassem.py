@@ -59,7 +59,7 @@ class EquiAssem(pl.LightningModule):
             lr, 
             scheduler='cos', total_steps=-1,
             backbone='vn_unet', attention='channel', 
-            pos_margin=0.1, neg_margin=1.4, log_scale=24, detach_mode=False, same_opt=False, only_correspondence=False, pos_neg_balance=False, division_mode=False,
+            pos_margin=0.1, neg_margin=1.4, log_scale=24, detach_mode=False, same_opt=False, only_corr=False, no_balance=False, div_mode=False,
             s_loss_weight=1.0, p_loss_weight=1.0, o_loss_weight=1.0,
             visualize=False, viz_epoch=30, ckp_dir=None, debug=False,
 
@@ -90,9 +90,9 @@ class EquiAssem(pl.LightningModule):
             log_scale (int, optional): Log scaling factor for loss computation. Defaults to 24.
             detach_mode (bool, optional): Whether to use the detach mode for circle loss computation. Defaults to False.
             same_opt (bool, optional): Whether to use the same optimal value for positive and negative samples in loss computation. Defaults to False.
-            only_correspondence (bool, optional): Whether to use only correspondence for circle loss computation. Defaults to False.
-            pos_neg_balance (bool, optional): Whether to use positive and negative balance for circle loss computation. Defaults to False.
-            division_mode (bool, optional): Whether to use division mode for circle loss computation. Defaults to False.
+            only_corr (bool, optional): Whether to use only correspondence for circle loss computation. Defaults to False.
+            no_balance (bool, optional): Whether to use positive and negative balance for circle loss computation. Defaults to False.
+            div_mode (bool, optional): Whether to use division mode for circle loss computation. Defaults to False.
             
             s_loss_weight (float, optional): Weight for shape loss. Defaults to 1.0.
             p_loss_weight (float, optional): Weight for point loss. Defaults to 1.0.
@@ -133,9 +133,9 @@ class EquiAssem(pl.LightningModule):
         print(f"log_scale: {log_scale}")
         print(f"detach_mode: {detach_mode}")
         print(f"same_opt: {same_opt}")
-        print(f"only_correspondence: {only_correspondence}")
-        print(f"pos_neg_balance: {pos_neg_balance}")
-        print(f"division_mode: {division_mode}")
+        print(f"only_corr: {only_corr}")
+        print(f"no_balance: {no_balance}")
+        print(f"div_mode: {div_mode}")
 
         print(f"s_loss_weight: {s_loss_weight}")
         print(f"p_loss_weight: {p_loss_weight}")
@@ -185,7 +185,7 @@ class EquiAssem(pl.LightningModule):
             print("Using the debugged version of Circle Loss")
             from model.loss import CircleLoss
             self.shape_loss = CircleLoss(pos_optimal=pos_margin, neg_optimal=neg_margin, log_scale=log_scale, detach_mode=detach_mode, 
-                                         same_opt=same_opt, only_correspondence=only_correspondence, pos_neg_balance=pos_neg_balance, division_mode=division_mode)
+                                         same_opt=same_opt, only_corr=only_corr, no_balance=no_balance, div_mode=div_mode)
 
         else:
             from model.CM_loss import CircleLoss
@@ -209,7 +209,7 @@ class EquiAssem(pl.LightningModule):
         else:
             if debugged_circle_loss:
                 self.occupancy_loss = CircleLoss(pos_optimal=pos_margin, neg_optimal=neg_margin, log_scale=log_scale, detach_mode=detach_mode, 
-                                                 same_opt=same_opt, only_correspondence=only_correspondence, pos_neg_balance=pos_neg_balance, division_mode=division_mode)
+                                                 same_opt=same_opt, only_corr=only_corr, no_balance=no_balance, div_mode=div_mode)
             else:
                 self.occupancy_loss = CircleLoss(pos_optimal=pos_margin, neg_optimal=neg_margin, log_scale=log_scale)
 

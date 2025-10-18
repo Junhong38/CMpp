@@ -6,8 +6,8 @@ import torch.nn.functional as F
 class CircleLoss(nn.Module):
 
     def __init__(self, log_scale=24, pos_optimal=0.1, neg_optimal=1.4, 
-                 detach_mode=False, same_opt=False, only_correspondence=False,
-                 pos_neg_balance=False, divisioon_mode=False):
+                 detach_mode=False, same_opt=False, only_corr=False,
+                 no_balance=False, div_mode=False):
 
 
         super(CircleLoss,self).__init__()
@@ -17,9 +17,9 @@ class CircleLoss(nn.Module):
 
         self.detach_mode = detach_mode
         self.same_opt = same_opt
-        self.only_correspondence = only_correspondence
-        self.pos_neg_balance = pos_neg_balance
-        self.division_mode = division_mode
+        self.only_corr = only_corr
+        self.no_balance = no_balance
+        self.div_mode = div_mode
 
         if same_opt:
             self.pos_margin = pos_optimal
@@ -31,7 +31,7 @@ class CircleLoss(nn.Module):
         self.pos_radius = 0.018
         self.safe_radius = 0.03
 
-        self.max_points = 128
+        # self.max_points = 128
 
         print("------------------------------------------------------")
         print("INITIALIZING CircleLoss")
@@ -41,9 +41,9 @@ class CircleLoss(nn.Module):
         print(f"neg_optimal: {neg_optimal}, neg_margin: {self.neg_margin}")
         print(f"detach_mode: {detach_mode}")
         print(f"same_opt: {same_opt}")
-        print(f"only_correspondence: {only_correspondence}")
-        print(f"pos_neg_balance: {pos_neg_balance}")
-        print(f"division_mode: {division_mode}")
+        print(f"only_corr: {only_corr}")
+        print(f"no_balance: {no_balance}")
+        print(f"div_mode: {div_mode}")
         print("------------------------------------------------------")
 
     
@@ -82,7 +82,7 @@ class CircleLoss(nn.Module):
                 'neg_max': neg_dists.max().item() if does_neg_mask_exist else 0,
             }
             
-        if self.pos_neg_balance:
+        if not self.no_balance:
             # sample the neg_mask to match proportions
             neg_indices = neg_mask.nonzero(as_tuple=False)
             neg_nonsampled = neg_indices[torch.randperm(neg_indices.size(0))[pos_mask.sum():]]
@@ -123,15 +123,12 @@ class CircleLoss(nn.Module):
         lse_neg_col = torch.logsumexp(self.log_scale * (self.neg_margin - feats_dist) * neg_weight, dim=-2) # (M, )
 
 
-        pos_part = self.log_scale * (feats_dist - self.pos_margin) * pos_weight
-        neg_part = self.log_scale * (self.neg_margin - feats_dist) * neg_weight
-
         # Softplus = log(1+exp(x))
         # So, log(1+exp(x)) / log_scale -> log(1 + Σ exp(γ * (d - m_pos) * w_pos) + Σ exp(γ * (m_neg - d) * w_neg)) / log_scale
         loss_row = F.softplus(lse_pos_row + lse_neg_row)
         loss_col = F.softplus(lse_pos_col + lse_neg_col)
 
-        if self.division_mode:
+        if self.div_mode:
             loss_row = loss_row / loss_col.shape[0] # divide by M
             loss_col = loss_col / loss_row.shape[0] # divide by N
         
@@ -143,8 +140,11 @@ class CircleLoss(nn.Module):
         anchor_loss_row = loss_row[row_sel].mean() if row_sel.sum() > 0 else torch.tensor(0.).to(loss_row.device)
         anchor_loss_col = loss_col[col_sel].mean() if col_sel.sum() > 0 else torch.tensor(0.).to(loss_col.device)
 
-        # circle_loss = (anchor_loss_row + anchor_loss_col) / 2
-        circle_loss = (anchor_loss_row + anchor_loss_col)
+        
+        if self.div_mode:
+            circle_loss = (anchor_loss_row + anchor_loss_col)
+        else:
+            circle_loss = (anchor_loss_row + anchor_loss_col) / 2
 
         return circle_loss, pos_neg_distribution
 
@@ -173,7 +173,7 @@ class CircleLoss(nn.Module):
             return torch.tensor(0.).to(src_feats.device), None
 
         
-        if self.only_correspondence:
+        if self.only_corr:
             correspondence_mask = torch.zeros((src_pcd.size(0), tgt_pcd.size(0)), device=src_feats.device)
             correspondence_mask[correspondence[:,0], correspondence[:,1]] = True
             correspondence_mask_src = correspondence_mask.sum(dim=-1) > 0 # N
