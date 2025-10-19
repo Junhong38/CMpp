@@ -1,6 +1,6 @@
 
 
-rm -rf checkpoint/T1_S_CMorigin/ && CUDA_VISIBLE_DEVICES=0 python main.py --model CM_equiassem --logpath T1_S_CMorigin --scale small --multiplicity 1 --epochs 0 --visualize --wandb --wandb_project CMpp
+rm -rf checkpoint/T1_S_CMorigin/ && CUDA_VISIBLE_DEVICES=0 python main.py --model CM_equiassem --logpath T1_S_CMorigin --scale small --multiplicity 1 --epochs 0 --wandb --wandb_project CMpp
 rm -rf checkpoint/T1_S_CM/ && CUDA_VISIBLE_DEVICES=1 python main.py --model CMpp_equiassem --logpath T1_S_CM --scale small --multiplicity 1 --epochs 0 --visualize --wandb --wandb_project CMpp
 rm -rf checkpoint/T1_S_AVNOON_NCDSOCORRMAXNOBAL/ && CUDA_VISIBLE_DEVICES=2 python main.py --model CMpp_equiassem --logpath T1_S_AVNOON_NCDSOCORRMAXNOBAL --scale small --multiplicity 1 --epochs 0 --visualize --only_one_norm --debugged_circle_loss --detach_mode --same_opt --only_corr --max_points 128 --no_balance --wandb --wandb_project CMpp &
 
