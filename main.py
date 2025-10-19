@@ -229,7 +229,7 @@ if __name__ == '__main__':
     parser.add_argument('--n_worker', type=int, default=4, help='Number of workers. If you use multi-GPU training, the number of workers is multiplied by the number of GPUs.')
     parser.add_argument('--load', type=str, default='')
     parser.add_argument('--scheduler_mode', type=str, default='cos', choices=['none', 'cos', 'onecycle'])
-    parser.add_argument('--gradient_clip_val', type=float, default=None, help='Gradient clip value')
+    parser.add_argument('--gradient_clip_val', type=float, default=0.0, help='Gradient clip value')
 
 
     # Debugging arguments
@@ -274,6 +274,7 @@ if __name__ == '__main__':
     parser.add_argument('--max_points', type=int, default=0, help='Maximum number of points for Circle loss computation')
     parser.add_argument('--no_balance', action='store_true', help='')
     parser.add_argument('--div_mode', type=str, default='none', choices=['none', 'dynamic', 'static'])
+
 
     # Additional experiments
     parser.add_argument('--visualize', action='store_true')
@@ -333,6 +334,11 @@ if __name__ == '__main__':
             args.s_loss_weight = 1.0
             args.p_loss_weight = 1.0
             args.o_loss_weight = 1.0
+    
+    
+    # If gradient clip value is 0.0, set it to None
+    if args.gradient_clip_val <= 0.0:
+        args.gradient_clip_val = None
 
 
     # Assertions
