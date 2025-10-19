@@ -52,7 +52,7 @@ def main(args):
         from model.CMpp_equiassem import EquiAssem
         model = EquiAssem(lr=args.lr,
                           
-                          scheduler=args.scheduler,
+                          scheduler_mode=args.scheduler_mode,
                           total_steps=training_total_steps,
 
                           backbone=args.backbone,
@@ -168,7 +168,8 @@ def main(args):
         accelerator='gpu',
         devices=all_gpus,
         precision=32,
-        gradient_clip_val=None,
+        gradient_clip_val=args.gradient_clip_val,
+        gradient_clip_algorithm='value',
         strategy=args.parallel_strategy,
         max_epochs=args.epochs,
         callbacks=callbacks,
@@ -227,7 +228,8 @@ if __name__ == '__main__':
     parser.add_argument('--epochs', type=int, default=0, help='Number of epochs. If 0, it is automatically set to 200 for everyday dataset and 300 for other datasets.')
     parser.add_argument('--n_worker', type=int, default=4, help='Number of workers. If you use multi-GPU training, the number of workers is multiplied by the number of GPUs.')
     parser.add_argument('--load', type=str, default='')
-    parser.add_argument('--scheduler', type=str, default='cos', choices=['cos', 'oncycle'])
+    parser.add_argument('--scheduler_mode', type=str, default='cos', choices=['none', 'cos', 'onecycle'])
+    parser.add_argument('--gradient_clip_val', type=float, default=None, help='Gradient clip value')
 
 
     # Debugging arguments

@@ -57,7 +57,7 @@ class EquiAssem(pl.LightningModule):
     def __init__(
             self, 
             lr, 
-            scheduler='cos', total_steps=-1,
+            scheduler_mode='cos', total_steps=-1,
             backbone='vn_unet', attention='channel', 
             pos_margin=0.1, neg_margin=1.4, log_scale=24, detach_mode=False, same_opt=False, only_corr=False, max_points=0, no_balance=False, div_mode='none',
             s_loss_weight=1.0, p_loss_weight=1.0, o_loss_weight=1.0,
@@ -80,7 +80,7 @@ class EquiAssem(pl.LightningModule):
 
         Args:
             lr (float): Learning rate for optimizer.
-            scheduler (str, optional): Scheduler type ('cos' or 'oncycle'). Defaults to 'cos'.
+            scheduler_mode (str, optional): Scheduler type ('cos' or 'onecycle'). Defaults to 'cos'.
             total_steps (int, optional): Total steps for scheduler. Defaults to -1.
             backbone (str, optional): Backbone network architecture. Defaults to 'vn_unet'.
             attention (str, optional): Attention mechanism type ('channel' or 'none'). Defaults to 'channel'.
@@ -124,7 +124,7 @@ class EquiAssem(pl.LightningModule):
         print("INITIALIZING EquiAssem(pl.LightningModule)")
         print("------------------------------------------------------")
         print(f"lr: {lr}")
-        print(f"scheduler: {scheduler}")
+        print(f"scheduler_mode: {scheduler_mode}")
         print(f"total_steps: {total_steps}")
         print(f"backbone: {backbone}")
         print(f"attention: {attention}")
@@ -161,7 +161,7 @@ class EquiAssem(pl.LightningModule):
         print("------------------------------------------------------")
 
         self.lr = lr
-        self.scheduler = scheduler
+        self.scheduler_mode = scheduler_mode
         self.total_steps = total_steps
         self.attention = attention
         self.visualize = visualize
@@ -348,17 +348,29 @@ class EquiAssem(pl.LightningModule):
 
         optimizer = optim.AdamW(self.parameters(), lr=self.lr, weight_decay=0.)
         
-        if self.scheduler == 'cos':
-            scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=self.total_steps, eta_min=1e-3) # 16919, 6671
-        elif self.scheduler == 'oncycle':
+        if self.scheduler_mode == 'cos':
+            # T_max should be the total number of training steps, not a fixed value
+            scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=self.total_steps, eta_min=1e-3)
+            
+        elif self.scheduler_mode == 'onecycle':
             scheduler = optim.lr_scheduler.OneCycleLR(optimizer=optimizer, max_lr=self.lr, total_steps=self.total_steps,
-                                                      pct_start=0.05, anneal_strategy="cos", div_factor=10.0,
+                                                      pct_start=0.05, anneal_strategy="cos", div_factor=100.0,
                                                       final_div_factor=1000.0)
         else:
-            raise NotImplementedError("Scheduler not implemented")
+            scheduler = None
         
+        if scheduler is not None:
         
-        return {'optimizer': optimizer, 'lr_scheduler': scheduler}
+            return {
+                    'optimizer': optimizer, 
+                    'lr_scheduler': {
+                        'scheduler': scheduler,
+                        'interval': 'step',  # Update scheduler every step
+                        'frequency': 1
+                        }
+                    }
+        else:
+            return {'optimizer': optimizer}
 
 
     def training_step(self, in_dict, batch_idx):

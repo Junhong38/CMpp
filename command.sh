@@ -140,3 +140,7 @@ rm -rf checkpoint/L3_DEBUG_SMALL_CM_AVNOON_NCD+NOBAL+LOG6/ && CUDA_VISIBLE_DEVIC
 
 
 
+
+
+rm -rf checkpoint/DEBUG_L3_DEBUG_SMALL_CM_AVNOON_NCD+NOBAL+LOG24+ONECYCLE/ && CUDA_VISIBLE_DEVICES=1 python main.py --model CMpp_equiassem --logpath DEBUG_L3_DEBUG_SMALL_CM_AVNOON_NCD+NOBAL+LOG24+ONECYCLE --scale small --multiplicity 1 --epochs 0 --visualize --only_one_norm --debugged_circle_loss --detach_mode --no_balance --log_scale 24.0 --scheduler oncycle --wandb --wandb_project CMpp &
+
