@@ -10,6 +10,15 @@ import torch
 
 from common.viz import global_colors_for_objs
 
+
+def check_inf_or_nan(tensor, message: str):
+    if torch.isinf(tensor).any():
+        assert False, f"Inf found from {message}\n{tensor}"
+    if torch.isnan(tensor).any():
+        assert False, f"Nan found from {message}\n{tensor}"
+
+
+
 def save_pc(filename: str, pcd_tensors: list):
     colors = list(global_colors_for_objs.values())
 

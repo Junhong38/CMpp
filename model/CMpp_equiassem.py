@@ -19,7 +19,7 @@ from model.learnable_sinkhorn import LearnableLogOptimalTransport
 from model.local_global_registration import LocalGlobalRegistration
 
 from common.rotation import ortho2rotation
-from common.utils import save_pc
+from common.utils import save_pc, check_inf_or_nan
 from common.viz import draw_frames
 
 from pytorch3d.ops import iterative_closest_point
@@ -443,6 +443,9 @@ class EquiAssem(pl.LightningModule):
                     current_grad_abs_max = torch.abs(param.grad).max().item()
                     if current_grad_abs_max > total_grad_abs_max:
                         total_grad_abs_max = current_grad_abs_max
+                    
+                    # Check for Inf or Nan
+                    check_inf_or_nan(param.grad, f'{name}.grad')
                 
                 # Check for NaN parameters
                 if torch.isnan(param).any():
@@ -567,6 +570,10 @@ class EquiAssem(pl.LightningModule):
         trg_equi_feats_backbone = self.backbone(trg_pcd) # (1, C, 3, M)
 
 
+        # Check for Inf or Nan
+        check_inf_or_nan(src_equi_feats_backbone, 'src_equi_feats_backbone')
+        check_inf_or_nan(trg_equi_feats_backbone, 'trg_equi_feats_backbone')
+
         
         if self.additional_VNLinearLeakyReLU: # 2. Frame Prediction
             # 2-1. Merge global information by averaging
@@ -586,14 +593,29 @@ class EquiAssem(pl.LightningModule):
             trg_vecs = self.proj(trg_equi_feats_backbone).permute(0, 3, 1, 2) # (1, M, 2, 3)
         
 
+        # Check for Inf or Nan
+        check_inf_or_nan(src_vecs, 'src_vecs')
+        check_inf_or_nan(trg_vecs, 'trg_vecs')
+
+        
         # 3. Calculate equivariant shape features
         src_equi_feats = self.equi_layer(src_equi_feats_backbone.unsqueeze(-1)).squeeze(-1) # (1, C, 3, N)
         trg_equi_feats = self.equi_layer(trg_equi_feats_backbone.unsqueeze(-1)).squeeze(-1) # (1, C, 3, M)
 
 
+        # Check for Inf or Nan
+        check_inf_or_nan(src_equi_feats, 'src_equi_feats')
+        check_inf_or_nan(trg_equi_feats, 'trg_equi_feats')
+
+
         # 4. Gram Schmidt & Cross-product, this is for making three basis vectors by using two predicted vectors
         src_ori = ortho2rotation(src_vecs, optimum=self.use_opt_gram) # (1, N, 2, 3) -> (1, N, 3, 3)
         trg_ori = ortho2rotation(trg_vecs, optimum=self.use_opt_gram) # (1, M, 2, 3) -> (1, M, 3, 3)
+
+
+        # Check for Inf or Nan
+        check_inf_or_nan(src_ori, 'src_ori')
+        check_inf_or_nan(trg_ori, 'trg_ori')
 
 
         # Save for visualization
@@ -606,6 +628,11 @@ class EquiAssem(pl.LightningModule):
         trg_inv_feats = torch.matmul(trg_equi_feats.permute(0, 3, 1, 2).float(), trg_ori.transpose(-2,-1).float()) # (1, M, C, 3) x (1, M, 3, 3) -> (1, M, C, 3)
         src_inv_feats = rearrange(src_inv_feats, 'b n c r -> b (c r) n') # (1, N, C, 3) -> (1, C*3, N)
         trg_inv_feats = rearrange(trg_inv_feats, 'b n c r -> b (c r) n') # (1, M, C, 3) -> (1, C*3, M)
+
+
+        # Check for Inf or Nan
+        check_inf_or_nan(src_inv_feats, 'src_inv_feats')
+        check_inf_or_nan(trg_inv_feats, 'trg_inv_feats')
 
 
         # OPTIONAL 5. Chaneel Attention Map
@@ -623,6 +650,11 @@ class EquiAssem(pl.LightningModule):
         trg_shape_feats = self.shape_mlp(trg_inv_feats) # # (1, C*3, M) -> (1, D, N)
         if self.attention == 'channel': # (1, D, M) * channel attention
             trg_shape_feats = trg_shape_feats * shape_attention
+        
+
+        # Check for Inf or Nan
+        check_inf_or_nan(src_shape_feats, 'src_shape_feats')
+        check_inf_or_nan(trg_shape_feats, 'trg_shape_feats')
 
 
         if not self.delete_occupancy_loss:
@@ -634,6 +666,11 @@ class EquiAssem(pl.LightningModule):
             trg_occ_feats = self.occ_mlp(trg_inv_feats) # (1, 1023, M) -> (1, 512, M)
             if self.attention == 'channel': 
                 trg_occ_feats = trg_occ_feats * occ_attention
+            
+
+            # Check for Inf or Nan
+            check_inf_or_nan(src_occ_feats, 'src_occ_feats')
+            check_inf_or_nan(trg_occ_feats, 'trg_occ_feats')
         
 
         # 7. Optimal Transport
@@ -683,6 +720,12 @@ class EquiAssem(pl.LightningModule):
             loss['loss'] = self.o_loss_weight * loss['o_loss'] + self.s_loss_weight * loss['s_loss'] + self.p_loss_weight * loss['p_loss'] + self.occ_loss_weight * loss['occ_loss']
         else:
             loss['loss'] = self.o_loss_weight * loss['o_loss'] + self.s_loss_weight * loss['s_loss'] + self.p_loss_weight * loss['p_loss']
+
+        
+        # Check for Inf or Nan
+        for loss_name, loss_value in loss.items():
+            check_inf_or_nan(loss_value, f'{loss_name}')
+        
 
         out_dict.update(loss)
 
