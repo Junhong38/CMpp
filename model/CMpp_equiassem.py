@@ -735,11 +735,13 @@ class EquiAssem(pl.LightningModule):
                 # fine_matching predict Rt to move points from src_points to ref_points
                 # Also, matching_scores_drop should be ref x src. However, in this model, we use src x trg(ref) style
                 # Intead of transpose huge matrix, we swap trg and src.
-                src_corr_pts, trg_corr_pts, corr_scores, estimated_transform, pred_corr = self.fine_matching(src_pcd, trg_pcd, matching_scores_drop, k=128) # Param: ref_points, src_points, so it is reversed
+                # matching_scores_drop: (1,N,M) -> transpose(1,2) (1,M,N)
+                trg_corr_pts, src_corr_pts, corr_scores, estimated_transform, pred_corr = self.fine_matching(trg_pcd, src_pcd, matching_scores_drop.transpose(1,2), k=128) # Param: ref_points, src_points, so it is reversed
 
-            # estimated_transform: source_point = R * target_point + t
-            out_dict['estimated_rotat'] = estimated_transform[:3, :3].T # R.T
-            out_dict['estimated_trans'] = -(estimated_transform[:3, :3].inverse() @ estimated_transform[:3, 3]) # - R.T @ t
+
+            # estimated_transform: target_point = R * source_point + t
+            out_dict['estimated_rotat'] = estimated_transform[:3, :3] # R
+            out_dict['estimated_trans'] = estimated_transform[:3, 3] # t
 
             # Evaluation
             eval_dict = self.evaluate_prediction(in_dict, out_dict, gt_corr, mode)
@@ -899,10 +901,8 @@ class EquiAssem(pl.LightningModule):
         # GT Rt format already fits to R * src + t
 
         # When pred
-        # source_point = R * target_point + t -> src_pcd_t = R.T * src_pcd - (R.T @ t)
-        # src_pcd_t = R.T * src_pcd - (R.T @ t)
-        # Hence, pred format already changed to fit to R * src + t format
-
+        # target_point = R * source_point + t
+        # Hence, pred format already fits to R * src + t format
 
         pcd_t = []
         # Fix target point, and move source point to target point
