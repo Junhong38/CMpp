@@ -1,30 +1,10 @@
-import os
-import sys
-import pwd
 import argparse
-import importlib
-import time
-import gc
-from distutils.dir_util import copy_tree
-
-
 import torch
-import torch.nn as nn
-import torch.optim as optim
-
-from scipy.spatial.transform import Rotation
-
-import pytorch_lightning as pl
-from pytorch_lightning.loggers import WandbLogger
-from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor
 
 from data.dataset import GADataset
-from common import utils
-import open3d as o3d
 
-from model.equiassem import EquiAssem
-from model.equiassem_shape import EquiAssem_shape
-from model.equiassem_occ import EquiAssem_occ
+import pytorch_lightning as pl
+from pytorch_lightning import seed_everything
 
 import warnings
 warnings.filterwarnings("ignore", message="divide by zero encountered in double_scalars", category=RuntimeWarning)
@@ -34,37 +14,56 @@ warnings.filterwarnings("ignore", message="divide by zero encountered in double_
 
 @torch.no_grad()
 def test(args):
+    seed_everything(42, workers=True)
     
     # Model initialization
-    if args.model == 'both':
+    if args.model == 'CM_equiassem':
+        from model.CM_equiassem import EquiAssem
         model = EquiAssem(lr=args.lr,
-                        backbone=args.backbone,
-                        shape_loss=args.shape_loss, 
-                        occ_loss=args.occ_loss, 
-                        no_ori=args.no_ori,
-                        attention=args.attention,
-                        visualize=args.visualize,
-                        debug=args.debug)
-    elif args.model == 'shape_only':
-        model = EquiAssem_shape(lr=args.lr,
-                        backbone=args.backbone,
-                        shape_loss=args.shape_loss, 
-                        no_ori=args.no_ori,
-                        visualize=args.visualize,
-                        debug=args.debug)
-    elif args.model == 'occ_only':
-        model = EquiAssem_occ(lr=args.lr,
-                        backbone=args.backbone,
-                        occ_loss=args.occ_loss, 
-                        no_ori=args.no_ori,
-                        visualize=args.visualize,
-                        debug=args.debug)
+                          backbone=args.backbone,
+                          shape_loss=args.shape_loss, 
+                          occ_loss=args.occ_loss, 
+                          no_ori=args.no_ori,
+                          attention=args.attention,
+                          visualize=args.visualize,
+                          debug=args.debug)
+        
+    elif args.model == 'CMpp_equiassem': # Import developing mode model
+        from model.CMpp_equiassem import EquiAssem
+        model = EquiAssem(lr=args.lr,
+                          backbone=args.backbone,
+                          attention=args.attention,
+                          pos_margin=args.pos_margin,
+                          neg_margin=args.neg_margin,
+                          log_scale=args.log_scale,
+
+                          s_loss_weight=args.s_loss_weight,
+                          p_loss_weight=args.p_loss_weight,
+                          o_loss_weight=args.o_loss_weight,
+
+                          visualize=args.visualize,
+                          viz_epoch=args.viz_epoch,
+                          debug=args.debug,
+
+                          additional_VNLinearLeakyReLU=args.additional_VNLinearLeakyReLU,
+                          debugged_circle_loss=args.debugged_circle_loss,
+                          debugged_point_matching_loss=args.debugged_point_matching_loss,
+                          exp_scale_for_point_matching_loss=args.exp_scale_for_point_matching_loss,
+                          n_knn=args.n_knn,
+                          new_orientation_module=args.new_orientation_module,
+                          delete_occupancy_loss=args.delete_occupancy_loss,
+                          use_opt_gram=args.use_opt_gram,
+                          use_RANSAC=args.use_RANSAC,
+                          )
+    
+    else:
+        raise NotImplementedError("Model not implemented")
 
     model.to(torch.device('cuda:0'))
     model.eval()
     
     # Dataset initialization
-    GADataset.initialize(args.datapath, args.data_category, args.sub_category, args.min_part, args.max_part, args.n_pts, args.scale)
+    GADataset.initialize(args.datapath, args.data_category, args.sub_category, args.min_part, args.max_part, args.n_pts, args.scale, args.multiplicity)
     dataloader_val = GADataset.build_dataloader(args.batch_size, args.n_worker, 'val')
 
     trainer = pl.Trainer(accelerator='gpu',
@@ -75,33 +74,98 @@ def test(args):
     print('Done testing...')
 
 if __name__ == '__main__':
+    # Argument parsersing
     parser = argparse.ArgumentParser(description='Equivariant Assembly Pytorch Implementation')
-    parser.add_argument('--datapath', type=str, default='../../data/bbad_v2')
+    
+    # Dataset arguments
+    parser.add_argument('--datapath', type=str, default='../../../../../hdd/junhong/data/bbad_v2')
     parser.add_argument('--data_category', type=str, default='everyday', choices=['everyday', 'artifact', 'synthetic', 'fantastic'])
     parser.add_argument('--sub_category', type=str, default='all')
     parser.add_argument('--n_pts', type=int, default=5000)
     parser.add_argument('--min_part', type=int, default=2)
     parser.add_argument('--max_part', type=int, default=2)
+    parser.add_argument('--multiplicity', type=int, default=1, help='Multiplicity of the dataset')
 
+
+    # Testing arguments
     parser.add_argument('--logpath', type=str, default='')
     parser.add_argument('--batch_size', type=int, default=1)
     parser.add_argument('--lr', type=float, default=1e-2)
     parser.add_argument('--n_worker', type=int, default=8)
-    parser.add_argument('--load', type=str, default='')
+    parser.add_argument('--load', type=str, default='./checkpoint/SMALL_CM_AVN_NC_NPM_NODOCC/models/model-rrmse-epoch=089.ckpt')
 
-    parser.add_argument('--scale', type=str, default='full', choices=['full', 'small', 'overfitting'])
 
-    # Ablation studies
-    parser.add_argument('--model', type=str, default='both', choices=['both', 'shape_only', 'occ_only'])
+    # Debugging arguments
+    parser.add_argument('--model', type=str, default='CMpp_equiassem', choices=['CM_equiassem', 'CMpp_equiassem'])
+    parser.add_argument('--scale', type=str, default='small', choices=['overfitting', 'tiny', 'small', 'full'])
+
+
+    # This arguments are used only for CM_equiassem
     parser.add_argument('--backbone', type=str, default='vn_unet', choices=['vn_unet', 'vn_dgcnn', 'unet', 'dgcnn'])
     parser.add_argument('--shape_loss', type=str, default='positive', choices=['positive', 'negative'])
     parser.add_argument('--occ_loss', type=str, default='negative', choices=['positive', 'negative'])
-    parser.add_argument('--no_ori', action='store_false')
+    parser.add_argument('--no_ori', action='store_true')
     parser.add_argument('--attention', type=str, default='channel', choices=['channel', 'none'])
 
+    
+    # Developing temporarily used experiments arguments
+    parser.add_argument('--additional_VNLinearLeakyReLU', action='store_true', help='If True, use VNLinearLeakyReLU layers for the equivariant shape feature')
+    parser.add_argument('--debugged_circle_loss', action='store_true', help='If True, use Debugged version of Circle Loss')
+    parser.add_argument('--debugged_point_matching_loss', action='store_true', help='If True, use Debugged version of Point Matching Loss')
+    parser.add_argument('--exp_scale_for_point_matching_loss', action='store_true', help='If True, make the matching score to exp-scaled value before computing point matching loss')
+    parser.add_argument('--n_knn', type=int, default=20, help='Number of nearest neighbors for KNN')
+    parser.add_argument('--new_orientation_module', action='store_true', help='If True, use New module for orientation')
+    parser.add_argument('--delete_occupancy_loss', action='store_true', help='If True, delete the Occupancy Loss')
+    parser.add_argument('--use_opt_gram', action='store_true', help='If True, use Optimum Gram Schmidt Orthogonalization')
+    parser.add_argument('--use_RANSAC', action='store_true', help='If True, use RANSAC for transformation estimation')
+
+    # Weights for losses
+    parser.add_argument('--s_loss_weight', type=float, default=0.5, help='Weight for shape loss, in the future, we will change this into 1.0')
+    parser.add_argument('--p_loss_weight', type=float, default=1.0, help='Weight for point loss, in the future, we will change this into 1.0')
+    parser.add_argument('--o_loss_weight', type=float, default=0.1, help='Weight for orientation loss, in the future, we will change this into 1.0')
+
+
+    # Margin arguments which are used in circle loss
+    parser.add_argument('--pos_margin', type=float, default=0.1, help='Margin for positive samples in Circle loss computation')
+    parser.add_argument('--neg_margin', type=float, default=1.4, help='Margin for negative samples in Circle loss computation')
+    parser.add_argument('--log_scale', type=float, default=24, help='Log scale for Circle loss computation')
+    
+
+    # Additional experiments
     parser.add_argument('--visualize', action='store_true')
+    parser.add_argument('--viz_epoch', type=int, default=30, help='Epoch for visualization. This only works when visualize is True')
     parser.add_argument('--debug', action='store_true')
     
     args = parser.parse_args()
+
+
+    # Setting developing experiments arguments automatically
+    if args.model == 'CMpp_equiassem': # If the model is CMpp_equiassem
+        arg_order = [
+            "additional_VNLinearLeakyReLU",
+            "debugged_circle_loss",
+            "debugged_point_matching_loss",
+            "new_orientation_module", # Use delete_occupancy_loss for automatically setting this to True
+            "delete_occupancy_loss",
+            "use_opt_gram",
+        ]
+
+        for i, name in enumerate(arg_order):
+            if getattr(args, name):
+                for prev_name in arg_order[:i]:
+                    setattr(args, prev_name, True)
+        
+        if args.delete_occupancy_loss:
+            # Now, we will test the model with normal vector method
+            args.attention = 'none'
+            args.s_loss_weight = 1.0
+            args.p_loss_weight = 1.0
+            args.o_loss_weight = 1.0
+
+    
+    print("================================================")
+    print(f"args: {args}")
+    print("================================================")
+
 
     test(args)

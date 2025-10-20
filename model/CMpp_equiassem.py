@@ -16,7 +16,6 @@ from model.backbone.vn_dgcnn import EQCNN_equi_unet, EQCNN_equi
 from model.backbone.vn_layers import VNLinear, VNLinearLeakyReLU
 from model.loss import PointMatchingLoss, OrientationLoss
 from model.learnable_sinkhorn import LearnableLogOptimalTransport
-from model.local_global_registration import LocalGlobalRegistration
 
 from common.rotation import ortho2rotation
 from common.utils import save_pc
@@ -70,6 +69,7 @@ class EquiAssem(pl.LightningModule):
             new_orientation_module=False,
             delete_occupancy_loss=False,
             use_opt_gram=False,
+            use_RANSAC=False,
             ):
         """Equivariant Assembly Model for 3D Object Assembly
 
@@ -125,6 +125,7 @@ class EquiAssem(pl.LightningModule):
         print(f"new_orientation_module: {new_orientation_module}")
         print(f"delete_occupancy_loss: {delete_occupancy_loss}")
         print(f"use_opt_gram: {use_opt_gram}")
+        print(f"use_RANSAC: {use_RANSAC}")
         print("------------------------------------------------------")
 
         self.lr = lr
@@ -141,6 +142,7 @@ class EquiAssem(pl.LightningModule):
         self.new_orientation_module = new_orientation_module
         self.delete_occupancy_loss = delete_occupancy_loss
         self.use_opt_gram = use_opt_gram
+        self.use_RANSAC = use_RANSAC
 
 
         # Output feature dimension of Feature Extractor
@@ -284,20 +286,6 @@ class EquiAssem(pl.LightningModule):
 
         # Optimal Transport
         self.optimal_transport = LearnableLogOptimalTransport(num_iterations=100)
-
-
-        # LGR
-        self.fine_matching = LocalGlobalRegistration(
-            k=3,
-            acceptance_radius=0.1,
-            mutual=True,
-            confidence_threshold=0.05,
-            use_dustbin=False,
-            use_global_score=False,
-            correspondence_threshold=3,
-            correspondence_limit=None,
-            num_refinement_steps=5,
-        )
 
     
     def configure_optimizers(self):
@@ -475,7 +463,6 @@ class EquiAssem(pl.LightningModule):
         """
         out_dict, loss = {}, {}
 
-
         # 0. Get Point Clouds and Ground Truth Correspondence
         src_pcd_raw = in_dict['pcd'][0].squeeze(0) # (N, 3)
         trg_pcd_raw = in_dict['pcd'][1].squeeze(0) # (M, 3)
@@ -612,7 +599,50 @@ class EquiAssem(pl.LightningModule):
         if mode in ['val', 'test']:
             # Point cloud registration
             with torch.no_grad():
-                src_corr_pts, trg_corr_pts, corr_scores, estimated_transform, pred_corr = self.fine_matching(src_pcd, trg_pcd, matching_scores_drop, k=128) # Param: ref_points, src_points, so it is reversed
+                if self.use_RANSAC:
+                    from model.ransac import ransac_rigid
+                    from model.match_selection import soft_topk_matching
+                    matching_scores_before_Sinkhorn = shape_matching_scores.squeeze(0) # (N, M)
+                    
+                    # Initial matches for RANSAC
+                    initial_matches = soft_topk_matching(matching_scores_before_Sinkhorn, topk=3) # (K, 2)
+                    src_idx, trg_idx = initial_matches[:, 0], initial_matches[:, 1] # (K, ), (K, )
+
+                    # Score thresholding for initial matches
+                    score_threshold = 0.0
+                    score_mask = matching_scores_before_Sinkhorn[src_idx, trg_idx] >= score_threshold # (K, )
+                    src_idx, trg_idx = src_idx[score_mask], trg_idx[score_mask] # (K_filtered, ), (K_filtered, )
+
+                    # Prepare to run RANSAC
+                    src_corr_pts = src_pcd[:, src_idx].squeeze(0) # (K_filtered, 3)
+                    trg_corr_pts = trg_pcd[:, trg_idx].squeeze(0) # (K_filtered, 3)
+
+
+                    inl_R, inl_t, inliers = ransac_rigid(src_corr_pts, trg_corr_pts, 
+                                             src_pcd.squeeze(0), trg_pcd.squeeze(0),
+                                             in_dict['gt_normals'][0].squeeze(0), in_dict['gt_normals'][1].squeeze(0),
+                                             scores = matching_scores_before_Sinkhorn,
+                                             score_threshold = score_threshold)
+                    estimated_transform = torch.eye(4, device=inl_R.device, dtype=inl_R.dtype)
+                    estimated_transform[:3, :3] = inl_R
+                    estimated_transform[:3, 3] = inl_t
+                    # estimated_transform = ransac_rigid(src_pcd.squeeze(0).cpu().numpy(), trg_pcd.squeeze(0).cpu().numpy(), matching_scores_drop.squeeze(0).cpu().numpy())
+                    # estimated_transform = torch.from_numpy(estimated_transform).to(src_pcd.device).float()
+                else:
+                    from model.local_global_registration import LocalGlobalRegistration
+                    # LGR
+                    fine_matching = LocalGlobalRegistration(
+                        k=3,
+                        acceptance_radius=0.1,
+                        mutual=True,
+                        confidence_threshold=0.05,
+                        use_dustbin=False,
+                        use_global_score=False,
+                        correspondence_threshold=3,
+                        correspondence_limit=None,
+                        num_refinement_steps=5,
+                    )
+                    src_corr_pts, trg_corr_pts, corr_scores, estimated_transform, pred_corr = fine_matching(src_pcd, trg_pcd, matching_scores_drop, k=128) # Param: ref_points, src_points, so it is reversed
 
             # estimated_transform: source_point = R * target_point + t
             out_dict['estimated_rotat'] = estimated_transform[:3, :3].T # R.T
