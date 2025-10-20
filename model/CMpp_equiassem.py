@@ -732,11 +732,14 @@ class EquiAssem(pl.LightningModule):
         if mode in ['val', 'test']:
             # Point cloud registration
             with torch.no_grad():
+                # fine_matching predict Rt to move points from src_points to ref_points
+                # Also, matching_scores_drop should be ref x src. However, in this model, we use src x trg(ref) style
+                # Intead of transpose huge matrix, we swap trg and src.
                 src_corr_pts, trg_corr_pts, corr_scores, estimated_transform, pred_corr = self.fine_matching(src_pcd, trg_pcd, matching_scores_drop, k=128) # Param: ref_points, src_points, so it is reversed
 
             # estimated_transform: source_point = R * target_point + t
             out_dict['estimated_rotat'] = estimated_transform[:3, :3].T # R.T
-            out_dict['estimated_trans'] = -(estimated_transform[:3, :3].inverse() @ -estimated_transform[:3, 3]) # R.T @ t
+            out_dict['estimated_trans'] = -(estimated_transform[:3, :3].inverse() @ estimated_transform[:3, 3]) # - R.T @ t
 
             # Evaluation
             eval_dict = self.evaluate_prediction(in_dict, out_dict, gt_corr, mode)
@@ -805,23 +808,23 @@ class EquiAssem(pl.LightningModule):
         pred_relative_trsfm = out_dict['estimated_rotat'].float(), out_dict['estimated_trans'].float() # (3, 3), (3)
         grtr_relative_trsfm = [x.squeeze(0) for x in in_dict['relative_trsfm']['0-1']] # (1, 3, 3) -> (3, 3), (1, 3) -> (3)
         src_pcd, trg_pcd = [x.squeeze(0) for x in in_dict['pcd_t']] # (1, N, 3) -> (N, 3), (1, M, 3) -> (M, 3)
-        is_trg_larger = self._is_trg_larger(src_pcd, trg_pcd)
+
 
         # Assemble using prediction, pseudo-gt, and ground-truth
-        assm_pred, pcds_pred = self._pairwise_mating(src_pcd, trg_pcd, pred_relative_trsfm[0], pred_relative_trsfm[1], is_trg_larger)
-        assm_grtr, pcds_grtr = self._pairwise_mating(src_pcd, trg_pcd, grtr_relative_trsfm[0], grtr_relative_trsfm[1], is_trg_larger)
+        assm_pred, pcds_pred = self._pairwise_mating(src_pcd, trg_pcd, pred_relative_trsfm[0], pred_relative_trsfm[1])
+        assm_grtr, pcds_grtr = self._pairwise_mating(src_pcd, trg_pcd, grtr_relative_trsfm[0], grtr_relative_trsfm[1])
 
         assm_pred, assm_grtr = assm_pred.float(), assm_grtr.float()
         
         # (a) Compute CD between prediction & ground-truth
-        eval_result['cd'] = self._chamfer_distance(assm_pred, assm_grtr, is_trg_larger)
+        eval_result['cd'] = self._chamfer_distance(assm_pred, assm_grtr)
 
         # (b) Compute MSE between prediction & ground-truth for rotation (in degree) and translation
         eval_result['rrmse_rpf'], eval_result['trmse_rpf'] = self._transformation_error_RPFver(pcds_pred, pcds_grtr, multi_part)
         eval_result['rrmse'], eval_result['trmse'] = self._transformation_error(pred_relative_trsfm, grtr_relative_trsfm, multi_part)
 
         # (c) Compute CoRrespondence Distance (CRD) betwween prediction & ground-truth
-        eval_result['crd'] = self._correspondence_distance(assm_pred, assm_grtr, is_trg_larger)
+        eval_result['crd'] = self._correspondence_distance(assm_pred, assm_grtr)
 
         if (not self.trainer.sanity_checking) and \
             self.trainer.global_rank == 0 and \
@@ -848,7 +851,7 @@ class EquiAssem(pl.LightningModule):
 
             # MESH AND FRAME VISUALIZATION
             output_src_ori, output_trg_ori = out_dict['src_ori'][0], out_dict['trg_ori'][0] # (1,N,3,3) -> (N,3,3), (1,M,3,3) -> (M,3,3)
-            gt_src_normals, gt_trg_normals = in_dict['gt_normals'][0].float(), in_dict['gt_normals'][1].float() # (1,N,3) -> (N,3), (1,M,3) -> (M,3)
+            gt_src_normals, gt_trg_normals = in_dict['gt_normals'][0][0].float(), in_dict['gt_normals'][1][0].float() # (1,N,3) -> (N,3), (1,M,3) -> (M,3)
             
             reshaped_output_src_ori = output_src_ori.reshape(-1,3) # (N,3,3) -> (N*3,3)
             reshaped_output_trg_ori = output_trg_ori.reshape(-1,3) # (M,3,3) -> (M*3,3)
@@ -856,16 +859,16 @@ class EquiAssem(pl.LightningModule):
             zero_trans = torch.zeros(3).to(grtr_relative_trsfm[0].device)
 
             # Rotate by using gt
-            _, rot_frame_ori_in_gt = self._pairwise_mating(reshaped_output_src_ori, reshaped_output_trg_ori, grtr_relative_trsfm[0], zero_trans, is_trg_larger)
-            _, rot_gt_normals_in_gt = self._pairwise_mating(gt_src_normals, gt_trg_normals, grtr_relative_trsfm[0], zero_trans, is_trg_larger)
+            _, rot_frame_ori_in_gt = self._pairwise_mating(reshaped_output_src_ori, reshaped_output_trg_ori, grtr_relative_trsfm[0], zero_trans)
+            _, rot_gt_normals_in_gt = self._pairwise_mating(gt_src_normals, gt_trg_normals, grtr_relative_trsfm[0], zero_trans)
 
             # DRAW FRAME by using gt
             draw_frames(frame_ori=rot_frame_ori_in_gt, gt_normals=rot_gt_normals_in_gt, pcds_list=pcds_grtr, dir_path=vis_folder, 
                         filename=f'E{self.current_epoch}_{in_dict["eval_idx"].item()}_{in_dict["obj_class"][0]}_{round(eval_result["crd"].item(),3)}_in_gt')
 
             # Rotate by using pred
-            _, rot_frame_ori_in_pred = self._pairwise_mating(reshaped_output_src_ori, reshaped_output_trg_ori, pred_relative_trsfm[0], zero_trans, is_trg_larger)
-            _, rot_gt_normals_in_pred = self._pairwise_mating(gt_src_normals, gt_trg_normals, pred_relative_trsfm[0], zero_trans, is_trg_larger)
+            _, rot_frame_ori_in_pred = self._pairwise_mating(reshaped_output_src_ori, reshaped_output_trg_ori, pred_relative_trsfm[0], zero_trans)
+            _, rot_gt_normals_in_pred = self._pairwise_mating(gt_src_normals, gt_trg_normals, pred_relative_trsfm[0], zero_trans)
 
             # DRAW FRAME by using prediction
             draw_frames(frame_ori=rot_frame_ori_in_pred, gt_normals=rot_gt_normals_in_pred, pcds_list=pcds_pred, dir_path=vis_folder, 
@@ -874,67 +877,53 @@ class EquiAssem(pl.LightningModule):
         return eval_result
     
 
-    def _is_trg_larger(self, src_pcd, trg_pcd):
+    def _pairwise_mating(self, src_pcd, trg_pcd, rotat, trans):
         """
-        Args:
-            src_pcd (torch.Tensor): (N, 3)
-            trg_pcd (torch.Tensor): (M, 3)
+        move src to trg
 
-        Returns:
-            bool: True if source point cloud is smaller than target point cloud
-        """
-        # max - min -> volume
-        # Calculate max - min for all xyz coordinates, and product for all xyz.
-        # Finally, we can calculate bounding box volume
-        src_volume = (src_pcd.max(dim=0)[0] - src_pcd.min(dim=0)[0]).prod(dim=0)
-        trg_volume = (trg_pcd.max(dim=0)[0] - trg_pcd.min(dim=0)[0]).prod(dim=0)
-        return src_volume < trg_volume
-    
-
-    def _pairwise_mating(self, src_pcd, trg_pcd, rotat, trans, is_trg_larger):
-        """
         Args:
             src_pcd (torch.Tensor): (N, 3)
             trg_pcd (torch.Tensor): (M, 3)
             rotat (torch.Tensor): (3, 3)
             trans (torch.Tensor): (3)
-            is_trg_larger (bool): True if source point cloud is smaller than target point cloud
 
         Returns:
             pcd_t (torch.Tensor): (N+M, 3)
             pcd_t (list): [(N, 3), (M, 3)] if is_trg_larger else [(N, 3), (M, 3)]
         """
         # Remind:
-        # estimated_transform: source_point = R * target_point + t
-        # estimated_rotat (rotat) = R.T, estimated_trans (trans) = R.T @ t
+        # estimated_transform: trg_pcd = R * src_pcd + t
+        # estimated_rotat (rotat) = R.T, estimated_trans (trans) = - R.T @ t
+
+        # When GT
+        # GT Rt format already fits to R * src + t
+
+        # When pred
+        # source_point = R * target_point + t -> src_pcd_t = R.T * src_pcd - (R.T @ t)
+        # src_pcd_t = R.T * src_pcd - (R.T @ t)
+        # Hence, pred format already changed to fit to R * src + t format
+
 
         pcd_t = []
-        if is_trg_larger: # Fix target point, and move source point to target point
-            # source_point = R * target_point + t -> src_pcd_t = R.T * src_pcd - (R.T @ t)
-            # src_pcd_t = R.T * src_pcd - (R.T @ t)
-            src_pcd_t = self._transform(src_pcd.squeeze(0), rotat, -trans, True)
-            pcd_t = [src_pcd_t, trg_pcd.squeeze(0)]
-        
-        else: # Fix source point, and move target point to source point
-            # source_point = R * target_point + t
-            # However, estimated_rotat (rotat) = R.T, estimated_trans (trans) = R.T @ t
-            # trg_pcd_t = R.T.T * (trg_pcd + (R.T @ t)) = R * (trg_pcd + (R.T @ t)) = R * trg_pcd + R * (R.T @ t) = R * trg_pcd + t
-            trg_pcd_t = self._transform(trg_pcd.squeeze(0), rotat.T, trans, False)
-            pcd_t = [src_pcd.squeeze(0), trg_pcd_t]
+        # Fix target point, and move source point to target point
+        # src_pcd_t = R * src_pcd + t
+        src_pcd_t = self._transform(src_pcd, rotat, trans)
+        pcd_t = [src_pcd_t, trg_pcd]
         
         return torch.cat(pcd_t, dim=0), pcd_t
     
 
-    def _transform(self, pcd, rotat=None, trans=None, rotate_first=True):
+    def _transform(self, pcd, rotat=None, trans=None):
         """
+        rotat * pcd + trans
+
         Args:
             pcd (torch.Tensor): (N, 3)
             rotat (torch.Tensor, optional): (3, 3). Defaults to None.
             trans (torch.Tensor, optional): (3). Defaults to None.
-            rotate_first (bool, optional): True if rotate first. Defaults to True.
 
         Returns:
-            pcd_t (torch.Tensor): (N, 3)
+            pcd_t (torch.Tensor): (N, 3) 
         """
         if rotat == None: rotat = torch.eye(3, 3)
         if trans == None: trans = torch.zeros(3)
@@ -942,18 +931,14 @@ class EquiAssem(pl.LightningModule):
         rotat = rotat.to(pcd.device)
         trans = trans.to(pcd.device)
 
-        if rotate_first:
-            return torch.einsum('x y, n y -> n x', rotat, pcd) + trans
-        else:
-            return torch.einsum('x y, n y -> n x', rotat, pcd + trans)
+        return torch.einsum('x y, n y -> n x', rotat, pcd) + trans
 
 
-    def _correspondence_distance(self, assm1, assm2, is_trg_larger, scaling=100):
+    def _correspondence_distance(self, assm1, assm2, scaling=100):
         """
         Args:
             assm1 (torch.Tensor): (N, 3)
             assm2 (torch.Tensor): (M, 3)
-            is_trg_larger (bool): True if source point cloud is smaller than target point cloud
             scaling (int, optional): Scaling factor for CD. Defaults to 100.
 
         Returns:
@@ -963,12 +948,11 @@ class EquiAssem(pl.LightningModule):
         return corr_dist
 
 
-    def _chamfer_distance(self, assm1, assm2, is_trg_larger, scaling=1000):
+    def _chamfer_distance(self, assm1, assm2, scaling=1000):
         """
         Args:
             assm1 (torch.Tensor): (N, 3)
             assm2 (torch.Tensor): (M, 3)
-            is_trg_larger (bool): True if source point cloud is smaller than target point cloud
             scaling (int, optional): Scaling factor for CD. Defaults to 1000.
 
         Returns:

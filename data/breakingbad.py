@@ -176,12 +176,12 @@ class DatasetBreakingBad(Dataset):
             # src_pcd_t = R_0 * (src_pcd - T_0)
             # trg_pcd_t = R_1 * (trg_pcd - T_1)
             # R_0 * (src_pcd - T_0) -> R_1 * R_0^T * R_0 * (src_pcd - T_0) = R_1 * src_pcd - R_1 * T_0
-            # - R_1 * T_0 - R' = - R_1 * T_1, So R' = - R_1 * T_0 + R_1 * T_1 = R_1 * (-T_0 + T_1)
-            # In short, R_1 * R_0^T, R_1 * (-T_0 + T_1)
-            # Hence, in self._transform, R_1 * R_0^T * R_0 * (src_pcd - T_0) - R_1 * (-T_0 + T_1) = R_1 * src_pcd - R_1 * T_0 - R_1 * T_0 - R_1 * T_1 = R_1 * src_pcd - R_1 * T_1 = R_1 * (src_pcd - T_1)
+            # - R_1 * T_0 + R' = - R_1 * T_1, So R' = R_1 * T_0 - R_1 * T_1 = R_1 * (T_0 - T_1)
+            # In short, R_1 * R_0^T, R_1 * (T_0 - T_1)
+            # Hence, in self._transform, R_1 * R_0^T * R_0 * (src_pcd - T_0) + R_1 * (T_0 - T_1) = R_1 * src_pcd - R_1 * T_0 + R_1 * T_0 - R_1 * T_1 = R_1 * src_pcd - R_1 * T_1 = R_1 * (src_pcd - T_1)
 
             relative_rotat = rotat1 @ rotat0.T
-            relative_trans = - (rotat1 @ (trans0 - trans1))
+            relative_trans = (rotat1 @ (trans0 - trans1))
 
             # Save relative transformation between each pairs
             key = f"{src_idx}-{trg_idx}"
