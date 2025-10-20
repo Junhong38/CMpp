@@ -1,191 +1,226 @@
+from typing import Set, Tuple
+
 import torch
-from scipy.spatial.distance import cdist
-import numpy as np
- 
-def estimate_rigid_transform(A, B):
+
+
+def _squeeze_leading_dim(tensor: torch.Tensor) -> torch.Tensor:
+    """Remove a leading singleton batch dimension if present."""
+    if tensor is None:
+        return None
+    if tensor.dim() >= 2 and tensor.size(0) == 1:
+        return tensor.squeeze(0)
+    return tensor
+
+
+def _transform_points(points: torch.Tensor, rotation: torch.Tensor, translation: torch.Tensor) -> torch.Tensor:
+    """Apply the rigid transform defined by rotation and translation."""
+    return points @ rotation.T + translation
+
+
+def _select_correspondences(inlier_mask: torch.Tensor, dist_mat: torch.Tensor, matching_choice: str) -> torch.Tensor:
+    """Select correspondence indices according to the matching strategy."""
+    rows, cols = torch.nonzero(inlier_mask, as_tuple=True)
+    if rows.numel() == 0:
+        return torch.zeros((0, 2), dtype=torch.long, device=inlier_mask.device)
+
+    if matching_choice == 'many-to-many':
+        return torch.stack((rows, cols), dim=1)
+
+    dists = dist_mat[rows, cols]
+
+    if matching_choice == 'many-to-one':
+        pairs = []
+        for col in cols.unique(sorted=True).tolist():
+            mask = cols == col
+            col_rows = rows[mask]
+            col_dists = dists[mask]
+            best_idx = torch.argmin(col_dists)
+            pairs.append((col_rows[best_idx].item(), col))
+        return torch.tensor(pairs, dtype=torch.long, device=inlier_mask.device)
+
+    if matching_choice == 'one-to-one':
+        order = torch.argsort(dists)
+        used_src: Set[int] = set()
+        used_trg: Set[int] = set()
+        pairs = []
+        for idx in order.tolist():
+            src_idx = rows[idx].item()
+            trg_idx = cols[idx].item()
+            if src_idx in used_src or trg_idx in used_trg:
+                continue
+            used_src.add(src_idx)
+            used_trg.add(trg_idx)
+            pairs.append((src_idx, trg_idx))
+        if not pairs:
+            return torch.zeros((0, 2), dtype=torch.long, device=inlier_mask.device)
+        return torch.tensor(pairs, dtype=torch.long, device=inlier_mask.device)
+
+    raise ValueError(f"Unknown matching choice: {matching_choice}")
+
+
+def estimate_rigid_transform(source: torch.Tensor, target: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
     """
-    Estimate R, t using SVD from A (source) to B (target)
-    A, B: [N, 3]
+    Estimate the rigid transform that brings ``target`` onto ``source``.
+
+    Args:
+        source: Tensor of shape (N, 3), reference points.
+        target: Tensor of shape (N, 3), points to be transformed.
+
     Returns:
-        R: [3, 3]
-        t: [3]
+        rotation: Tensor of shape (3, 3).
+        translation: Tensor of shape (3,).
     """
-    centroid_A = A.mean(dim=0)
-    centroid_B = B.mean(dim=0)
- 
-    A_centered = A - centroid_A
-    B_centered = B - centroid_B
- 
-    H = B_centered.T @ A_centered
-    U, S, V = torch.linalg.svd(H)
-    R = V.T @ U.T
-    # Reflection correction
-    if torch.det(R) < 0:
-        V[2, :] *= -1
-        R = V.T @ U.T
- 
-    t = centroid_A - R @ centroid_B
-    return R, t
- 
+    if source.shape != target.shape:
+        raise ValueError(f"Point sets must share a shape. Got {source.shape} and {target.shape}.")
+    if source.numel() == 0:
+        raise ValueError("At least one correspondence is required.")
+
+    centroid_source = source.mean(dim=0)
+    centroid_target = target.mean(dim=0)
+
+    source_centered = source - centroid_source
+    target_centered = target - centroid_target
+
+    h_matrix = target_centered.T @ source_centered
+    u, _, v = torch.linalg.svd(h_matrix)
+    rotation = v.T @ u.T
+
+    if torch.det(rotation) < 0:
+        v[-1, :] *= -1
+        rotation = v.T @ u.T
+
+    translation = centroid_source - rotation @ centroid_target
+    return rotation, translation
+
+
 def ransac_rigid(
-        src_corr_pcd, trg_corr_pcd, 
-        src_pcd, trg_pcd, 
-        src_gt_normal, trg_gt_normal,
-        scores,
-        score_threshold,
-        num_iters=100, 
-        threshold=0.01,
-        gt_normal_threshold=-0.7,
-        matching_choice='one-to-one',
-        ):
+        src_corr_pcd: torch.Tensor,
+        trg_corr_pcd: torch.Tensor,
+        src_pcd: torch.Tensor,
+        trg_pcd: torch.Tensor,
+        src_gt_normal: torch.Tensor,
+        trg_gt_normal: torch.Tensor,
+        scores: torch.Tensor,
+        score_threshold: float,
+        num_iters: int = 100,
+        threshold: float = 0.01,
+        gt_normal_threshold: float = -0.7,
+        matching_choice: str = 'one-to-one',
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """
-    Run RANSAC to robustly estimate rigid transform from A to B
-    A, B: [N, 3]
+    Robustly estimate a rigid transform that aligns ``trg_pcd`` to ``src_pcd``.
+
+    Args:
+        src_corr_pcd: Source correspondence points of shape (N, 3) or (1, N, 3).
+        trg_corr_pcd: Target correspondence points of shape (N, 3) or (1, N, 3).
+        src_pcd: Full source point cloud of shape (M, 3) or (1, M, 3).
+        trg_pcd: Full target point cloud of shape (K, 3) or (1, K, 3).
+        src_gt_normal: Source normals aligned with ``src_pcd``.
+        trg_gt_normal: Target normals aligned with ``trg_pcd``.
+        scores: Similarity scores with the same spatial shape as the distance matrix.
+        score_threshold: Minimum score required for an inlier.
+        num_iters: Number of RANSAC iterations.
+        threshold: Distance threshold used during the RANSAC stage.
+        gt_normal_threshold: Cosine similarity threshold for normal filtering.
+        matching_choice: Strategy to turn the inlier mask into correspondences.
+
     Returns:
-        best_R, best_t, best_inliers
+        rotation, translation, final inlier mask.
     """
+    src_corr_pcd = _squeeze_leading_dim(src_corr_pcd)
+    trg_corr_pcd = _squeeze_leading_dim(trg_corr_pcd)
+    src_pcd = _squeeze_leading_dim(src_pcd)
+    trg_pcd = _squeeze_leading_dim(trg_pcd)
+    src_gt_normal = _squeeze_leading_dim(src_gt_normal)
+    trg_gt_normal = _squeeze_leading_dim(trg_gt_normal)
+    scores = _squeeze_leading_dim(scores)
+
+    if src_corr_pcd.shape[0] < 3:
+        raise ValueError("At least three correspondences are required for RANSAC.")
+
+    device = src_corr_pcd.device
+    score_mask = (scores >= score_threshold).to(device)
+
     N = src_corr_pcd.shape[0]
     max_inliers = -1
-    best_inliers, best_R, best_t = None, None, None
- 
-    # RANSAC iterations
+    best_inliers = None
+    best_rotation = None
+    best_translation = None
+
     for _ in range(num_iters):
         while True:
-            idx = torch.randperm(N)[:3]  # minimum 3 pts
-            src_sample = src_corr_pcd[idx]
-            trg_sample = trg_corr_pcd[idx]
+            indices = torch.randperm(N, device=device)[:3]
+            src_sample = src_corr_pcd.index_select(0, indices)
+            trg_sample = trg_corr_pcd.index_select(0, indices)
             if matching_choice == 'many-to-one':
                 break
             if torch.unique(src_sample, dim=0).size(0) == src_sample.size(0):
                 break
- 
+
         try:
-            R, t = estimate_rigid_transform(src_sample, trg_sample)
-        except:
-            print("fail-fail-fail-fail-fail-fail-fail-fail")
+            rotation, translation = estimate_rigid_transform(src_sample, trg_sample)
+        except RuntimeError:
             continue
-        
-        # Calculate distance matrix
-        dist_mat = cdist(src_pcd.cpu().numpy(), ((R @ trg_pcd.T).T + t).cpu().numpy())
 
-        # Inlier selection
-        inliers = torch.from_numpy(dist_mat < threshold).to('cuda')
-        
-        # Score thresholding to filter inliers
-        score_mask = scores >= score_threshold
-        if inliers.shape == score_mask.shape:
-            inliers = inliers & score_mask
-        else:
-            raise ValueError("Something wrong in score thresholding~")
-            
-        
-        # Using gt_normals to further filter inliers
-        R_ = R.to(dtype=trg_gt_normal.dtype)
-        trg_gt_normal_rotat = torch.matmul(trg_gt_normal, R_.T)
-        cos_sim = torch.matmul(src_gt_normal, trg_gt_normal_rotat.T)
+        transformed_trg = _transform_points(trg_pcd, rotation, translation)
+        dist_mat = torch.cdist(src_pcd, transformed_trg)
+        inliers = dist_mat < threshold
+
+        if inliers.shape != score_mask.shape:
+            raise ValueError("Score mask shape does not match distance matrix.")
+        inliers &= score_mask
+
+        rotated_normals = torch.matmul(trg_gt_normal, rotation.T.to(trg_gt_normal.dtype))
+        cos_sim = torch.matmul(src_gt_normal, rotated_normals.T)
         normal_mask = cos_sim < gt_normal_threshold
-        # print(f"inliers shape: {inliers.shape} | normal_mask shape: {normal_mask.shape}")
-        if inliers.shape == normal_mask.shape:
-            inliers = inliers & normal_mask
-        else:
-            raise ValueError("Something wrong in gt normal thresholding~")
-        
+        if normal_mask.shape != inliers.shape:
+            raise ValueError("Normal mask shape does not match inlier mask.")
+        inliers &= normal_mask
 
-        # Inlier Voting (inlier counting)
-        num_inliers = torch.count_nonzero(inliers.sum(dim=0))
- 
-        # Update best model
+        num_inliers = inliers.any(dim=0).sum().item()
         if num_inliers > max_inliers:
             max_inliers = num_inliers
             best_inliers = inliers
-            best_R = R
-            best_t = t
+            best_rotation = rotation
+            best_translation = translation
 
-    # Optimal estimation (re-estimation)
-    optimal_inliers, optimal_R, optimal_t = None, None, None
-    strong_distance_threshold = 0.01 #0.008
-    strong_normal_threshold = -0.7 # -0.9
+    if best_inliers is None:
+        raise RuntimeError("Failed to estimate a valid transform via RANSAC.")
+
+    strong_distance_threshold = 0.01
+    strong_normal_threshold = -0.7
+
     for _ in range(num_iters):
-        # inlier counting 1 : distance thresholding
-        trg_transformed = (best_R @ trg_pcd.T).T + best_t
-        optimal_dist_mat = cdist(src_pcd.cpu().numpy(), trg_transformed.cpu().numpy())
-        optimal_inliers = torch.from_numpy(optimal_dist_mat < strong_distance_threshold).to(dtype=best_inliers.dtype, device='cuda')
+        transformed_trg = _transform_points(trg_pcd, best_rotation, best_translation)
+        dist_mat = torch.cdist(src_pcd, transformed_trg)
+        refined_inliers = dist_mat < strong_distance_threshold
+        refined_inliers &= score_mask
 
-        # inlier counting 2 : score thresholding
-        optimal_score_mask = scores >= score_threshold
-        if optimal_inliers.shape == optimal_score_mask.shape:
-            optimal_inliers = optimal_inliers & optimal_score_mask
-        else:
-            raise ValueError("[optimal estimation] Somthing wrong in score thresholding")
-        
-        # inlier counting 3 : normal thresholding
-        best_R_ = best_R.to(dtype=trg_gt_normal.dtype)
-        trg_gt_normal_transformed = torch.matmul(trg_gt_normal, best_R_.T)
-        opt_cos_sim = torch.matmul(src_gt_normal, trg_gt_normal_transformed.T)
-        temp_optimal_normal_mask = opt_cos_sim < strong_normal_threshold
-        optimal_normal_mask = temp_optimal_normal_mask
-        
-        if optimal_inliers.shape == optimal_normal_mask.shape:
-            optimal_inliers = optimal_inliers & optimal_normal_mask
-        else:
-            raise ValueError("[optimal estimation] Somthing wrong in GT normal thresholding")
+        rotated_normals = torch.matmul(trg_gt_normal, best_rotation.T.to(trg_gt_normal.dtype))
+        cos_sim = torch.matmul(src_gt_normal, rotated_normals.T)
+        normal_mask = cos_sim < strong_normal_threshold
+        if normal_mask.shape != refined_inliers.shape:
+            raise ValueError("Normal mask shape does not match refined inlier mask.")
+        refined_inliers &= normal_mask
 
-        # many-to-one case : 복제하여 one-to-one으로
-        if matching_choice == 'many-to-many':
-            optimal_correspondences = torch.nonzero(optimal_inliers, as_tuple=False)
-        elif matching_choice == 'many-to-one':
-            trg_transformed = (best_R @ trg_pcd.squeeze(0).T).T + best_t
-            dist_mat = torch.from_numpy(cdist(src_pcd.squeeze(0).cpu().numpy(), trg_transformed.cpu().numpy())).to(dtype=src_pcd.dtype, device='cuda')
-            candidates = torch.stack([torch.nonzero(optimal_inliers, as_tuple=False)[:,0], torch.nonzero(optimal_inliers, as_tuple=False)[:,1], dist_mat[optimal_inliers]], dim=1)
-            final_selected = []
-            for col in torch.unique(candidates[:, 1]):
-                col_group = candidates[candidates[:, 1] == col]
-                # 같은 col에 대해 가장 작은 cost만 남김
-                best = col_group[torch.argmin(col_group[:, 2])][:2].to(dtype=torch.long)
-                final_selected.append(best)
-            optimal_correspondences = torch.stack(final_selected, dim=0)  # shape: (K, 3)
-        elif matching_choice == 'one-to-one':
-            trg_transformed = (best_R @ trg_pcd.squeeze(0).T).T + best_t
-            dist_mat = torch.from_numpy(cdist(src_pcd.squeeze(0).cpu().numpy(), trg_transformed.cpu().numpy())).to(dtype=src_pcd.dtype, device='cuda')
-            candidates = torch.stack([torch.nonzero(optimal_inliers, as_tuple=False)[:,0], torch.nonzero(optimal_inliers, as_tuple=False)[:,1], dist_mat[optimal_inliers]], dim=1)
-            
-            sorted_candidates = candidates[torch.argsort(candidates[:,2])]
-            used_src = set()
-            used_trg = set()
-            final_selected = []
-            for row in sorted_candidates:
-                src_, trg_, _ = row.tolist()
-                if  src_ not in used_src and trg_ not in used_trg:
-                    final_selected.append([src_, trg_])
-                    used_src.add(src_)
-                    used_trg.add(trg_)
-            optimal_correspondences = torch.tensor(final_selected, dtype=torch.long)
-        else:
-            raise ValueError("Unknown matching choice!")
-        
-        try:
-            src_opt_corr = optimal_correspondences[:, 0]
-        except IndexError as e:
-            print("⚠️ IndexError 발생:", e)
-            breakpoint()  # 디버깅 모드 진입
-        trg_opt_corr = optimal_correspondences[:, 1]
-        src_opt_pcd = src_pcd[src_opt_corr]
-        trg_opt_pcd = trg_pcd[trg_opt_corr]
-
-        # print(f"src_opt_pcd : {src_opt_pcd.shape} | trg_opt_pcd : {trg_opt_pcd.shape}")
-
-        if src_opt_pcd.shape[0] < 3 or src_opt_pcd.dim() == 1:
-            optimal_R = best_R
-            optimal_t = best_t
-        else:
-            optimal_R, optimal_t = estimate_rigid_transform(src_opt_pcd, trg_opt_pcd)
-
-        if torch.equal(best_inliers, optimal_inliers):
-            print("[OPTIMAL ESTIMATION] inlisers and optimal_inliers are the same, so break optimal estimation loop")
+        if torch.equal(best_inliers, refined_inliers):
             break
 
-        best_inliers = optimal_inliers
-        best_R, best_t = optimal_R, optimal_t
-        print("HI")
+        correspondences = _select_correspondences(refined_inliers, dist_mat, matching_choice)
+        if correspondences.size(0) < 3:
+            best_inliers = refined_inliers
+            break
 
-    return optimal_R, optimal_t, optimal_inliers
+        src_indices = correspondences[:, 0]
+        trg_indices = correspondences[:, 1]
+        src_points = src_pcd.index_select(0, src_indices)
+        trg_points = trg_pcd.index_select(0, trg_indices)
+
+        try:
+            best_rotation, best_translation = estimate_rigid_transform(src_points, trg_points)
+        except RuntimeError:
+            break
+
+        best_inliers = refined_inliers
+
+    return best_rotation, best_translation, best_inliers

@@ -1,21 +1,47 @@
 import argparse
-import torch
+import warnings
+from typing import Optional
 
-from data.dataset import GADataset
+import torch
 
 import pytorch_lightning as pl
 from pytorch_lightning import seed_everything
 
-import warnings
+from data.dataset import GADataset
+
 warnings.filterwarnings("ignore", message="divide by zero encountered in double_scalars", category=RuntimeWarning)
 
 # torch.backends.cuda.matmul.allow_tf32 = False
 # torch.backends.cudnn.allow_tf32 = False
 
+
+def resolve_device(device_arg: Optional[str] = None) -> torch.device:
+    """
+    Resolve the torch.device to use for evaluation.
+
+    Args:
+        device_arg: Optional string provided by the user (e.g. ``\"cpu\"`` or ``\"cuda:1\"``).
+
+    Returns:
+        A valid torch.device instance.
+    """
+    if device_arg:
+        device = torch.device(device_arg)
+        if device.type == "cuda" and not torch.cuda.is_available():
+            raise ValueError(f"Requested CUDA device {device_arg!r}, but CUDA is not available.")
+        return device
+
+    if torch.cuda.is_available():
+        return torch.device("cuda:0")
+    return torch.device("cpu")
+
+
 @torch.no_grad()
 def test(args):
     seed_everything(42, workers=True)
-    
+
+    device = resolve_device(getattr(args, "device", None))
+
     # Model initialization
     if args.model == 'CM_equiassem':
         from model.CM_equiassem import EquiAssem
@@ -55,20 +81,23 @@ def test(args):
                           use_opt_gram=args.use_opt_gram,
                           use_RANSAC=args.use_RANSAC,
                           )
-    
+
     else:
         raise NotImplementedError("Model not implemented")
 
-    model.to(torch.device('cuda:0'))
+    model.to(device)
     model.eval()
-    
+
     # Dataset initialization
     GADataset.initialize(args.datapath, args.data_category, args.sub_category, args.min_part, args.max_part, args.n_pts, args.scale, args.multiplicity)
     dataloader_val = GADataset.build_dataloader(args.batch_size, args.n_worker, 'val')
 
-    trainer = pl.Trainer(accelerator='gpu',
-                        devices=[0])
-    trainer.test(model, dataloader_val, ckpt_path=args.load)
+    accelerator = 'gpu' if device.type == 'cuda' else 'cpu'
+    devices = 1 if device.type != 'cuda' or device.index is None else [device.index]
+
+    trainer = pl.Trainer(accelerator=accelerator, devices=devices)
+    ckpt_path = args.load or None
+    trainer.test(model, dataloader_val, ckpt_path=ckpt_path)
     results = model.test_results
     results = {k[5:]: v.detach().cpu().numpy() for k, v in results.items()}
     print('Done testing...')
@@ -135,6 +164,7 @@ if __name__ == '__main__':
     parser.add_argument('--visualize', action='store_true')
     parser.add_argument('--viz_epoch', type=int, default=30, help='Epoch for visualization. This only works when visualize is True')
     parser.add_argument('--debug', action='store_true')
+    parser.add_argument('--device', type=str, default=None, help='Torch device specifier (e.g., "cpu", "cuda", "cuda:1"). Defaults to auto-selection.')
     
     args = parser.parse_args()
 
