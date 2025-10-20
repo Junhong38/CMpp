@@ -354,7 +354,7 @@ class EquiAssem(pl.LightningModule):
             
         elif self.scheduler_mode == 'onecycle':
             scheduler = optim.lr_scheduler.OneCycleLR(optimizer=optimizer, max_lr=self.lr, total_steps=self.total_steps,
-                                                      pct_start=0.05, anneal_strategy="cos", div_factor=100.0,
+                                                      pct_start=0.05, anneal_strategy="cos", div_factor=10.0,
                                                       final_div_factor=1000.0)
         else:
             scheduler = None
@@ -439,7 +439,7 @@ class EquiAssem(pl.LightningModule):
             for name, param in module.named_parameters():
                 if param.requires_grad and param.grad is not None:
                     total_grad_abs_sum += torch.abs(param.grad).sum().item()
-                    total_grad_count += param.numel()
+                    total_grad_count += param.shape.numel()
                     current_grad_abs_max = torch.abs(param.grad).max().item()
                     if current_grad_abs_max > total_grad_abs_max:
                         total_grad_abs_max = current_grad_abs_max
