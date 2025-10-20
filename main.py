@@ -259,6 +259,7 @@ if __name__ == '__main__':
     parser.add_argument('--only_one_norm', action='store_true', help='If True, use only one Normalization layer for the equivariant shape feature')
     parser.add_argument('--n_avn', type=int, default=5, help='Number of AVN layers for the equivariant shape feature')
 
+
     # Weights for losses
     parser.add_argument('--s_loss_weight', type=float, default=0.5, help='Weight for shape loss, in the future, we will change this into 1.0')
     parser.add_argument('--p_loss_weight', type=float, default=1.0, help='Weight for point loss, in the future, we will change this into 1.0')

@@ -734,7 +734,7 @@ class EquiAssem(pl.LightningModule):
             with torch.no_grad():
                 # fine_matching predict Rt to move points from src_points to ref_points
                 # Also, matching_scores_drop should be ref x src. However, in this model, we use src x trg(ref) style
-                # Intead of transpose huge matrix, we swap trg and src.
+                # So, we need to transpose matching_scores_drop to make it ref x src.
                 # matching_scores_drop: (1,N,M) -> transpose(1,2) (1,M,N)
                 trg_corr_pts, src_corr_pts, corr_scores, estimated_transform, pred_corr = self.fine_matching(trg_pcd, src_pcd, matching_scores_drop.transpose(1,2), k=128) # Param: ref_points, src_points, so it is reversed
 
