@@ -233,7 +233,7 @@ class CircleLoss(nn.Module):
         # so, |x|^2 - 2<x, y> + |y|^2 = 2 - 2<x, y> = 2 - 2cos(theta)
         # By, triangle formulat, 2 - 2 cos(theta) = 4 * sin(theta/2)^2
         # Hence, feats_dist = 2 * sin(theta/2)
-        feats_dist = torch.sqrt(torch.clamp(value, min=0.0))
+        feats_dist = torch.sqrt(torch.clamp(value, min=1e-8))
 
         # Calculate circle loss and feature matching recall (FMR)
         circle_loss, pos_neg_distribution = self.get_circle_loss(coords_dist, feats_dist)

@@ -43,3 +43,6 @@ rm -rf checkpoint/T1_S_AVNOON_NCD_NPM_NODOCC_OG_G100/ && CUDA_VISIBLE_DEVICES=7 
 
 
 
+
+rm -rf checkpoint/DEBUG/ && CUDA_VISIBLE_DEVICES=4 python main.py --model CMpp_equiassem --logpath DEBUG --scale small --multiplicity 1 --epochs 0 --visualize --additional_VNLinearLeakyReLU --only_one_norm
+

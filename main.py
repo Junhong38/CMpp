@@ -175,6 +175,7 @@ def main(args):
         callbacks=callbacks,
         check_val_every_n_epoch=1,
         log_every_n_steps=1,
+        # detect_anomaly=True, # If you want to NaN check, uncomment this
         # profiler='simple',
         fast_dev_run=False,
     )

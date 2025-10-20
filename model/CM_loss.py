@@ -105,6 +105,10 @@ class CircleLoss(nn.Module):
         src_feats = F.normalize(src_feats.squeeze(0), p=2, dim=-1)
         tgt_feats = F.normalize(tgt_feats.squeeze(0), p=2, dim=-1)
         feats_dist = (2.0 - 2.0 * torch.einsum('x d, y d -> x y', src_feats, tgt_feats)).pow(0.5)
+
+        if torch.isnan(feats_dist).any():
+            print("Feats dist is nan, clamping")
+            feats_dist = torch.clamp(2.0 - 2.0 * torch.einsum('x d, y d -> x y', src_feats, tgt_feats), min=1e-8).pow(0.5)
         
         # Calculate circle loss and feature matching recall (FMR)
         circle_loss, pos_neg_distribution = self.get_circle_loss(coords_dist, feats_dist)
