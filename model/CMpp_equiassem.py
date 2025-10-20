@@ -457,7 +457,6 @@ class EquiAssem(pl.LightningModule):
             self.log('train-grad/abs_max', total_grad_abs_max, prog_bar=True, logger=True, sync_dist=True, rank_zero_only=True, on_step=True, on_epoch=False, batch_size=1)
         else:
             assert False, "total_grad_count is 0"
-        
 
         if len(nan_param_dict) > 0:
             for key, value in nan_param_dict.items():
