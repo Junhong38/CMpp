@@ -73,6 +73,7 @@ def main(args):
 
                           visualize=args.visualize,
                           viz_epoch=args.viz_epoch,
+                          viz_arrow_num=args.viz_arrow_num,
                           ckp_dir=ckp_dir,
                           debug=args.debug,
 
@@ -281,7 +282,9 @@ if __name__ == '__main__':
     # Additional experiments
     parser.add_argument('--visualize', action='store_true')
     parser.add_argument('--viz_epoch', type=int, default=30, help='Epoch for visualization. This only works when visualize is True')
+    parser.add_argument('--viz_arrow_num', type=int, default=0, help='Number of arrows for visualization. This only works when visualize is True')
     parser.add_argument('--debug', action='store_true')
+
         
 
     # DDP argument

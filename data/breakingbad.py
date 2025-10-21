@@ -109,6 +109,23 @@ class DatasetBreakingBad(Dataset):
         return self.len_filepaths * self.multiplicity
 
 
+    def _convert_to_4by4_matrix(self, rotat, trans):
+        """Convert translation and rotation to 4x4 matrix
+
+        Args:
+            rotat (torch.Tensor): rotation matrix, (3, 3)
+            trans (torch.Tensor): translation vector, (3, )
+
+        Returns:
+            torch.Tensor: 4x4 matrix
+        """
+        # [R | T]
+        placeholder = torch.eye(4)
+        placeholder[:3, :3] = rotat
+        placeholder[:3, 3] = trans
+        return placeholder
+    
+
     def _translate(self, mesh, pcd):
         """Apply random translation to sampled points
 
@@ -126,6 +143,10 @@ class DatasetBreakingBad(Dataset):
         pcd_t, mesh_t = [], [m.copy() for m in mesh]
         for idx, trans in enumerate(gt_trans):
             pcd_t.append(pcd[idx] - trans)
+
+            # Convert translation vector to 4x4 matrix
+            # trans_4by4 = self._convert_to_4by4_matrix(torch.eye(3), trans)
+            # mesh_t[idx].apply_transform(trans_4by4)
             mesh_t[idx].vertices -= trans.numpy()
         return pcd_t, mesh_t, gt_trans
 
@@ -147,6 +168,10 @@ class DatasetBreakingBad(Dataset):
         pcd_t, mesh_t = [], [m.copy() for m in mesh]
         for idx, rotat in enumerate(gt_rotat):
             pcd_t.append(torch.einsum('x y, n y -> n x', rotat, pcd[idx]))
+
+            # Convert rotation matrix to 4x4 matrix
+            # rotat_4by4 = self._convert_to_4by4_matrix(rotat, torch.zeros(3))
+            # mesh_t[idx].apply_transform(rotat_4by4)
             mesh_t[idx].vertices = torch.einsum('x y, n y -> n x', rotat, torch.tensor(mesh_t[idx].vertices).float()).numpy()
         return pcd_t, mesh_t, gt_rotat
 
@@ -192,6 +217,39 @@ class DatasetBreakingBad(Dataset):
         else: 
             return permut_relative_transform
 
+    
+    def _extract_gt_normals(self, mesh, face, filepath):
+        """Extract ground-truth normals from meshes and point clouds
+
+        Args:
+            mesh (list): list of meshes
+            face (list): list of faces
+            filepath (str): filepath of the object, self.filepaths[idx]
+
+        Returns:
+            list: list of ground-truth normals
+        """
+        gt_normals = []
+        for i, mesh_ in enumerate(mesh):
+            # Check if the mesh is watertight
+            assert mesh_.is_watertight, f"[{filepath}] mesh_{i} is not watertight"
+
+            # trimesh documentation
+            # For face normals ensure that vectors are consistently pointed outwards, 
+            # and that self.faces is wound in the correct direction for all connected components.
+            mesh_.fix_normals()
+
+            if mesh_.volume < 0: # Normal is pointing inward
+                mesh_.invert()
+
+            assert mesh_.is_winding_consistent, f"[{filepath}] mesh_{i} is not winding consistent"
+            assert mesh_.volume > 0, f"[{filepath}] mesh_{i} has negative volume"
+
+            gt_normals.append(mesh_.face_normals[face[i]])
+
+        return gt_normals
+
+
 
     def __getitem__(self, idx):
         """
@@ -230,10 +288,9 @@ class DatasetBreakingBad(Dataset):
         gt_relative_trsfm = self._compute_relative_transform(gt_trans, gt_rotat)
 
 
-        # Get ground-truth normals
-        gt_normals = [ mesh_t[i].face_normals[face_i] for i, face_i in enumerate(face) ]
-
+        gt_normals = self._extract_gt_normals(mesh_t, face, self.filepaths[idx])
         
+
         batch = {
                 'eval_idx': idx, # integer e.g. 0
                 'filepath': self.filepaths[idx], # string e.g. 'everyday/BeerBottle/2927d6c8438f6e24fe6460d8d9bd16c6/fractured_37'

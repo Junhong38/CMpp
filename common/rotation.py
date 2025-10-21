@@ -224,6 +224,7 @@ def rotmat_to_rodrigues(R: torch.Tensor):
 
     return rodrigues
 
+# [TODO] Before using this function, check if the rotation is correct
 def rodrigues_to_rotmat(r):
     """
     r: Rodrigues vector, shape (..., 3)

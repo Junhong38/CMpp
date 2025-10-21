@@ -3,7 +3,7 @@ import torch
 import random
 import numpy as np
 import open3d as o3d
-
+from scipy.spatial.transform import Rotation as R
 
 global_colors_for_objs = {
     "red": [1.0, 0.0, 0.0],
@@ -26,7 +26,7 @@ global_colors_for_arrows = {
 
 
 
-def draw_frames(frame_ori, gt_normals, pcds_list, dir_path, filename, sphere_radius=0.001, cylinder_radius=0.001, cone_radius=0.002, arrow_scale=0.01, max_points=100):
+def draw_frames(frame_ori, gt_normals, pcds_list, dir_path, filename, sphere_radius=0.001, cylinder_radius=0.001, cone_radius=0.002, arrow_scale=0.01, max_viz_arrow_num=5000):
     """
     Draw frames and GT normals, and save as HTML.
 
@@ -40,7 +40,7 @@ def draw_frames(frame_ori, gt_normals, pcds_list, dir_path, filename, sphere_rad
         cylinder_radius (float): radius of cylinder
         cone_radius (float): radius of cone
         arrow_scale (float): scale of arrow
-        max_points (int): maximum number of points
+        max_viz_arrow_num (int): maximum number of points
     """
     assert len(frame_ori) == len(gt_normals) == len(pcds_list), f"must have same length, frame_ori: {len(frame_ori)}, gt_normals: {len(gt_normals)}, pcds_list: {len(pcds_list)}"
 
@@ -52,11 +52,17 @@ def draw_frames(frame_ori, gt_normals, pcds_list, dir_path, filename, sphere_rad
     sphere_meshes = make_spheres_from_pcd_tensors(pcds=pcds_list, sphere_radius=sphere_radius)
     
     # vector -> arrow meshes
-    arrow_meshes_gt_normals = make_arrows_from_vector_tensors(pcds=pcds_list, vectors=gt_normals, colors=['red'], cylinder_radius=cylinder_radius, cone_radius=cone_radius, arrow_scale=arrow_scale, max_points=max_points, reshape=False)
-    arrow_meshes_pred_frame_ori = make_arrows_from_vector_tensors(pcds=pcds_list, vectors=frame_ori, colors=['orange', 'green', 'purple'], cylinder_radius=cylinder_radius, cone_radius=cone_radius, arrow_scale=arrow_scale, max_points=max_points, reshape=True)
-    arrows = arrow_meshes_gt_normals + arrow_meshes_pred_frame_ori
+    arrow_meshes_gt_normals = make_arrows_from_vector_tensors(pcds=pcds_list, vectors=gt_normals, colors=['red'], cylinder_radius=cylinder_radius, cone_radius=cone_radius, arrow_scale=arrow_scale, max_viz_arrow_num=max_viz_arrow_num, reshape=False)
+    arrow_meshes_pred_frame_ori = make_arrows_from_vector_tensors(pcds=pcds_list, vectors=frame_ori, colors=['orange', 'green', 'purple'], cylinder_radius=cylinder_radius, cone_radius=cone_radius, arrow_scale=arrow_scale, max_viz_arrow_num=max_viz_arrow_num, reshape=True)
+    arrows = arrow_meshes_gt_normals #  arrow_meshes_pred_frame_ori
+
 
     # save meshes
+    # save each piece of mesh
+    for ith, (a_sphere, a_arrow) in enumerate(zip(sphere_meshes, arrows)):
+        save_meshes_as_ply(meshes=([a_sphere, a_arrow]), dir_path=dir_path, filename=f"{filename}_piece_{ith}")
+
+    # save all meshes
     save_meshes_as_ply(meshes=(sphere_meshes + arrows), dir_path=dir_path, filename=filename)
 
 
@@ -91,7 +97,7 @@ def make_spheres_from_pcd_tensors(pcds, sphere_radius=0.005):
 
 
 
-def make_arrows_from_vector_tensors(pcds, vectors, colors, cylinder_radius=0.002, cone_radius=0.005, arrow_scale=0.1, max_points=1000, reshape=False):
+def make_arrows_from_vector_tensors(pcds, vectors, colors, cylinder_radius=0.002, cone_radius=0.005, arrow_scale=0.1, max_viz_arrow_num=1000, reshape=False):
     """
     Args:
         pcds (list of torch.Tensor): each element is (N, 3)
@@ -100,7 +106,7 @@ def make_arrows_from_vector_tensors(pcds, vectors, colors, cylinder_radius=0.002
         cylinder_radius (float): radius of cylinder
         cone_radius (float): radius of cone
         arrow_scale (float): scale of arrow
-        max_points (int): maximum number of points
+        max_viz_arrow_num (int): maximum number of points
         reshape (bool): if True, input vectors will be (N*3, 3) -> (N, 3, 3)
     
     Returns:
@@ -108,6 +114,7 @@ def make_arrows_from_vector_tensors(pcds, vectors, colors, cylinder_radius=0.002
     """
     assert len(pcds) == len(vectors), f"pcds and vectors must have same length: {len(pcds)} vs {len(vectors)}"
 
+    
     arrow_geometries = []
 
     for pcd_tensor, vector_tensor in zip(pcds, vectors):
@@ -120,12 +127,15 @@ def make_arrows_from_vector_tensors(pcds, vectors, colors, cylinder_radius=0.002
         
         assert point_numpy.shape[0] == vec_numpy.shape[0], f"number of points must be same: {pcd_tensor.shape} vs {vector_tensor.shape}"
 
+        target_arrow_num = max_viz_arrow_num if max_viz_arrow_num > 0 else len(point_numpy)
+
         # Limit number of points for performance
-        if len(point_numpy) > max_points:
-            indices = np.linspace(0, len(point_numpy)-1, max_points, dtype=int)
+        if len(point_numpy) > target_arrow_num:
+            indices = np.linspace(0, len(point_numpy)-1, target_arrow_num, dtype=int)
             point_numpy = point_numpy[indices]
             vec_numpy = vec_numpy[indices]
         
+        combined_mesh = o3d.geometry.TriangleMesh()
         
         for ith, a_vec in enumerate(vec_numpy):
             # a_vec: (1,3) or (3,3)
@@ -137,7 +147,9 @@ def make_arrows_from_vector_tensors(pcds, vectors, colors, cylinder_radius=0.002
                 selected_color = colors[idx % len(colors)]
                 arrow.paint_uniform_color(global_colors_for_arrows[selected_color])
 
-                arrow_geometries.append(arrow)
+                combined_mesh += arrow
+        
+        arrow_geometries.append(combined_mesh)
 
     return arrow_geometries
 
@@ -155,6 +167,7 @@ def make_arrow_from_vector(point, vector, cylinder_radius=0.002, cone_radius=0.0
     Returns:
         o3d.geometry.TriangleMesh
     """
+    
     # Create arrow geometry
     arrow = o3d.geometry.TriangleMesh.create_arrow(
         cylinder_radius=cylinder_radius,
@@ -171,20 +184,18 @@ def make_arrow_from_vector(point, vector, cylinder_radius=0.002, cone_radius=0.0
     z_axis = np.array([0, 0, 1])  # Default arrow direction
     vector = vector / np.linalg.norm(vector)
     
-    # Calculate rotation matrix
-    v = np.cross(z_axis, vector)
-    # cross product -> ||u × v|| = ||u|| ||v|| sin(θ) = sin(θ) where u and v are unit vectors
-    # so, s is sin(θ) 
-    s = np.linalg.norm(v) # sin(θ)
-    c = np.dot(z_axis, vector) # cos(θ)
-    vx = np.array([[0, -v[2], v[1]], 
-                    [v[2], 0, -v[0]], 
-                    [-v[1], v[0], 0]])
 
-    # originally, rotation_matrix = I + sin(θ) * vx + (1 - cos(θ)) * vx^2
-    rotation_matrix = np.eye(3) + s * vx + (1 - c) * np.dot(vx, vx)
-    
+    # Use scipy's rotation for more reliable calculation
+    # Calculate rotation matrix using scipy
+    # Find rotation that aligns z_axis with vector
+    rotation = R.align_vectors([vector], [z_axis])[0]
+    rotation_matrix = rotation.as_matrix()
+
     arrow.rotate(rotation_matrix, center=point)
+
+
+    # Check if the rotation is correct
+    assert np.all(np.abs(vector - (rotation_matrix @ z_axis)) < 1e-6), f"vector: {vector}, arrow: {rotation_matrix @ z_axis}, difference: {vector - (rotation_matrix @ z_axis)}"
 
     return arrow
 
@@ -208,3 +219,5 @@ def save_meshes_as_ply(meshes, dir_path, filename):
     # Save as PLY format
     ply_filename = os.path.join(dir_path, f"{filename}.ply")
     o3d.io.write_triangle_mesh(ply_filename, combined_mesh)
+
+

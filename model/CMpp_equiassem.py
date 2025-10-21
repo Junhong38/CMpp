@@ -61,7 +61,7 @@ class EquiAssem(pl.LightningModule):
             backbone='vn_unet', attention='channel', 
             pos_margin=0.1, neg_margin=1.4, log_scale=24, detach_mode=False, same_opt=False, only_corr=False, max_points=0, no_balance=False, div_mode='none',
             s_loss_weight=1.0, p_loss_weight=1.0, o_loss_weight=1.0,
-            visualize=False, viz_epoch=30, ckp_dir=None, debug=False,
+            visualize=False, viz_epoch=30, viz_arrow_num=0, ckp_dir=None, debug=False,
 
             # Developing temporarily used experiments arguments
             additional_VNLinearLeakyReLU=False,
@@ -100,6 +100,7 @@ class EquiAssem(pl.LightningModule):
             o_loss_weight (float, optional): Weight for orientation loss. Defaults to 1.0.
             visualize (bool, optional): Whether to save visualization results. Defaults to False.
             viz_epoch (int, optional): Epoch for mesh visualization. Defaults to 30.
+            viz_arrow_num (int, optional): Number of arrows for visualization. Defaults to 0.
             ckp_dir (str, optional): Checkpoint directory. Defaults to None.
             debug (bool, optional): Whether to enable debug mode. Defaults to False.
 
@@ -145,6 +146,7 @@ class EquiAssem(pl.LightningModule):
         
         print(f"visualize: {visualize}")
         print(f"viz_epoch: {viz_epoch}")
+        print(f"viz_arrow_num: {viz_arrow_num}")
         print(f"ckp_dir: {ckp_dir}")
         print(f"debug: {debug}")
         print(f"additional_VNLinearLeakyReLU: {additional_VNLinearLeakyReLU}")
@@ -166,6 +168,7 @@ class EquiAssem(pl.LightningModule):
         self.attention = attention
         self.visualize = visualize
         self.viz_epoch = viz_epoch
+        self.viz_arrow_num = viz_arrow_num
         self.ckp_dir = ckp_dir
         self.debug = debug
 
@@ -865,16 +868,18 @@ class EquiAssem(pl.LightningModule):
             _, rot_gt_normals_in_gt = self._pairwise_mating(gt_src_normals, gt_trg_normals, grtr_relative_trsfm[0], zero_trans)
 
             # DRAW FRAME by using gt
-            draw_frames(frame_ori=rot_frame_ori_in_gt, gt_normals=rot_gt_normals_in_gt, pcds_list=pcds_grtr, dir_path=vis_folder, 
-                        filename=f'E{self.current_epoch}_{in_dict["eval_idx"].item()}_{in_dict["obj_class"][0]}_{round(eval_result["crd"].item(),3)}_in_gt')
+            draw_frames(frame_ori=rot_frame_ori_in_gt, gt_normals=rot_gt_normals_in_gt, pcds_list=pcds_grtr, dir_path=vis_folder,
+                        filename=f'E{self.current_epoch}_{in_dict["eval_idx"].item()}_{in_dict["obj_class"][0]}_{round(eval_result["crd"].item(),3)}_in_gt',
+                        max_viz_arrow_num=self.viz_arrow_num)
 
             # Rotate by using pred
             _, rot_frame_ori_in_pred = self._pairwise_mating(reshaped_output_src_ori, reshaped_output_trg_ori, pred_relative_trsfm[0], zero_trans)
             _, rot_gt_normals_in_pred = self._pairwise_mating(gt_src_normals, gt_trg_normals, pred_relative_trsfm[0], zero_trans)
 
             # DRAW FRAME by using prediction
-            draw_frames(frame_ori=rot_frame_ori_in_pred, gt_normals=rot_gt_normals_in_pred, pcds_list=pcds_pred, dir_path=vis_folder, 
-                        filename=f'E{self.current_epoch}_{in_dict["eval_idx"].item()}_{in_dict["obj_class"][0]}_{round(eval_result["crd"].item(),3)}_in_pred')
+            draw_frames(frame_ori=rot_frame_ori_in_pred, gt_normals=rot_gt_normals_in_pred, pcds_list=pcds_pred, dir_path=vis_folder,
+                        filename=f'E{self.current_epoch}_{in_dict["eval_idx"].item()}_{in_dict["obj_class"][0]}_{round(eval_result["crd"].item(),3)}_in_pred',
+                        max_viz_arrow_num=self.viz_arrow_num)
 
         return eval_result
     
