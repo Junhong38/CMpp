@@ -31,7 +31,7 @@ rm -rf checkpoint/T3_S_AVNOON_NCDSO_NPM_NODOCC_OG/ && CUDA_VISIBLE_DEVICES=6 pyt
 rm -rf checkpoint/T3_S_AVNOON_NCDNOBAL_NPM_NODOCC_OG/ && CUDA_VISIBLE_DEVICES=7 python main.py --model CMpp_equiassem --logpath T3_S_AVNOON_NCDNOBAL_NPM_NODOCC_OG --scale small --multiplicity 1 --epochs 0 --visualize --only_one_norm --detach_mode --no_balance --use_opt_gram --wandb --wandb_project CMpp
 rm -rf checkpoint/T3_S_AVNOON_NCDCORR_NPM_NODOCC_OG/ && CUDA_VISIBLE_DEVICES=0 python main.py --model CMpp_equiassem --logpath T3_S_AVNOON_NCDCORR_NPM_NODOCC_OG --scale small --multiplicity 1 --epochs 0 --visualize --only_one_norm --detach_mode --only_corr --use_opt_gram --wandb --wandb_project CMpp
 rm -rf checkpoint/T3_S_AVNOON_NCDCORRNOBAL_NPM_NODOCC_OG/ && CUDA_VISIBLE_DEVICES=1 python main.py --model CMpp_equiassem --logpath T3_S_AVNOON_NCDCORRNOBAL_NPM_NODOCC_OG --scale small --multiplicity 1 --epochs 0 --visualize --only_one_norm --detach_mode --only_corr --no_balance --use_opt_gram --wandb --wandb_project CMpp
-rm -rf checkpoint/T3_S_AVNOON_NCDCORRMAXNOBAL_NPM_NODOCC_OG/ && CUDA_VISIBLE_DEVICES=2 python main.py --model CMpp_equiassem --logpath T3_S_AVNOON_NCDCORRMAXNOBAL_NPM_NODOCC_OG --scale small --multiplicity 1 --epochs 0 --visualize --only_one_norm --detach_mode --only_corr --max_points --no_balance --use_opt_gram --wandb --wandb_project CMpp
+rm -rf checkpoint/T3_S_AVNOON_NCDCORRMAXNOBAL_NPM_NODOCC_OG/ && CUDA_VISIBLE_DEVICES=2 python main.py --model CMpp_equiassem --logpath T3_S_AVNOON_NCDCORRMAXNOBAL_NPM_NODOCC_OG --scale small --multiplicity 1 --epochs 0 --visualize --only_one_norm --detach_mode --only_corr --max_points 128 --no_balance --use_opt_gram --wandb --wandb_project CMpp
 
 
 
