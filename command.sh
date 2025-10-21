@@ -69,3 +69,6 @@ rm -rf checkpoint/T3_S_AVN4OON_NCD_NPM_NODOCC_OG/ && CUDA_VISIBLE_DEVICES=7 pyth
 
 
 
+
+
+rm -rf checkpoint/DEBUG_3/ && CUDA_VISIBLE_DEVICES=7 python main.py --model CMpp_equiassem --logpath DEBUG_3 --scale overfitting --multiplicity 1 --epochs 0 --visualize --only_one_norm --detach_mode --use_opt_gram --viz_epoch 100

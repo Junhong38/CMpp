@@ -109,23 +109,6 @@ class DatasetBreakingBad(Dataset):
         return self.len_filepaths * self.multiplicity
 
 
-    def _convert_to_4by4_matrix(self, rotat, trans):
-        """Convert translation and rotation to 4x4 matrix
-
-        Args:
-            rotat (torch.Tensor): rotation matrix, (3, 3)
-            trans (torch.Tensor): translation vector, (3, )
-
-        Returns:
-            torch.Tensor: 4x4 matrix
-        """
-        # [R | T]
-        placeholder = torch.eye(4)
-        placeholder[:3, :3] = rotat
-        placeholder[:3, 3] = trans
-        return placeholder
-    
-
     def _translate(self, mesh, pcd):
         """Apply random translation to sampled points
 
@@ -143,10 +126,6 @@ class DatasetBreakingBad(Dataset):
         pcd_t, mesh_t = [], [m.copy() for m in mesh]
         for idx, trans in enumerate(gt_trans):
             pcd_t.append(pcd[idx] - trans)
-
-            # Convert translation vector to 4x4 matrix
-            # trans_4by4 = self._convert_to_4by4_matrix(torch.eye(3), trans)
-            # mesh_t[idx].apply_transform(trans_4by4)
             mesh_t[idx].vertices -= trans.numpy()
         return pcd_t, mesh_t, gt_trans
 
@@ -168,10 +147,6 @@ class DatasetBreakingBad(Dataset):
         pcd_t, mesh_t = [], [m.copy() for m in mesh]
         for idx, rotat in enumerate(gt_rotat):
             pcd_t.append(torch.einsum('x y, n y -> n x', rotat, pcd[idx]))
-
-            # Convert rotation matrix to 4x4 matrix
-            # rotat_4by4 = self._convert_to_4by4_matrix(rotat, torch.zeros(3))
-            # mesh_t[idx].apply_transform(rotat_4by4)
             mesh_t[idx].vertices = torch.einsum('x y, n y -> n x', rotat, torch.tensor(mesh_t[idx].vertices).float()).numpy()
         return pcd_t, mesh_t, gt_rotat
 
