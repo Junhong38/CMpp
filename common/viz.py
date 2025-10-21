@@ -54,7 +54,7 @@ def draw_frames(frame_ori, gt_normals, pcds_list, dir_path, filename, sphere_rad
     # vector -> arrow meshes
     arrow_meshes_gt_normals = make_arrows_from_vector_tensors(pcds=pcds_list, vectors=gt_normals, colors=['red'], cylinder_radius=cylinder_radius, cone_radius=cone_radius, arrow_scale=arrow_scale, max_viz_arrow_num=max_viz_arrow_num, reshape=False)
     arrow_meshes_pred_frame_ori = make_arrows_from_vector_tensors(pcds=pcds_list, vectors=frame_ori, colors=['orange', 'green', 'purple'], cylinder_radius=cylinder_radius, cone_radius=cone_radius, arrow_scale=arrow_scale, max_viz_arrow_num=max_viz_arrow_num, reshape=True)
-    arrows = arrow_meshes_gt_normals #  arrow_meshes_pred_frame_ori
+    arrows = arrow_meshes_gt_normals + arrow_meshes_pred_frame_ori
 
 
     # save meshes
