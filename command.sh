@@ -67,4 +67,3 @@ rm -rf checkpoint/T3_S_AVN2OON_NCD_NPM_NODOCC_OG/ && CUDA_VISIBLE_DEVICES=3 pyth
 rm -rf checkpoint/T3_S_AVN4OON_NCD_NPM_NODOCC_OG/ && CUDA_VISIBLE_DEVICES=4 python main.py --model CMpp_equiassem --logpath T3_S_AVN4OON_NCD_NPM_NODOCC_OG --scale small --multiplicity 1 --epochs 0 --visualize --only_one_norm --detach_mode --use_opt_gram --n_avn 4 --wandb --wandb_project CMpp
 
 
-

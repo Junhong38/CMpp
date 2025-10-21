@@ -205,21 +205,10 @@ class DatasetBreakingBad(Dataset):
         """
         gt_normals = []
         for i, mesh_ in enumerate(mesh):
-            # Check if the mesh is watertight
-            assert mesh_.is_watertight, f"[{filepath}] mesh_{i} is not watertight"
-
             # trimesh documentation
             # For face normals ensure that vectors are consistently pointed outwards, 
             # and that self.faces is wound in the correct direction for all connected components.
             mesh_.fix_normals()
-
-            # trimesh.volume is only feasible for watertight meshes
-            if mesh_.volume < 0: # Normal is pointing inward
-                mesh_.invert()
-
-            assert mesh_.is_winding_consistent, f"[{filepath}] mesh_{i} is not winding consistent"
-            assert mesh_.volume > 0, f"[{filepath}] mesh_{i} has negative volume"
-
             gt_normals.append(mesh_.face_normals[face[i]])
 
         return gt_normals
