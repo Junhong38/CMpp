@@ -138,7 +138,6 @@ class CircleLoss(nn.Module):
             loss_row = loss_row / non_zero_total_row # N
             loss_col = loss_col / non_zero_total_col # N
 
-
         elif self.div_mode == 'static':
             loss_row = loss_row / loss_col.shape[0] # divide by M
             loss_col = loss_col / loss_row.shape[0] # divide by N
@@ -146,7 +145,8 @@ class CircleLoss(nn.Module):
         else:
             loss_row = loss_row / self.log_scale
             loss_col = loss_col / self.log_scale
-
+        
+        
         # Prevent NaN
         anchor_loss_row = loss_row[row_sel].mean() if row_sel.sum() > 0 else torch.tensor(0.).to(loss_row.device)
         anchor_loss_col = loss_col[col_sel].mean() if col_sel.sum() > 0 else torch.tensor(0.).to(loss_col.device)
@@ -228,11 +228,12 @@ class CircleLoss(nn.Module):
         dot = torch.clamp(dot, min=-1.0, max=1.0)
         value = 2.0 - 2.0 * dot
         assert (value >= 0).all(), f"Negative value detected in sqrt input: min={value.min()}"
-        # (|x| - |y|)^2 = |x|^2 - 2<x, y> + |y|^2 where <x, y> = |x||y|cos(theta)
+        # (x - y)^2 = |x|^2 - 2<x, y> + |y|^2 where <x, y> = |x||y|cos(theta)
         # Also, we already normalized the features, so |x| = |y| = 1
         # so, |x|^2 - 2<x, y> + |y|^2 = 2 - 2<x, y> = 2 - 2cos(theta)
-        # By, triangle formulat, 2 - 2 cos(theta) = 4 * sin(theta/2)^2
+        # By, triangle formula, 2 - 2 cos(theta) = 4 * sin(theta/2)^2
         # Hence, feats_dist = 2 * sin(theta/2)
+        # Finally, to prevent NaN during backward, use minimum value 1e-8
         feats_dist = torch.sqrt(torch.clamp(value, min=1e-8))
 
         # Calculate circle loss and feature matching recall (FMR)

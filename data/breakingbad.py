@@ -162,15 +162,14 @@ class DatasetBreakingBad(Dataset):
             dict: Dictionary containing relative transformations between all pairs
                 - Key format: "{src_idx}-{trg_idx}" (e.g., "0-1", "1-0")
                 - Value: tuple of (relative_rotation, relative_translation)
-                - relative_rotation: rotation matrix from src to trg coordinate system
-                - relative_translation: translation vector from src to trg coordinate system
+                    - relative_rotation: rotation matrix from src to trg coordinate system
+                    - relative_translation: translation vector from src to trg coordinate system
         """
         permut_relative_transform = {}
         for src_idx, trg_idx in itertools.permutations(range(len(trans)), 2):
             # Compute relative rotation and translation
             trans0, trans1 = trans[src_idx], trans[trg_idx]
             rotat0, rotat1 = rotat[src_idx], rotat[trg_idx]
-
 
             # From _pairwise_mating, we will move src_pcd to trg_pcd -> self._transform(src_pcd.squeeze(0), rotat, -trans, True)
             # src_pcd_t = R_0 * (src_pcd - T_0)
@@ -214,6 +213,7 @@ class DatasetBreakingBad(Dataset):
             # and that self.faces is wound in the correct direction for all connected components.
             mesh_.fix_normals()
 
+            # trimesh.volume is only feasible for watertight meshes
             if mesh_.volume < 0: # Normal is pointing inward
                 mesh_.invert()
 
@@ -305,7 +305,7 @@ class DatasetBreakingBad(Dataset):
             obj_paths = [join(base_path, x) for x in [self.frac0[idx], self.frac1[idx]]]
         else: 
             obj_paths = [join(base_path, x) for x in os.listdir(base_path)]
-
+        
 
         # Load meshes, obj files
         meshes = [trimesh.load_mesh(x) for x in obj_paths] # If two parts, then length is 2

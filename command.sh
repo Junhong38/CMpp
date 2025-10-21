@@ -1,5 +1,6 @@
 # FINAL EXPERIMENTS
 rm -rf checkpoint/T3_S_CMorigin/ && CUDA_VISIBLE_DEVICES=0 python main.py --model CM_equiassem --logpath T3_S_CMorigin --scale small --multiplicity 1 --epochs 0 --wandb --wandb_project CMpp
+rm -rf checkpoint/T3_S_CMoriginByCM/ && CUDA_VISIBLE_DEVICES=1 python main.py --model CMpp_equiassem --logpath T3_S_CMoriginByCM --scale small --multiplicity 1 --epochs 0 --visualize --scheduler_mode CM --wandb --wandb_project CMpp
 rm -rf checkpoint/T3_S_CM/ && CUDA_VISIBLE_DEVICES=1 python main.py --model CMpp_equiassem --logpath T3_S_CM --scale small --multiplicity 1 --epochs 0 --visualize --wandb --wandb_project CMpp
 rm -rf checkpoint/T3_S_AVN/ && (CUDA_VISIBLE_DEVICES=3 python main.py --model CMpp_equiassem --logpath T3_S_AVN --scale small --multiplicity 1 --epochs 0 --visualize --additional_VNLinearLeakyReLU --wandb --wandb_project CMpp &> log_T3_S_AVN.txt)
 rm -rf checkpoint/T3_S_AVNOON/ && (CUDA_VISIBLE_DEVICES=4 python main.py --model CMpp_equiassem --logpath T3_S_AVNOON --scale small --multiplicity 1 --epochs 0 --visualize --additional_VNLinearLeakyReLU --only_one_norm --wandb --wandb_project CMpp &> log_T3_S_AVNOON.txt)

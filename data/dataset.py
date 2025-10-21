@@ -14,11 +14,11 @@ class GADataset:
         cls.datapath = datapath
         cls.data_category = data_category
         cls.sub_category = sub_category
-        cls.n_pts = n_pts
-        cls.scale = scale
         cls.min_part = min_part
         cls.max_part = max_part
         cls.multiplicity = multiplicity
+        cls.n_pts = n_pts
+        cls.scale = scale
         
     @classmethod
     def build_dataloader(cls, batch_size, nworker, split, visualize=False):

@@ -57,6 +57,8 @@ def main(args):
 
                           backbone=args.backbone,
                           attention=args.attention,
+
+                          # Circle loss arguments
                           pos_margin=args.pos_margin,
                           neg_margin=args.neg_margin,
                           log_scale=args.log_scale,
@@ -73,7 +75,7 @@ def main(args):
 
                           visualize=args.visualize,
                           viz_epoch=args.viz_epoch,
-                          viz_arrow_num=args.viz_arrow_num,
+                          viz_max_arrow_num=args.viz_max_arrow_num,
                           ckp_dir=ckp_dir,
                           debug=args.debug,
 
@@ -230,7 +232,7 @@ if __name__ == '__main__':
     parser.add_argument('--epochs', type=int, default=0, help='Number of epochs. If 0, it is automatically set to 200 for everyday dataset and 300 for other datasets.')
     parser.add_argument('--n_worker', type=int, default=4, help='Number of workers. If you use multi-GPU training, the number of workers is multiplied by the number of GPUs.')
     parser.add_argument('--load', type=str, default='')
-    parser.add_argument('--scheduler_mode', type=str, default='cos', choices=['none', 'cos', 'onecycle'])
+    parser.add_argument('--scheduler_mode', type=str, default='cos', choices=['none', 'cos', 'onecycle', 'CM'])
     parser.add_argument('--gradient_clip_val', type=float, default=0.0, help='Gradient clip value')
 
 
@@ -271,18 +273,18 @@ if __name__ == '__main__':
     parser.add_argument('--pos_margin', type=float, default=0.1, help='Margin for positive samples in Circle loss computation')
     parser.add_argument('--neg_margin', type=float, default=1.4, help='Margin for negative samples in Circle loss computation')
     parser.add_argument('--log_scale', type=float, default=24, help='Log scale for Circle loss computation')
-    parser.add_argument('--detach_mode', action='store_true', help='')
-    parser.add_argument('--same_opt', action='store_true', help='')
-    parser.add_argument('--only_corr', action='store_true', help='')
+    parser.add_argument('--detach_mode', action='store_true', help='Detach gradient from value for deciding strength of circle loss')
+    parser.add_argument('--same_opt', action='store_true', help='Make margin value be same with optimal value')
+    parser.add_argument('--only_corr', action='store_true', help='Use only correspondence for Circle loss computation')
     parser.add_argument('--max_points', type=int, default=0, help='Maximum number of points for Circle loss computation')
-    parser.add_argument('--no_balance', action='store_true', help='')
+    parser.add_argument('--no_balance', action='store_true', help='Use positive and negative balance for Circle loss computation')
     parser.add_argument('--div_mode', type=str, default='none', choices=['none', 'dynamic', 'static'])
 
 
     # Additional experiments
     parser.add_argument('--visualize', action='store_true')
     parser.add_argument('--viz_epoch', type=int, default=30, help='Epoch for visualization. This only works when visualize is True')
-    parser.add_argument('--viz_arrow_num', type=int, default=0, help='Number of arrows for visualization. This only works when visualize is True')
+    parser.add_argument('--viz_max_arrow_num', type=int, default=0, help='Maximum number of arrows for visualization. This only works when visualize is True')
     parser.add_argument('--debug', action='store_true')
 
         

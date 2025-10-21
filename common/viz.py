@@ -26,7 +26,7 @@ global_colors_for_arrows = {
 
 
 
-def draw_frames(frame_ori, gt_normals, pcds_list, dir_path, filename, sphere_radius=0.001, cylinder_radius=0.001, cone_radius=0.002, arrow_scale=0.01, max_viz_arrow_num=5000):
+def draw_frames(frame_ori, gt_normals, pcds_list, dir_path, filename, sphere_radius=0.001, cylinder_radius=0.001, cone_radius=0.002, arrow_scale=0.01, viz_max_arrow_num=5000):
     """
     Draw frames and GT normals, and save as HTML.
 
@@ -40,7 +40,7 @@ def draw_frames(frame_ori, gt_normals, pcds_list, dir_path, filename, sphere_rad
         cylinder_radius (float): radius of cylinder
         cone_radius (float): radius of cone
         arrow_scale (float): scale of arrow
-        max_viz_arrow_num (int): maximum number of points
+        viz_max_arrow_num (int): maximum number of points
     """
     assert len(frame_ori) == len(gt_normals) == len(pcds_list), f"must have same length, frame_ori: {len(frame_ori)}, gt_normals: {len(gt_normals)}, pcds_list: {len(pcds_list)}"
 
@@ -52,8 +52,8 @@ def draw_frames(frame_ori, gt_normals, pcds_list, dir_path, filename, sphere_rad
     sphere_meshes = make_spheres_from_pcd_tensors(pcds=pcds_list, sphere_radius=sphere_radius)
     
     # vector -> arrow meshes
-    arrow_meshes_gt_normals = make_arrows_from_vector_tensors(pcds=pcds_list, vectors=gt_normals, colors=['red'], cylinder_radius=cylinder_radius, cone_radius=cone_radius, arrow_scale=arrow_scale, max_viz_arrow_num=max_viz_arrow_num, reshape=False)
-    arrow_meshes_pred_frame_ori = make_arrows_from_vector_tensors(pcds=pcds_list, vectors=frame_ori, colors=['orange', 'green', 'purple'], cylinder_radius=cylinder_radius, cone_radius=cone_radius, arrow_scale=arrow_scale, max_viz_arrow_num=max_viz_arrow_num, reshape=True)
+    arrow_meshes_gt_normals = make_arrows_from_vector_tensors(pcds=pcds_list, vectors=gt_normals, colors=['red'], cylinder_radius=cylinder_radius, cone_radius=cone_radius, arrow_scale=arrow_scale, viz_max_arrow_num=viz_max_arrow_num, reshape=False)
+    arrow_meshes_pred_frame_ori = make_arrows_from_vector_tensors(pcds=pcds_list, vectors=frame_ori, colors=['orange', 'green', 'purple'], cylinder_radius=cylinder_radius, cone_radius=cone_radius, arrow_scale=arrow_scale, viz_max_arrow_num=viz_max_arrow_num, reshape=True)
     arrows = arrow_meshes_gt_normals + arrow_meshes_pred_frame_ori
 
 
@@ -97,7 +97,7 @@ def make_spheres_from_pcd_tensors(pcds, sphere_radius=0.005):
 
 
 
-def make_arrows_from_vector_tensors(pcds, vectors, colors, cylinder_radius=0.002, cone_radius=0.005, arrow_scale=0.1, max_viz_arrow_num=1000, reshape=False):
+def make_arrows_from_vector_tensors(pcds, vectors, colors, cylinder_radius=0.002, cone_radius=0.005, arrow_scale=0.1, viz_max_arrow_num=1000, reshape=False):
     """
     Args:
         pcds (list of torch.Tensor): each element is (N, 3)
@@ -106,7 +106,7 @@ def make_arrows_from_vector_tensors(pcds, vectors, colors, cylinder_radius=0.002
         cylinder_radius (float): radius of cylinder
         cone_radius (float): radius of cone
         arrow_scale (float): scale of arrow
-        max_viz_arrow_num (int): maximum number of points
+        viz_max_arrow_num (int): maximum number of points
         reshape (bool): if True, input vectors will be (N*3, 3) -> (N, 3, 3)
     
     Returns:
@@ -127,7 +127,7 @@ def make_arrows_from_vector_tensors(pcds, vectors, colors, cylinder_radius=0.002
         
         assert point_numpy.shape[0] == vec_numpy.shape[0], f"number of points must be same: {pcd_tensor.shape} vs {vector_tensor.shape}"
 
-        target_arrow_num = max_viz_arrow_num if max_viz_arrow_num > 0 else len(point_numpy)
+        target_arrow_num = viz_max_arrow_num if viz_max_arrow_num > 0 else len(point_numpy)
 
         # Limit number of points for performance
         if len(point_numpy) > target_arrow_num:
@@ -140,7 +140,7 @@ def make_arrows_from_vector_tensors(pcds, vectors, colors, cylinder_radius=0.002
         for ith, a_vec in enumerate(vec_numpy):
             # a_vec: (1,3) or (3,3)
             for idx in range(a_vec.shape[0]):
-                # point_numpy[ith,:]: (N,3) -> (3,) / a_vec[idx,:]: (1,3) -> (3,) or (3,3) -> (3,)
+                # point_numpy[ith,:]: (N,3) -> (3,), a_vec[idx,:]: (1,3) -> (3,) or (3,3) -> (3,)
                 arrow = make_arrow_from_vector(point_numpy[ith,:], a_vec[idx,:], cylinder_radius=cylinder_radius, cone_radius=cone_radius, arrow_scale=arrow_scale)
 
                 # Color the arrow

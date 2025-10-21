@@ -61,7 +61,7 @@ class EquiAssem(pl.LightningModule):
             backbone='vn_unet', attention='channel', 
             pos_margin=0.1, neg_margin=1.4, log_scale=24, detach_mode=False, same_opt=False, only_corr=False, max_points=0, no_balance=False, div_mode='none',
             s_loss_weight=1.0, p_loss_weight=1.0, o_loss_weight=1.0,
-            visualize=False, viz_epoch=30, viz_arrow_num=0, ckp_dir=None, debug=False,
+            visualize=False, viz_epoch=30, viz_max_arrow_num=0, ckp_dir=None, debug=False,
 
             # Developing temporarily used experiments arguments
             additional_VNLinearLeakyReLU=False,
@@ -85,6 +85,7 @@ class EquiAssem(pl.LightningModule):
             backbone (str, optional): Backbone network architecture. Defaults to 'vn_unet'.
             attention (str, optional): Attention mechanism type ('channel' or 'none'). Defaults to 'channel'.
             
+            # Circle loss arguments
             pos_margin (float, optional): Margin for positive samples in loss computation. Defaults to 0.1.
             neg_margin (float, optional): Margin for negative samples in loss computation. Defaults to 1.4.
             log_scale (int, optional): Log scaling factor for loss computation. Defaults to 24.
@@ -100,7 +101,7 @@ class EquiAssem(pl.LightningModule):
             o_loss_weight (float, optional): Weight for orientation loss. Defaults to 1.0.
             visualize (bool, optional): Whether to save visualization results. Defaults to False.
             viz_epoch (int, optional): Epoch for mesh visualization. Defaults to 30.
-            viz_arrow_num (int, optional): Number of arrows for visualization. Defaults to 0.
+            viz_max_arrow_num (int, optional): Maximum number of arrows for visualization. Defaults to 0.
             ckp_dir (str, optional): Checkpoint directory. Defaults to None.
             debug (bool, optional): Whether to enable debug mode. Defaults to False.
 
@@ -146,9 +147,10 @@ class EquiAssem(pl.LightningModule):
         
         print(f"visualize: {visualize}")
         print(f"viz_epoch: {viz_epoch}")
-        print(f"viz_arrow_num: {viz_arrow_num}")
+        print(f"viz_max_arrow_num: {viz_max_arrow_num}")
         print(f"ckp_dir: {ckp_dir}")
         print(f"debug: {debug}")
+
         print(f"additional_VNLinearLeakyReLU: {additional_VNLinearLeakyReLU}")
         print(f"debugged_circle_loss: {debugged_circle_loss}")
         print(f"debugged_point_matching_loss: {debugged_point_matching_loss}")
@@ -168,7 +170,7 @@ class EquiAssem(pl.LightningModule):
         self.attention = attention
         self.visualize = visualize
         self.viz_epoch = viz_epoch
-        self.viz_arrow_num = viz_arrow_num
+        self.viz_max_arrow_num = viz_max_arrow_num
         self.ckp_dir = ckp_dir
         self.debug = debug
 
@@ -189,13 +191,12 @@ class EquiAssem(pl.LightningModule):
         if debugged_circle_loss:
             print("Using the debugged version of Circle Loss")
             from model.loss import CircleLoss
-            self.shape_loss = CircleLoss(pos_optimal=pos_margin, neg_optimal=neg_margin, log_scale=log_scale, detach_mode=detach_mode, 
+            self.shape_loss = CircleLoss(log_scale=log_scale, pos_optimal=pos_margin, neg_optimal=neg_margin, detach_mode=detach_mode, 
                                          same_opt=same_opt, only_corr=only_corr, max_points=max_points, no_balance=no_balance, div_mode=div_mode)
 
         else:
             from model.CM_loss import CircleLoss
-            self.shape_loss = CircleLoss(pos_optimal=pos_margin, neg_optimal=neg_margin, log_scale=log_scale)
-
+            self.shape_loss = CircleLoss(log_scale=log_scale, pos_optimal=pos_margin, neg_optimal=neg_margin)
 
         if debugged_point_matching_loss:
             print("Using the debugged version of Point Matching Loss")
@@ -213,10 +214,10 @@ class EquiAssem(pl.LightningModule):
             print("Deleting the occupancy loss")
         else:
             if debugged_circle_loss:
-                self.occupancy_loss = CircleLoss(pos_optimal=pos_margin, neg_optimal=neg_margin, log_scale=log_scale, detach_mode=detach_mode, 
+                self.occupancy_loss = CircleLoss(log_scale=log_scale, pos_optimal=pos_margin, neg_optimal=neg_margin, detach_mode=detach_mode, 
                                                  same_opt=same_opt, only_corr=only_corr, max_points=max_points, no_balance=no_balance, div_mode=div_mode)
             else:
-                self.occupancy_loss = CircleLoss(pos_optimal=pos_margin, neg_optimal=neg_margin, log_scale=log_scale)
+                self.occupancy_loss = CircleLoss(log_scale=log_scale, pos_optimal=pos_margin, neg_optimal=neg_margin)
 
 
         self.matching_loss = PointMatchingLoss()
@@ -271,12 +272,10 @@ class EquiAssem(pl.LightningModule):
             print("Using additional VNLinearLeakyReLU layers for the equivariant shape feature")
             # Layer for predicting frame vectors
             self.proj = VNLinear(2 * (self.feat_dim//3), 2)
-            # Layer for Equivariant feature
 
+            # Layer for Equivariant feature
             assert n_avn > 0, "n_avn must be greater than 0"
             self.equi_layer = nn.Sequential(*([VNLinearLeakyReLU(self.feat_dim//3, self.feat_dim//3, no_norm=False)] + [VNLinearLeakyReLU(self.feat_dim//3, self.feat_dim//3, no_norm=only_one_norm) for _ in range(n_avn-1)]))
-            # print(f"self.equi_layer: {self.equi_layer}")
-            # exit("stop")
 
         else:
             # Layer for predicting frame vectors
@@ -359,11 +358,16 @@ class EquiAssem(pl.LightningModule):
             scheduler = optim.lr_scheduler.OneCycleLR(optimizer=optimizer, max_lr=self.lr, total_steps=self.total_steps,
                                                       pct_start=0.05, anneal_strategy="cos", div_factor=10.0,
                                                       final_div_factor=1000.0)
+        
+        elif self.scheduler_mode == 'CM': # Just for debugging purpose
+            scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=16919, eta_min=1e-3) # 16919, 6671
+            return {'optimizer': optimizer, 'lr_scheduler': scheduler}
+        
         else:
             scheduler = None
         
+
         if scheduler is not None:
-        
             return {
                     'optimizer': optimizer, 
                     'lr_scheduler': {
@@ -379,14 +383,14 @@ class EquiAssem(pl.LightningModule):
     def training_step(self, in_dict, batch_idx):
         _, loss_dict = self.forward_pass(in_dict, mode='train')
         if torch.isnan(loss_dict['loss']):
-            assert False, "Loss is nan, Stop training"
+            assert False, "Loss is NaN, Stop training"
         return loss_dict['loss']
     
 
     def validation_step(self, in_dict, batch_idx):
         _, loss_dict = self.forward_pass(in_dict, mode='val')
         if torch.isnan(loss_dict['loss']):
-            assert False, "Loss is nan, Stop validation"
+            assert False, "Loss is NaN, Stop validation"
         self.validation_step_outputs.append(loss_dict)
         return loss_dict
 
@@ -442,15 +446,15 @@ class EquiAssem(pl.LightningModule):
             for name, param in module.named_parameters():
                 if param.requires_grad and param.grad is not None:
                     total_grad_abs_sum += torch.abs(param.grad).sum().item()
-                    total_grad_count += param.shape.numel()
+                    total_grad_count += param.grad.shape.numel()
                     current_grad_abs_max = torch.abs(param.grad).max().item()
                     if current_grad_abs_max > total_grad_abs_max:
                         total_grad_abs_max = current_grad_abs_max
                     
-                    # Check for Inf or Nan
+                    # Check whether gradient is inf or NaN
                     check_inf_or_nan(param.grad, f'{name}.grad')
                 
-                # Check for NaN parameters
+                # Check whether parameter is NaN
                 if torch.isnan(param).any():
                     nan_param_dict[name] = param
 
@@ -731,6 +735,7 @@ class EquiAssem(pl.LightningModule):
 
         out_dict.update(loss)
 
+
         # 9. Evaluation
         if mode in ['val', 'test']:
             # Point cloud registration
@@ -738,7 +743,7 @@ class EquiAssem(pl.LightningModule):
                 # fine_matching predict Rt to move points from src_points to ref_points
                 # Also, matching_scores_drop should be ref x src. However, in this model, we use src x trg(ref) style
                 # So, we need to transpose matching_scores_drop to make it ref x src.
-                # matching_scores_drop: (1,N,M) -> transpose(1,2) (1,M,N)
+                # matching_scores_drop: (1,N,M) -> transpose(1,2), so (1,M,N)
                 trg_corr_pts, src_corr_pts, corr_scores, estimated_transform, pred_corr = self.fine_matching(trg_pcd, src_pcd, matching_scores_drop.transpose(1,2), k=128) # Param: ref_points, src_points, so it is reversed
 
 
@@ -840,6 +845,7 @@ class EquiAssem(pl.LightningModule):
             # Only rank 0 should do visualization to avoid file I/O conflicts in DDP
             # Visualize for every self.viz_epoch
             # However, if it is the last epoch, then visualize
+            # Also, only visualize first batch
 
             vis_folder = os.path.join(self.ckp_dir, 'vis', mode)
             os.makedirs(vis_folder, exist_ok=True)
@@ -870,7 +876,7 @@ class EquiAssem(pl.LightningModule):
             # DRAW FRAME by using gt
             draw_frames(frame_ori=rot_frame_ori_in_gt, gt_normals=rot_gt_normals_in_gt, pcds_list=pcds_grtr, dir_path=vis_folder,
                         filename=f'E{self.current_epoch}_{in_dict["eval_idx"].item()}_{in_dict["obj_class"][0]}_{round(eval_result["crd"].item(),3)}_in_gt',
-                        max_viz_arrow_num=self.viz_arrow_num)
+                        viz_max_arrow_num=self.viz_max_arrow_num)
 
             # Rotate by using pred
             _, rot_frame_ori_in_pred = self._pairwise_mating(reshaped_output_src_ori, reshaped_output_trg_ori, pred_relative_trsfm[0], zero_trans)
@@ -879,7 +885,7 @@ class EquiAssem(pl.LightningModule):
             # DRAW FRAME by using prediction
             draw_frames(frame_ori=rot_frame_ori_in_pred, gt_normals=rot_gt_normals_in_pred, pcds_list=pcds_pred, dir_path=vis_folder,
                         filename=f'E{self.current_epoch}_{in_dict["eval_idx"].item()}_{in_dict["obj_class"][0]}_{round(eval_result["crd"].item(),3)}_in_pred',
-                        max_viz_arrow_num=self.viz_arrow_num)
+                        viz_max_arrow_num=self.viz_max_arrow_num)
 
         return eval_result
     
@@ -900,7 +906,6 @@ class EquiAssem(pl.LightningModule):
         """
         # Remind:
         # estimated_transform: trg_pcd = R * src_pcd + t
-        # estimated_rotat (rotat) = R.T, estimated_trans (trans) = - R.T @ t
 
         # When GT
         # GT Rt format already fits to R * src + t
