@@ -25,7 +25,7 @@ def main(args):
 
 
     # Dataset initialization
-    GADataset.initialize(args.datapath, args.data_category, args.sub_category, args.min_part, args.max_part, args.n_pts, args.scale, args.multiplicity)
+    GADataset.initialize(args.datapath, args.data_category, args.sub_category, args.min_part, args.max_part, args.n_pts, args.scale, args.multiplicity, CMorigin_mode=(args.model == 'CM_equiassem'))
     dataloader_trn = GADataset.build_dataloader(args.batch_size, args.n_worker, 'train')
     dataloader_val = GADataset.build_dataloader(args.batch_size, args.n_worker, 'val')
 

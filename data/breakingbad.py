@@ -13,7 +13,7 @@ from data.utils import to_o3d_pcd, get_correspondences
 
 
 class DatasetBreakingBad(Dataset):
-    def __init__(self, datapath, data_category, sub_category, min_part, max_part, n_pts, split, scale, multiplicity, visualize=False):
+    def __init__(self, datapath, data_category, sub_category, min_part, max_part, n_pts, split, scale, multiplicity, visualize=False, CMorigin_mode=False):
         """Dataset for Breaking Bad
 
         Args:
@@ -27,6 +27,7 @@ class DatasetBreakingBad(Dataset):
             scale (str): ['full', 'small', 'overfitting', 'tiny'], candidates are fixed by argparse
             multiplicity (int): multiplicity of the dataset
             visualize (bool, optional): whether to visualize the dataset. Defaults to False.
+            CMorigin_mode (bool, optional): whether to use CM origin mode. Defaults to False.
         """
         # Assertion
         assert split in ['train', 'val', 'test'], f"split must be in ['train', 'val', 'test'], but got {split}"
@@ -44,6 +45,7 @@ class DatasetBreakingBad(Dataset):
         
         self.multiplicity = multiplicity if split == 'train' else 1
         self.visualize = visualize
+        self.CMorigin_mode = CMorigin_mode
 
         self.mpa = True if self.max_part > 2 else False
         self.anchor_idx = 0
@@ -95,6 +97,7 @@ class DatasetBreakingBad(Dataset):
         print(f"overlap_radius: {self.overlap_radius}") 
         print(f"scale: {scale}")
         print(f"multiplicity: {self.multiplicity}")
+        print(f"CMorigin_mode: {self.CMorigin_mode}")
 
         print(f"n_frac: {self.n_frac}")
         print(f"filepaths: {self.filepaths}")
@@ -181,6 +184,9 @@ class DatasetBreakingBad(Dataset):
 
             relative_rotat = rotat1 @ rotat0.T
             relative_trans = (rotat1 @ (trans0 - trans1))
+
+            if self.CMorigin_mode:
+                relative_trans = - relative_trans
 
             # Save relative transformation between each pairs
             key = f"{src_idx}-{trg_idx}"
