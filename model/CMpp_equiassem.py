@@ -75,6 +75,7 @@ class EquiAssem(pl.LightningModule):
 
             only_one_norm=False,
             n_avn=5,
+            move_larger=False,
             ):
         """Equivariant Assembly Model for 3D Object Assembly
 
@@ -119,6 +120,7 @@ class EquiAssem(pl.LightningModule):
 
             only_one_norm (bool, optional): Whether to use only one Normalization layer for the equivariant shape feature. Defaults to False.
             n_avn (int, optional): Number of AVN layers for the equivariant shape feature. Defaults to 5.
+            move_larger (bool, optional): Whether to move the larger point cloud to the origin. Defaults to False.
         """
         super(EquiAssem, self).__init__()
 
@@ -162,6 +164,7 @@ class EquiAssem(pl.LightningModule):
 
         print(f"only_one_norm: {only_one_norm}")
         print(f"n_avn: {n_avn}")
+        print(f"move_larger: {move_larger}")
         print("------------------------------------------------------")
 
         self.lr = lr
@@ -182,7 +185,8 @@ class EquiAssem(pl.LightningModule):
         self.delete_occupancy_loss = delete_occupancy_loss
         self.use_opt_gram = use_opt_gram
 
-
+        self.move_larger = move_larger
+        
         # Output feature dimension of Feature Extractor
         self.feat_dim = 1024
 
@@ -820,6 +824,17 @@ class EquiAssem(pl.LightningModule):
         src_pcd, trg_pcd = [x.squeeze(0) for x in in_dict['pcd_t']] # (1, N, 3) -> (N, 3), (1, M, 3) -> (M, 3)
 
 
+        # Move larger point cloud
+        if self.move_larger and not self._is_trg_larger(src_pcd, trg_pcd):
+            # if source point cloud is bigger than target point cloud, we want to move trg to src
+            # However, our code is designed to move src to trg
+            # So, we need to inverse the relative transformation
+            # trg = R * src + t -> src = R^T * (trg - t) -> src = R^T * trg - R^T * t
+            src_pcd, trg_pcd = trg_pcd, src_pcd
+            pred_relative_trsfm = pred_relative_trsfm[0].T, -  pred_relative_trsfm[0].T @ pred_relative_trsfm[1]
+            grtr_relative_trsfm = grtr_relative_trsfm[0].T, -  grtr_relative_trsfm[0].T @ grtr_relative_trsfm[1]
+
+
         # Assemble using prediction, pseudo-gt, and ground-truth
         assm_pred, pcds_pred = self._pairwise_mating(src_pcd, trg_pcd, pred_relative_trsfm[0], pred_relative_trsfm[1])
         assm_grtr, pcds_grtr = self._pairwise_mating(src_pcd, trg_pcd, grtr_relative_trsfm[0], grtr_relative_trsfm[1])
@@ -890,6 +905,23 @@ class EquiAssem(pl.LightningModule):
         return eval_result
     
 
+    def _is_trg_larger(self, src_pcd, trg_pcd):
+        """
+        Args:
+            src_pcd (torch.Tensor): (N, 3)
+            trg_pcd (torch.Tensor): (M, 3)
+
+        Returns:
+            bool: True if source point cloud is smaller than target point cloud
+        """
+        # max - min -> volume
+        # Calculate max - min for all xyz coordinates, and product for all xyz.
+        # Finally, we can calculate bounding box volume
+        src_volume = (src_pcd.max(dim=0)[0] - src_pcd.min(dim=0)[0]).prod(dim=0)
+        trg_volume = (trg_pcd.max(dim=0)[0] - trg_pcd.min(dim=0)[0]).prod(dim=0)
+        return src_volume < trg_volume
+    
+    
     def _pairwise_mating(self, src_pcd, trg_pcd, rotat, trans):
         """
         move src to trg
