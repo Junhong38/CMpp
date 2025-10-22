@@ -75,7 +75,7 @@ class EquiAssem(pl.LightningModule):
 
             only_one_norm=False,
             n_avn=5,
-            move_larger=False,
+            move_smaller=False,
             ):
         """Equivariant Assembly Model for 3D Object Assembly
 
@@ -120,7 +120,7 @@ class EquiAssem(pl.LightningModule):
 
             only_one_norm (bool, optional): Whether to use only one Normalization layer for the equivariant shape feature. Defaults to False.
             n_avn (int, optional): Number of AVN layers for the equivariant shape feature. Defaults to 5.
-            move_larger (bool, optional): Whether to move the larger point cloud to the origin. Defaults to False.
+            move_smaller (bool, optional): Whether to always move the smaller point cloud to the origin. Defaults to False.
         """
         super(EquiAssem, self).__init__()
 
@@ -164,7 +164,7 @@ class EquiAssem(pl.LightningModule):
 
         print(f"only_one_norm: {only_one_norm}")
         print(f"n_avn: {n_avn}")
-        print(f"move_larger: {move_larger}")
+        print(f"move_smaller: {move_smaller}")
         print("------------------------------------------------------")
 
         self.lr = lr
@@ -185,7 +185,7 @@ class EquiAssem(pl.LightningModule):
         self.delete_occupancy_loss = delete_occupancy_loss
         self.use_opt_gram = use_opt_gram
 
-        self.move_larger = move_larger
+        self.move_smaller = move_smaller
         
         # Output feature dimension of Feature Extractor
         self.feat_dim = 1024
@@ -825,7 +825,7 @@ class EquiAssem(pl.LightningModule):
 
 
         # Move larger point cloud
-        if self.move_larger and not self._is_trg_larger(src_pcd, trg_pcd):
+        if self.move_smaller and not self._is_trg_larger(src_pcd, trg_pcd):
             # if source point cloud is bigger than target point cloud, we want to move trg to src
             # However, our code is designed to move src to trg
             # So, we need to inverse the relative transformation
