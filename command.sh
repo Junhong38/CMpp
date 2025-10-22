@@ -69,8 +69,9 @@ rm -rf checkpoint/T3_S_AVN4OON_NCD_NPM_NODOCC_OG/ && CUDA_VISIBLE_DEVICES=4 pyth
 
 
 # Move larger experiments
-rm -rf checkpoint/T3_S_CMoriginByCMpp_ML/ && CUDA_VISIBLE_DEVICES=6 python main.py --model CMpp_equiassem --logpath T3_S_CMoriginByCMpp_ML --scale small --multiplicity 1 --epochs 0 --visualize --scheduler_mode CM --move_larger --wandb --wandb_project CMpp
+rm -rf checkpoint/T3_S_CMoriginByCMpp_MS/ && CUDA_VISIBLE_DEVICES=6 python main.py --model CMpp_equiassem --logpath T3_S_CMoriginByCMpp_MS --scale small --multiplicity 1 --epochs 0 --visualize --scheduler_mode CM --move_smaller --wandb --wandb_project CMpp
 rm -rf checkpoint/T3_S_CMorigin/ && CUDA_VISIBLE_DEVICES=7 python main.py --model CM_equiassem --logpath T3_S_CMorigin --scale small --multiplicity 1 --epochs 0 --wandb --wandb_project CMpp
+rm -rf checkpoint/T3_S_AVNOON_NCD_NPM_NODOCC_OG_MS/ && CUDA_VISIBLE_DEVICES=2 python main.py --model CMpp_equiassem --logpath T3_S_AVNOON_NCD_NPM_NODOCC_OG_MS --scale small --multiplicity 1 --epochs 0 --visualize --only_one_norm --detach_mode --use_opt_gram --move_smaller --wandb --wandb_project CMpp
 
 
 
