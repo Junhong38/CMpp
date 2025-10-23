@@ -72,6 +72,8 @@ class EquiAssem(pl.LightningModule):
             new_orientation_module=False,
             delete_occupancy_loss=False,
             use_opt_gram=False,
+            use_RANSAC=False,
+            score_dependent_RANSAC=False,
 
             only_one_norm=False,
             n_avn=5,
@@ -121,6 +123,10 @@ class EquiAssem(pl.LightningModule):
             only_one_norm (bool, optional): Whether to use only one Normalization layer for the equivariant shape feature. Defaults to False.
             n_avn (int, optional): Number of AVN layers for the equivariant shape feature. Defaults to 5.
             move_smaller (bool, optional): Whether to always move the smaller point cloud to the origin. Defaults to False.
+
+            # RANSAC arguments
+            use_RANSAC (bool, optional): Whether to use RANSAC for transformation estimation. Defaults to False.
+            score_dependent_RANSAC (bool, optional): Whether to use Score Dependent RANSAC. Defaults to False.
         """
         super(EquiAssem, self).__init__()
 
@@ -165,6 +171,11 @@ class EquiAssem(pl.LightningModule):
         print(f"only_one_norm: {only_one_norm}")
         print(f"n_avn: {n_avn}")
         print(f"move_smaller: {move_smaller}")
+
+
+        # RANSAC arguments
+        print(f"use_RANSAC: {use_RANSAC}")
+        print(f"score_dependent_RANSAC: {score_dependent_RANSAC}")
         print("------------------------------------------------------")
 
         self.lr = lr
@@ -184,6 +195,8 @@ class EquiAssem(pl.LightningModule):
         self.new_orientation_module = new_orientation_module
         self.delete_occupancy_loss = delete_occupancy_loss
         self.use_opt_gram = use_opt_gram
+        self.use_RANSAC = use_RANSAC
+        self.score_dependent_RANSAC = score_dependent_RANSAC
 
         self.move_smaller = move_smaller
         
@@ -333,19 +346,19 @@ class EquiAssem(pl.LightningModule):
         # Optimal Transport
         self.optimal_transport = LearnableLogOptimalTransport(num_iterations=100)
 
-
-        # LGR
-        self.fine_matching = LocalGlobalRegistration(
-            k=3,
-            acceptance_radius=0.1,
-            mutual=True,
-            confidence_threshold=0.05,
-            use_dustbin=False,
-            use_global_score=False,
-            correspondence_threshold=3,
-            correspondence_limit=None,
-            num_refinement_steps=5,
-        )
+        if not self.use_RANSAC: # If not using RANSAC, use LGR for fine matching
+            # LGR
+            self.fine_matching = LocalGlobalRegistration(
+                k=3,
+                acceptance_radius=0.1,
+                mutual=True,
+                confidence_threshold=0.05,
+                use_dustbin=False,
+                use_global_score=False,
+                correspondence_threshold=3,
+                correspondence_limit=None,
+                num_refinement_steps=5,
+            )
 
     
     def configure_optimizers(self):
@@ -566,7 +579,6 @@ class EquiAssem(pl.LightningModule):
         """
         out_dict, loss = {}, {}
 
-
         # 0. Get Point Clouds and Ground Truth Correspondence
         src_pcd_raw = in_dict['pcd'][0].squeeze(0) # (N, 3)
         trg_pcd_raw = in_dict['pcd'][1].squeeze(0) # (M, 3)
@@ -744,12 +756,58 @@ class EquiAssem(pl.LightningModule):
         if mode in ['val', 'test']:
             # Point cloud registration
             with torch.no_grad():
-                # fine_matching predict Rt to move points from src_points to ref_points
-                # Also, matching_scores_drop should be ref x src. However, in this model, we use src x trg(ref) style
-                # So, we need to transpose matching_scores_drop to make it ref x src.
-                # matching_scores_drop: (1,N,M) -> transpose(1,2), so (1,M,N)
-                trg_corr_pts, src_corr_pts, corr_scores, estimated_transform, pred_corr = self.fine_matching(trg_pcd, src_pcd, matching_scores_drop.transpose(1,2), k=128) # Param: ref_points, src_points, so it is reversed
+                if self.use_RANSAC:
+                    from model.match_selection import soft_topk_matching
+                    from model.match_selection import topk_matching
+                    from model.match_selection import mutual_topk_matching
+                    matching_scores_before_Sinkhorn = shape_matching_scores.squeeze(0) # (N, M)
+                    
+                    # Initial matches for RANSAC
+                    # initial_matches = soft_topk_matching(matching_scores_before_Sinkhorn, topk=3) # (K, 2)
+                    initial_matches = mutual_topk_matching(matching_scores_before_Sinkhorn) # (K, 2)
+                    # topk = matching_scores_before_Sinkhorn.shape[0] + matching_scores_before_Sinkhorn.shape[1]
+                    # breakpoint()
+                    # initial_matches = topk_matching(matching_scores_before_Sinkhorn, k=128) # (K, 2)
+                    
+                    src_idx, trg_idx = initial_matches[:, 0], initial_matches[:, 1] # (K, ), (K, )
 
+                    # Score thresholding for initial matches
+                    score_threshold = 0.0
+                    score_mask = matching_scores_before_Sinkhorn[src_idx, trg_idx] >= score_threshold # (K, )
+                    src_idx, trg_idx = src_idx[score_mask], trg_idx[score_mask] # (K_filtered, ), (K_filtered, )
+
+                    # Prepare to run RANSAC
+                    src_corr_pts = src_pcd[:, src_idx].squeeze(0) # (K_filtered, 3)
+                    trg_corr_pts = trg_pcd[:, trg_idx].squeeze(0) # (K_filtered, 3)
+
+                    import math
+                    # num_iters = max(math.ceil(initial_matches.shape[0] * 2 / 3), 100) 
+                    N = initial_matches.shape[0]
+                    k = 3  # minimum number of points to estimate the model
+                    delta = 0.05  # probability of choosing at least one outlier-free subset
+                    num_iters = max(math.ceil((N / k) * math.log(N / delta)), 100)
+
+                    if self.score_dependent_RANSAC:
+                        from model.score_dependent_ransac import ransac_rigid
+                    else:
+                        from model.ransac import ransac_rigid
+
+                    inl_R, inl_t, inliers = ransac_rigid(src_corr_pts, trg_corr_pts, 
+                                             src_pcd.squeeze(0), trg_pcd.squeeze(0),
+                                             in_dict['gt_normals'][0].squeeze(0), in_dict['gt_normals'][1].squeeze(0),
+                                             scores = matching_scores_before_Sinkhorn,
+                                             score_threshold=score_threshold,
+                                             num_iters = num_iters)
+                    estimated_transform = torch.eye(4, device=inl_R.device, dtype=inl_R.dtype)
+                    estimated_transform[:3, :3] = inl_R
+                    estimated_transform[:3, 3] = inl_t
+                
+                else:
+                    # fine_matching predict Rt to move points from src_points to ref_points
+                    # Also, matching_scores_drop should be ref x src. However, in this model, we use src x trg(ref) style
+                    # So, we need to transpose matching_scores_drop to make it ref x src.
+                    # matching_scores_drop: (1,N,M) -> transpose(1,2), so (1,M,N)
+                    trg_corr_pts, src_corr_pts, corr_scores, estimated_transform, pred_corr = self.fine_matching(trg_pcd, src_pcd, matching_scores_drop.transpose(1,2), k=128) # Param: ref_points, src_points, so it is reversed
 
             # estimated_transform: target_point = R * source_point + t
             out_dict['estimated_rotat'] = estimated_transform[:3, :3] # R
