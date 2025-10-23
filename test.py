@@ -54,7 +54,7 @@ def test(args):
                           # Circle loss arguments
                           pos_margin=0, # We don't need to use circle loss for testing  
                           neg_margin=0, # We don't need to use circle loss for testing
-                          log_scale=0, # We don't need to use circle loss for testing
+                          log_scale=1, # We don't need to use circle loss for testing
                           detach_mode=False, # We don't need to use circle loss for testing
                           same_opt=False, # We don't need to use circle loss for testing
                           only_corr=False, # We don't need to use circle loss for testing
@@ -87,7 +87,8 @@ def test(args):
                           move_smaller=args.move_smaller,
                           
                           use_RANSAC=args.use_RANSAC,
-                          score_dependent_RANSAC=args.score_dependent_RANSAC)
+                          RANSAC_match_option=args.RANSAC_match_option,
+                          RANSAC_type=args.RANSAC_type)
     else:
         raise NotImplementedError("Model not implemented")
 
@@ -159,7 +160,8 @@ if __name__ == '__main__':
 
     # RANSAC arguments
     parser.add_argument('--use_RANSAC', action='store_true', help='If True, use RANSAC for transformation estimation')
-    parser.add_argument('--score_dependent_RANSAC', action='store_true', help='If True, use Score Dependent RANSAC')
+    parser.add_argument('--RANSAC_match_option', type=str, default='topk', choices=['topk', 'mutual_topk', 'soft_topk'])
+    parser.add_argument('--RANSAC_type', type=str, default='default', choices=['default', 'score_dependent'])
 
 
     # Additional experiments

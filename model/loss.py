@@ -127,6 +127,7 @@ class CircleLoss(nn.Module):
         loss_row = F.softplus(lse_pos_row + lse_neg_row) # (N, )
         loss_col = F.softplus(lse_pos_col + lse_neg_col) # (M, )
 
+
         if self.div_mode == 'dynamic':
             non_zero_pos_weight = (pos_weight > 0)
             non_zero_neg_weight = (neg_weight > 0)
@@ -156,6 +157,7 @@ class CircleLoss(nn.Module):
             circle_loss = (anchor_loss_row + anchor_loss_col)
         else:
             circle_loss = (anchor_loss_row + anchor_loss_col) / 2
+        
 
         return circle_loss, pos_neg_distribution
 
@@ -206,8 +208,7 @@ class CircleLoss(nn.Module):
             tgt_pcd_selected = tgt_pcd
             src_feats_selected = src_feats
             tgt_feats_selected = tgt_feats
-
-
+    
         
         # Get coordinate distance
         coords_dist = torch.sqrt(torch.clamp(torch.sum((src_pcd_selected[:, None, :] - tgt_pcd_selected[None, :, :]) ** 2, dim=-1), min=0.0))

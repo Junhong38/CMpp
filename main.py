@@ -91,7 +91,12 @@ def main(args):
                           
                           only_one_norm=args.only_one_norm,
                           n_avn=args.n_avn,
-                          move_smaller=args.move_smaller)
+                          move_smaller=args.move_smaller,
+                          
+                          use_RANSAC=False, # RANSAC is not used for training
+                          RANSAC_match_option='topk', # RANSAC is not used for training
+                          RANSAC_type='default' # RANSAC is not used for training
+                          )
     else:
         raise NotImplementedError("Model not implemented")
 
@@ -361,3 +366,9 @@ if __name__ == '__main__':
     main(args)
 
 
+
+"""
+DEFAULT
+rm -rf checkpoint/T3_S_AVNOON_NCD_NPM_NODOCC_OG/ && CUDA_VISIBLE_DEVICES=2 python main.py --model CMpp_equiassem --logpath T3_S_AVNOON_NCD_NPM_NODOCC_OG --scale small --multiplicity 1 --epochs 0 --visualize --only_one_norm --detach_mode --use_opt_gram --wandb --wandb_project CMpp
+rm -rf checkpoint/DTEST/ && CUDA_VISIBLE_DEVICES=2 python test.py --model CMpp_equiassem --logpath DTEST --scale small --multiplicity 1 --visualize --only_one_norm --use_opt_gram --use_RANSAC --load checkpoint/T3_S_AVNOON_NCD_NPM_NODOCC_OG/models/last.ckpt
+"""

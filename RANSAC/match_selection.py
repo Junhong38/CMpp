@@ -2,9 +2,20 @@ import torch
 from scipy.optimize import linear_sum_assignment
 
 def topk_matching(corr_matrix, k=128):
+    """
+    topk matching
+    select topk from the matrix
+
+    Args:
+        corr_matrix (torch.Tensor): (N, M) correlation matrix
+        k (int, optional): number of topk to select. Defaults to 128.
+
+    Returns:
+        torch.Tensor: (topk, 2) index pairs
+    """
     N, M = corr_matrix.shape
-    corr_matrix_drop_1d = corr_matrix.reshape(-1)
-    topk_scores, topk_indices = torch.topk(corr_matrix_drop_1d, k=k)
+    corr_matrix_drop_1d = corr_matrix.reshape(-1) # (N*M, )
+    topk_scores, topk_indices = torch.topk(corr_matrix_drop_1d, k=k) # (topk, )
 
     src_idx = topk_indices // M
     trg_idx = topk_indices % M
@@ -83,40 +94,68 @@ def bijective_matching(corr_matrix):
     row_ind, col_ind = linear_sum_assignment(cost)
     return torch.tensor(list(zip(row_ind, col_ind)), device=corr_matrix.device)
 
+
+
 def mutual_topk_matching(corr_matrix, topk=1):
     """
-    Reciprocal test: for each source, choose the top-1 target (argmax over dim=1)
-    Only keep (i, j) where:
-    j == argmax(corr_matrix[i]) and
-    i == argmax(corr_matrix[:, j])
-    Returns: (≤ N, 2) index pairs
+    Mutual topk matching
+    select topk from row and column, and select only interected matches
+
+    Args:
+        corr_matrix (torch.Tensor): (N, M) correlation matrix
+        topk (int, optional): number of topk to select. Defaults to 1.
+
+    Returns:
+        torch.Tensor: (N', 2) index pairs, where N' <= topk * min(N, M)
     """
-    # src_top1 = torch.argmax(corr_matrix, dim=1) # (N,)
-    # tgt_top1 = torch.argmax(corr_matrix, dim=0) # (M,)
+
+
+    # select topk from row, so this means that we select topk closet trg features from src features
     trg_top_values, trg_indices = torch.topk(corr_matrix, k=topk, dim=1) # (N, topk)
+    
+    # select topk from column, so this means that we select topk closet src features from trg features
     src_top_values, src_indices = torch.topk(corr_matrix, k=topk, dim=0) # (topk, M)
-    src_indices = src_indices.T
+    src_indices = src_indices.T # (M, topk)
 
     matches = []
-    for i, top_j in enumerate(trg_indices):
-        for j in top_j:
-            if i in src_indices[j]:
+    for i, top_j in enumerate(trg_indices): # (N, topk), from ith src feature, topk closet trg features are selected (top_j)
+        for j in top_j: # (topk, ) this top_j includes trg indices
+            if i in src_indices[j]: # (M, topk), src_indices[j]: means the topk closet src features from the j-th trg feature
+                # ith src -> jth trg, jth trg -> ith src
+                # So, mutual topk matching is satisfied
                 matches.append((i, j.item()))
     return torch.tensor(matches, device=corr_matrix.device)
 
+
 def soft_topk_matching(corr_matrix, topk=1):
+    """
+    soft topk matching
+    select topk from row and column, and union selected matches
+
+    Args:
+        corr_matrix (torch.Tensor): (N, M) correlation matrix
+        topk (int, optional): number of topk to select. Defaults to 1.
+
+    Returns:
+        torch.Tensor: (N', 2) index pairs, where N' <= topk * (N + M)
+    """
+    # From src, select topk closet trg features
     trg_top_values, trg_indices = torch.topk(corr_matrix, k=topk, dim=1) # (N, topk)
     trg_indices = trg_indices.T # (topk, N)
     src_idx = torch.arange(corr_matrix.size(0)).repeat(topk, 1).to(corr_matrix.device) # (topk, N)
     matches_t2s = torch.stack([src_idx, trg_indices], dim=2) # (topk, N, 2)
     matches_t2s = matches_t2s.permute(1, 0, 2).reshape(-1, 2) # (topk*N, 2)
 
+    # From trg, select topk closet src features
     src_top_values, src_indices = torch.topk(corr_matrix, k=topk, dim=0) # (topk, M)
     trg_idx = torch.arange(corr_matrix.size(1)).repeat(topk, 1).to(corr_matrix.device)
     matches_s2t = torch.stack([src_indices, trg_idx], dim=2) # (topk, M, 2)
     matches_s2t = matches_s2t.permute(1, 0, 2).reshape(-1, 2) # (topk * M, 2) 
 
+    # Merge selected matches from src and trg
     matches = torch.cat([matches_t2s, matches_s2t], dim=0) # (topk * (M+N), 2)
+
+    # Remove duplicate matches to make union operation
     matches = torch.unique(matches, dim=0)
 
     return matches

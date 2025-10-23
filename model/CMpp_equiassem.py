@@ -18,11 +18,14 @@ from model.loss import PointMatchingLoss, OrientationLoss
 from model.learnable_sinkhorn import LearnableLogOptimalTransport
 from model.local_global_registration import LocalGlobalRegistration
 
+from RANSAC.ransac import _RANSAC
+
 from common.rotation import ortho2rotation
 from common.utils import save_pc, check_inf_or_nan
 from common.viz import draw_frames
 
 from pytorch3d.ops import iterative_closest_point
+
 
 
 class ChannelAttentionModule(nn.Module):
@@ -72,12 +75,17 @@ class EquiAssem(pl.LightningModule):
             new_orientation_module=False,
             delete_occupancy_loss=False,
             use_opt_gram=False,
-            use_RANSAC=False,
-            score_dependent_RANSAC=False,
+
 
             only_one_norm=False,
             n_avn=5,
             move_smaller=False,
+            
+            
+            # RANSAC arguments
+            use_RANSAC=False,
+            RANSAC_match_option='topk',
+            RANSAC_type='default',
             ):
         """Equivariant Assembly Model for 3D Object Assembly
 
@@ -126,7 +134,8 @@ class EquiAssem(pl.LightningModule):
 
             # RANSAC arguments
             use_RANSAC (bool, optional): Whether to use RANSAC for transformation estimation. Defaults to False.
-            score_dependent_RANSAC (bool, optional): Whether to use Score Dependent RANSAC. Defaults to False.
+            RANSAC_match_option (str, optional): 'topk' or 'mutual_topk' or 'soft_topk'. Defaults to 'topk'.
+            RANSAC_type (str, optional): 'default' or 'score_dependent'. Defaults to 'default'.
         """
         super(EquiAssem, self).__init__()
 
@@ -175,7 +184,8 @@ class EquiAssem(pl.LightningModule):
 
         # RANSAC arguments
         print(f"use_RANSAC: {use_RANSAC}")
-        print(f"score_dependent_RANSAC: {score_dependent_RANSAC}")
+        print(f"RANSAC_match_option: {RANSAC_match_option}")
+        print(f"RANSAC_type: {RANSAC_type}")
         print("------------------------------------------------------")
 
         self.lr = lr
@@ -195,10 +205,13 @@ class EquiAssem(pl.LightningModule):
         self.new_orientation_module = new_orientation_module
         self.delete_occupancy_loss = delete_occupancy_loss
         self.use_opt_gram = use_opt_gram
-        self.use_RANSAC = use_RANSAC
-        self.score_dependent_RANSAC = score_dependent_RANSAC
 
         self.move_smaller = move_smaller
+
+        # RANSAC arguments
+        self.use_RANSAC = use_RANSAC
+        self.RANSAC_match_option = RANSAC_match_option
+        self.RANSAC_type = RANSAC_type
         
         # Output feature dimension of Feature Extractor
         self.feat_dim = 1024
@@ -423,7 +436,7 @@ class EquiAssem(pl.LightningModule):
 
 
     def test_step(self, in_dict, batch_idx):
-        exit("DEBUGGING")
+        print("DEBUGGING")
 
         _, loss_dict = self.forward_pass(in_dict, mode='test')
         self.test_step_outputs.append(loss_dict)
@@ -759,50 +772,7 @@ class EquiAssem(pl.LightningModule):
             # Point cloud registration
             with torch.no_grad():
                 if self.use_RANSAC:
-                    from model.match_selection import soft_topk_matching
-                    from model.match_selection import topk_matching
-                    from model.match_selection import mutual_topk_matching
-                    matching_scores_before_Sinkhorn = shape_matching_scores.squeeze(0) # (N, M)
-                    
-                    # Initial matches for RANSAC
-                    # initial_matches = soft_topk_matching(matching_scores_before_Sinkhorn, topk=3) # (K, 2)
-                    initial_matches = mutual_topk_matching(matching_scores_before_Sinkhorn) # (K, 2)
-                    # topk = matching_scores_before_Sinkhorn.shape[0] + matching_scores_before_Sinkhorn.shape[1]
-                    # breakpoint()
-                    # initial_matches = topk_matching(matching_scores_before_Sinkhorn, k=128) # (K, 2)
-                    
-                    src_idx, trg_idx = initial_matches[:, 0], initial_matches[:, 1] # (K, ), (K, )
-
-                    # Score thresholding for initial matches
-                    score_threshold = 0.0
-                    score_mask = matching_scores_before_Sinkhorn[src_idx, trg_idx] >= score_threshold # (K, )
-                    src_idx, trg_idx = src_idx[score_mask], trg_idx[score_mask] # (K_filtered, ), (K_filtered, )
-
-                    # Prepare to run RANSAC
-                    src_corr_pts = src_pcd[:, src_idx].squeeze(0) # (K_filtered, 3)
-                    trg_corr_pts = trg_pcd[:, trg_idx].squeeze(0) # (K_filtered, 3)
-
-                    import math
-                    # num_iters = max(math.ceil(initial_matches.shape[0] * 2 / 3), 100) 
-                    N = initial_matches.shape[0]
-                    k = 3  # minimum number of points to estimate the model
-                    delta = 0.05  # probability of choosing at least one outlier-free subset
-                    num_iters = max(math.ceil((N / k) * math.log(N / delta)), 100)
-
-                    if self.score_dependent_RANSAC:
-                        from model.score_dependent_ransac import ransac_rigid
-                    else:
-                        from model.ransac import ransac_rigid
-
-                    inl_R, inl_t, inliers = ransac_rigid(src_corr_pts, trg_corr_pts, 
-                                             src_pcd.squeeze(0), trg_pcd.squeeze(0),
-                                             in_dict['gt_normals'][0].squeeze(0), in_dict['gt_normals'][1].squeeze(0),
-                                             scores = matching_scores_before_Sinkhorn,
-                                             score_threshold=score_threshold,
-                                             num_iters = num_iters)
-                    estimated_transform = torch.eye(4, device=inl_R.device, dtype=inl_R.dtype)
-                    estimated_transform[:3, :3] = inl_R
-                    estimated_transform[:3, 3] = inl_t
+                    estimated_transform = _RANSAC(in_dict=in_dict, shape_matching_scores=shape_matching_scores, src_pcd=src_pcd, trg_pcd=trg_pcd, match_option=self.RANSAC_match_option, RANSAC_type=self.RANSAC_type)
                 
                 else:
                     # fine_matching predict Rt to move points from src_points to ref_points
@@ -911,11 +881,12 @@ class EquiAssem(pl.LightningModule):
         # (c) Compute CoRrespondence Distance (CRD) betwween prediction & ground-truth
         eval_result['crd'] = self._correspondence_distance(assm_pred, assm_grtr)
 
-        if (not self.trainer.sanity_checking) and \
+        if (mode=='val' and (not self.trainer.sanity_checking) and \
             self.trainer.global_rank == 0 and \
             self.visualize and \
             (self.current_epoch % self.viz_epoch == 0 or self.current_epoch == self.trainer.max_epochs-1) and \
-            in_dict['eval_idx'].item() == 0:
+            in_dict['eval_idx'].item() == 0) or \
+            (mode=='test' and self.visualize and in_dict['eval_idx'].item() == 0):
             # Do not visualize in sanity checking
             # Only rank 0 should do visualization to avoid file I/O conflicts in DDP
             # Visualize for every self.viz_epoch
