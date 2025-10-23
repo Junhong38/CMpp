@@ -1,3 +1,4 @@
+import os
 import argparse
 import warnings
 from typing import Optional
@@ -42,6 +43,14 @@ def test(args):
 
     device = resolve_device(getattr(args, "device", None))
 
+    # Create visualization directory
+    cfg_name = args.logpath
+    vis_dir = os.path.join('visualization', cfg_name, 'models')
+    os.makedirs(vis_dir, exist_ok=True)
+
+    # Print visualization directory
+    print(f"visualization directory (vis_dir): {vis_dir}")
+
     # Model initialization
     if args.model == 'CM_equiassem':
         from model.CM_equiassem import EquiAssem
@@ -69,6 +78,7 @@ def test(args):
 
                           visualize=args.visualize,
                           viz_epoch=args.viz_epoch,
+                          ckp_dir=vis_dir,
                           debug=args.debug,
 
                           additional_VNLinearLeakyReLU=args.additional_VNLinearLeakyReLU,
@@ -80,6 +90,7 @@ def test(args):
                           delete_occupancy_loss=args.delete_occupancy_loss,
                           use_opt_gram=args.use_opt_gram,
                           use_RANSAC=args.use_RANSAC,
+                          score_dependent_RANSAC=args.score_dependent_RANSAC
                           )
 
     else:
@@ -147,6 +158,7 @@ if __name__ == '__main__':
     parser.add_argument('--delete_occupancy_loss', action='store_true', help='If True, delete the Occupancy Loss')
     parser.add_argument('--use_opt_gram', action='store_true', help='If True, use Optimum Gram Schmidt Orthogonalization')
     parser.add_argument('--use_RANSAC', action='store_true', help='If True, use RANSAC for transformation estimation')
+    parser.add_argument('--score_dependent_RANSAC', action='store_true', help='If True, use Score Dependent RANSAC')
 
     # Weights for losses
     parser.add_argument('--s_loss_weight', type=float, default=0.5, help='Weight for shape loss, in the future, we will change this into 1.0')
