@@ -13,7 +13,7 @@ from data.utils import to_o3d_pcd, get_correspondences
 
 
 class DatasetBreakingBad(Dataset):
-    def __init__(self, datapath, data_category, sub_category, min_part, max_part, n_pts, split, scale, multiplicity, visualize=False, CMorigin_mode=False):
+    def __init__(self, datapath, data_category, sub_category, min_part, max_part, n_pts, split, scale, multiplicity, CMorigin_mode=False):
         """Dataset for Breaking Bad
 
         Args:
@@ -26,7 +26,6 @@ class DatasetBreakingBad(Dataset):
             split (str): ['train', 'val', 'test']
             scale (str): ['full', 'small', 'overfitting', 'tiny'], candidates are fixed by argparse
             multiplicity (int): multiplicity of the dataset
-            visualize (bool, optional): whether to visualize the dataset. Defaults to False.
             CMorigin_mode (bool, optional): whether to use CM origin mode. Defaults to False.
         """
         # Assertion
@@ -44,7 +43,6 @@ class DatasetBreakingBad(Dataset):
         self.split = split
         
         self.multiplicity = multiplicity if split == 'train' else 1
-        self.visualize = visualize
         self.CMorigin_mode = CMorigin_mode
 
         self.mpa = True if self.max_part > 2 else False
@@ -88,7 +86,6 @@ class DatasetBreakingBad(Dataset):
         print(f"split: {self.split}")
         print(f"sub_category: {self.sub_category}")
         print(f"n_pts: {self.n_pts}")
-        print(f"visualize: {self.visualize}")
         print(f"min_n_pts: {self.min_n_pts}")
         print(f"min_part: {self.min_part}")
         print(f"max_part: {self.max_part}")

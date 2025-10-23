@@ -75,3 +75,4 @@ rm -rf checkpoint/T3_S_AVNOON_NCD_NPM_NODOCC_OG_MS/ && CUDA_VISIBLE_DEVICES=2 py
 
 
 
+rm -rf checkpoint/DTEST/ && CUDA_VISIBLE_DEVICES=2 python test.py --model CMpp_equiassem --logpath DTEST --scale small --multiplicity 1 --visualize --only_one_norm --use_opt_gram --use_RANSAC --score_dependent_RANSAC --load checkpoint/T3_S_AVNOON_NCD_NPM_NODOCC_OG/models/last.ckpt

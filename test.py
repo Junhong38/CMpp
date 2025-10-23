@@ -15,13 +15,13 @@ def test(args):
     seed_everything(42, workers=True)
 
 
-    # Create visualization directory
+    # Create checkpoint directory
     cfg_name = args.logpath
-    vis_dir = os.path.join('visualization', cfg_name, 'models')
-    os.makedirs(vis_dir, exist_ok=True)
+    ckp_dir = os.path.join('checkpoint', cfg_name, 'models')
+    os.makedirs(ckp_dir, exist_ok=True)
 
-    # Print visualization directory
-    print(f"visualization directory (vis_dir): {vis_dir}")
+    # Print checkpoint directory
+    print(f"checkpoint directory (ckp_dir): {ckp_dir}")
 
 
     # Dataset initialization
@@ -43,34 +43,34 @@ def test(args):
         
     elif args.model == 'CMpp_equiassem': # Import developing mode model
         from model.CMpp_equiassem import EquiAssem
-        model = EquiAssem(lr=args.lr,
+        model = EquiAssem(lr=0, # We don't need to use learning rate for testing
                           
-                          scheduler_mode=args.scheduler_mode,
+                          scheduler_mode=None,
                           total_steps=0, # We don't need to use total steps for testing
 
                           backbone=args.backbone,
                           attention=args.attention,
 
                           # Circle loss arguments
-                          pos_margin=args.pos_margin,
-                          neg_margin=args.neg_margin,
-                          log_scale=args.log_scale,
-                          detach_mode=args.detach_mode,
-                          same_opt=args.same_opt,
-                          only_corr=args.only_corr,
-                          max_points=args.max_points,
-                          no_balance=args.no_balance,
-                          div_mode=args.div_mode,
+                          pos_margin=0, # We don't need to use circle loss for testing  
+                          neg_margin=0, # We don't need to use circle loss for testing
+                          log_scale=0, # We don't need to use circle loss for testing
+                          detach_mode=False, # We don't need to use circle loss for testing
+                          same_opt=False, # We don't need to use circle loss for testing
+                          only_corr=False, # We don't need to use circle loss for testing
+                          max_points=0, # We don't need to use circle loss for testing
+                          no_balance=False, # We don't need to use circle loss for testing
+                          div_mode='none', # We don't need to use circle loss for testing
 
-                          s_loss_weight=args.s_loss_weight,
-                          p_loss_weight=args.p_loss_weight,
-                          o_loss_weight=args.o_loss_weight,
+                          s_loss_weight=0.0, # We don't need to use circle loss for testing
+                          p_loss_weight=0.0, # We don't need to use circle loss for testing
+                          o_loss_weight=0.0, # We don't need to use circle loss for testing
 
                           visualize=args.visualize,
                           viz_epoch=args.viz_epoch,
                           viz_max_arrow_num=args.viz_max_arrow_num,
                           ckp_dir=ckp_dir,
-                          debug=args.debug,
+                          debug=args.debug, 
 
                           additional_VNLinearLeakyReLU=args.additional_VNLinearLeakyReLU,
                           debugged_circle_loss=args.debugged_circle_loss,
@@ -84,7 +84,10 @@ def test(args):
                           
                           only_one_norm=args.only_one_norm,
                           n_avn=args.n_avn,
-                          move_smaller=args.move_smaller)
+                          move_smaller=args.move_smaller,
+                          
+                          use_RANSAC=args.use_RANSAC,
+                          score_dependent_RANSAC=args.score_dependent_RANSAC)
     else:
         raise NotImplementedError("Model not implemented")
 
@@ -109,7 +112,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Equivariant Assembly Pytorch Implementation')
 
     # Dataset arguments
-    parser.add_argument('--datapath', type=str, default='/home/kimsangki/breaking_bad/volume_constrained') 
+    parser.add_argument('--datapath', type=str, default='/mnt/nvme2n1p1/kimsangki_datasets/breaking_bad/volume_constrained') 
     #'../../../../hdd/junhong/data/bbad_v2' and /mnt/nvme2n1p1/kimsangki_datasets/breaking_bad/volume_constrained , /home/kimsangki/breaking_bad/volume_constrained
     parser.add_argument('--data_category', type=str, default='everyday', choices=['everyday', 'artifact', 'synthetic'])
     parser.add_argument('--sub_category', type=str, default='all')
@@ -122,12 +125,8 @@ if __name__ == '__main__':
     # Training arguments
     parser.add_argument('--logpath', type=str, default='default_logpath', help='Log path and name for project')
     parser.add_argument('--batch_size', type=int, default=1, help='Batch size. DO NOT CHANGE THIS VALUE. WE ASSUME THAT BATCH SIZE IS 1')
-    parser.add_argument('--lr', type=float, default=1e-2, help='Learning rate. If you use multi-GPU training, the learning rate is multiplied by the number of GPUs.')
-    parser.add_argument('--epochs', type=int, default=0, help='Number of epochs. If 0, it is automatically set to 200 for everyday dataset and 300 for other datasets.')
     parser.add_argument('--n_worker', type=int, default=4, help='Number of workers. If you use multi-GPU training, the number of workers is multiplied by the number of GPUs.')
     parser.add_argument('--load', type=str, default='')
-    parser.add_argument('--scheduler_mode', type=str, default='cos', choices=['none', 'cos', 'onecycle', 'CM'])
-    parser.add_argument('--gradient_clip_val', type=float, default=0.0, help='Gradient clip value')
 
 
     # Debugging arguments
@@ -157,22 +156,10 @@ if __name__ == '__main__':
     parser.add_argument('--n_avn', type=int, default=5, help='Number of AVN layers for the equivariant shape feature')
     parser.add_argument('--move_smaller', action='store_true', help='If True, always move the smaller point cloud to the origin')
 
-    # Weights for losses
-    parser.add_argument('--s_loss_weight', type=float, default=0.5, help='Weight for shape loss, in the future, we will change this into 1.0')
-    parser.add_argument('--p_loss_weight', type=float, default=1.0, help='Weight for point loss, in the future, we will change this into 1.0')
-    parser.add_argument('--o_loss_weight', type=float, default=0.1, help='Weight for orientation loss, in the future, we will change this into 1.0')
 
-
-    # Margin arguments which are used in circle loss
-    parser.add_argument('--pos_margin', type=float, default=0.1, help='Margin for positive samples in Circle loss computation')
-    parser.add_argument('--neg_margin', type=float, default=1.4, help='Margin for negative samples in Circle loss computation')
-    parser.add_argument('--log_scale', type=float, default=24, help='Log scale for Circle loss computation')
-    parser.add_argument('--detach_mode', action='store_true', help='Detach gradient from value for deciding strength of circle loss')
-    parser.add_argument('--same_opt', action='store_true', help='Make margin value be same with optimal value')
-    parser.add_argument('--only_corr', action='store_true', help='Use only correspondence for Circle loss computation')
-    parser.add_argument('--max_points', type=int, default=0, help='Maximum number of points for Circle loss computation')
-    parser.add_argument('--no_balance', action='store_true', help='Use positive and negative balance for Circle loss computation')
-    parser.add_argument('--div_mode', type=str, default='none', choices=['none', 'dynamic', 'static'])
+    # RANSAC arguments
+    parser.add_argument('--use_RANSAC', action='store_true', help='If True, use RANSAC for transformation estimation')
+    parser.add_argument('--score_dependent_RANSAC', action='store_true', help='If True, use Score Dependent RANSAC')
 
 
     # Additional experiments
@@ -181,7 +168,6 @@ if __name__ == '__main__':
     parser.add_argument('--viz_max_arrow_num', type=int, default=0, help='Maximum number of arrows for visualization. This only works when visualize is True')
     parser.add_argument('--debug', action='store_true')
 
-        
 
     # DDP argument
     parser.add_argument('--gpus', nargs='+', default=[0], type=int)
@@ -195,18 +181,10 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
 
-    if args.epochs <= 0: # If epochs is not set, set number of epochs automatically
-        args.epochs = 90 if args.data_category == 'everyday' else 120
-        args.epochs = 300 if args.max_part > 2 else args.epochs
-    else:
-        args.epochs = args.epochs # If epochs is set, use the set value
-
-
     # Set number of workers automatically
     if len(args.gpus) > 1: # Multi-GPU training
         from pytorch_lightning.strategies import DDPStrategy
         args.parallel_strategy = DDPStrategy(find_unused_parameters=False)
-        args.lr = len(args.gpus) * args.lr # Learning rate is multiplied by the number of GPUs
         args.n_worker = min(len(args.gpus) * 4, 48) # Number of workers is multiplied by the number of GPUs
     
     else: # Single-GPU training
@@ -232,15 +210,7 @@ if __name__ == '__main__':
         if args.delete_occupancy_loss:
             # Now, we will test the model with normal vector method
             args.attention = 'none'
-            args.s_loss_weight = 1.0
-            args.p_loss_weight = 1.0
-            args.o_loss_weight = 1.0
     
-    
-    # If gradient clip value is 0.0, set it to None
-    if args.gradient_clip_val <= 0.0:
-        args.gradient_clip_val = None
-
 
     # Assertions
     assert args.batch_size == 1, "Batch size must be 1"

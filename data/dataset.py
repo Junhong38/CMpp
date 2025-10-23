@@ -31,7 +31,7 @@ class GADataset:
         elif cls.data_category == 'ambiguous':
             dataset = DatasetAmbiguous(cls.datapath, cls.data_category, cls.sub_category, cls.min_part, cls.max_part, cls.n_pts, split, cls.scale, visualize)
         else:
-            dataset = DatasetBreakingBad(cls.datapath, cls.data_category, cls.sub_category, cls.min_part, cls.max_part, cls.n_pts, split, cls.scale, cls.multiplicity, visualize, cls.CMorigin_mode)
+            dataset = DatasetBreakingBad(cls.datapath, cls.data_category, cls.sub_category, cls.min_part, cls.max_part, cls.n_pts, split, cls.scale, cls.multiplicity, cls.CMorigin_mode)
         dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=shuffle, num_workers=nworker, pin_memory=False)
 
         return dataloader
