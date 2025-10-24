@@ -97,7 +97,7 @@ class DatasetBreakingBad(Dataset):
         print(f"CMorigin_mode: {self.CMorigin_mode}")
 
         print(f"n_frac: {self.n_frac}")
-        print(f"filepaths: {self.filepaths}")
+        # print(f"filepaths: {self.filepaths}")
 
         if self.mpa:
             print(f"frac0: {self.frac0}")

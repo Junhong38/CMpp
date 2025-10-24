@@ -80,3 +80,9 @@ rm -rf checkpoint/T3DD0_S_AVNOON_NCD_NPM_NODOCC_OG/ && CUDA_VISIBLE_DEVICES=0 py
 rm -rf checkpoint/T3DD1_S_AVNOON_NCD_NPM_NODOCC_OG/ && CUDA_VISIBLE_DEVICES=1 python main.py --model CMpp_equiassem --logpath T3DD1_S_AVNOON_NCD_NPM_NODOCC_OG --scale small --multiplicity 1 --epochs 0 --visualize --only_one_norm --detach_mode --use_opt_gram --wandb --wandb_project CMpp &
 rm -rf checkpoint/T3DD2_S_AVNOON_NCD_NPM_NODOCC_OG/ && CUDA_VISIBLE_DEVICES=2 python main.py --model CMpp_equiassem --logpath T3DD2_S_AVNOON_NCD_NPM_NODOCC_OG --scale small --multiplicity 1 --epochs 0 --visualize --only_one_norm --detach_mode --use_opt_gram --wandb --wandb_project CMpp &
 rm -rf checkpoint/T3DD3_S_AVNOON_NCD_NPM_NODOCC_OG/ && CUDA_VISIBLE_DEVICES=3 python main.py --model CMpp_equiassem --logpath T3DD3_S_AVNOON_NCD_NPM_NODOCC_OG --scale small --multiplicity 1 --epochs 0 --visualize --only_one_norm --detach_mode --use_opt_gram --wandb --wandb_project CMpp &
+
+
+
+
+
+rm -rf checkpoint/T4_O_AVNOON_NCD_NPM_NODOCC_OG/ && CUDA_VISIBLE_DEVICES=0 python main.py --model CMpp_equiassem --logpath T4_O_AVNOON_NCD_NPM_NODOCC_OG --scale overfitting --multiplicity 1 --epochs 0 --visualize --only_one_norm --detach_mode --use_opt_gram --wandb --wandb_project CMpp

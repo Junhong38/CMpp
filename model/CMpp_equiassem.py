@@ -22,7 +22,7 @@ from RANSAC.ransac import _RANSAC
 
 from common.rotation import ortho2rotation
 from common.utils import save_pc, check_inf_or_nan
-from common.viz import draw_frames
+from common.viz import draw_frames, draw_normal_error_histogram
 
 from pytorch3d.ops import iterative_closest_point
 
@@ -65,6 +65,7 @@ class EquiAssem(pl.LightningModule):
             pos_margin=0.1, neg_margin=1.4, log_scale=24, detach_mode=False, same_opt=False, only_corr=False, max_points=0, no_balance=False, div_mode='none',
             s_loss_weight=1.0, p_loss_weight=1.0, o_loss_weight=1.0,
             visualize=False, viz_epoch=30, viz_max_arrow_num=0, ckp_dir=None, debug=False,
+            success_criterion_in_degree=10,
 
             # Developing temporarily used experiments arguments
             additional_VNLinearLeakyReLU=False,
@@ -115,6 +116,7 @@ class EquiAssem(pl.LightningModule):
             viz_max_arrow_num (int, optional): Maximum number of arrows for visualization. Defaults to 0.
             ckp_dir (str, optional): Checkpoint directory. Defaults to None.
             debug (bool, optional): Whether to enable debug mode. Defaults to False.
+            success_criterion_in_degree (int, optional): Success criterion in degree for normal error. Defaults to 10.
 
 
             # Developing temporarily used experiments arguments
@@ -167,6 +169,7 @@ class EquiAssem(pl.LightningModule):
         print(f"viz_max_arrow_num: {viz_max_arrow_num}")
         print(f"ckp_dir: {ckp_dir}")
         print(f"debug: {debug}")
+        print(f"success_criterion_in_degree: {success_criterion_in_degree}")
 
         print(f"additional_VNLinearLeakyReLU: {additional_VNLinearLeakyReLU}")
         print(f"debugged_circle_loss: {debugged_circle_loss}")
@@ -197,6 +200,7 @@ class EquiAssem(pl.LightningModule):
         self.viz_max_arrow_num = viz_max_arrow_num
         self.ckp_dir = ckp_dir
         self.debug = debug
+        self.success_criterion_in_degree = success_criterion_in_degree
 
         self.additional_VNLinearLeakyReLU = additional_VNLinearLeakyReLU
         self.debugged_circle_loss = debugged_circle_loss
@@ -767,6 +771,12 @@ class EquiAssem(pl.LightningModule):
         out_dict.update(loss)
 
 
+        if mode == 'train':
+            with torch.no_grad():
+                # This is for checking the normal error
+                loss['n_error'], _, loss['n_suc_rate'] = self._normal_error(in_dict, out_dict, success_criterion_in_degree=self.success_criterion_in_degree) 
+
+
         # 9. Evaluation
         if mode in ['val', 'test']:
             # Point cloud registration
@@ -881,6 +891,10 @@ class EquiAssem(pl.LightningModule):
         # (c) Compute CoRrespondence Distance (CRD) betwween prediction & ground-truth
         eval_result['crd'] = self._correspondence_distance(assm_pred, assm_grtr)
 
+        # (d) Compute Normal Error
+        eval_result['n_error'], normal_error_hist, eval_result['n_suc_rate'] = self._normal_error(in_dict, out_dict, success_criterion_in_degree=self.success_criterion_in_degree)
+
+
         if (mode=='val' and (not self.trainer.sanity_checking) and \
             self.trainer.global_rank == 0 and \
             self.visualize and \
@@ -893,8 +907,10 @@ class EquiAssem(pl.LightningModule):
             # However, if it is the last epoch, then visualize
             # Also, only visualize first batch
 
-            vis_folder = os.path.join(self.ckp_dir, 'vis', mode)
+            vis_folder = os.path.join(self.ckp_dir, 'vis', mode) # For mesh visualization
+            vis_hist_folder = os.path.join(self.ckp_dir, 'vis_hist', mode) # For normal error histogram visualization
             os.makedirs(vis_folder, exist_ok=True)
+            os.makedirs(vis_hist_folder, exist_ok=True)
 
             # PCD light visualization
             pcds_pred_for_viz = [] + pcds_pred
@@ -932,6 +948,12 @@ class EquiAssem(pl.LightningModule):
             draw_frames(frame_ori=rot_frame_ori_in_pred, gt_normals=rot_gt_normals_in_pred, pcds_list=pcds_pred, dir_path=vis_folder,
                         filename=f'E{self.current_epoch}_{in_dict["eval_idx"].item()}_{in_dict["obj_class"][0]}_{round(eval_result["crd"].item(),3)}_in_pred',
                         viz_max_arrow_num=self.viz_max_arrow_num)
+            
+
+            # DRAW NORMAL ERROR HISTOGRAM
+            draw_normal_error_histogram(normal_error_hist=normal_error_hist, dir_path=vis_hist_folder, 
+                                        filename=f'E{self.current_epoch}_{in_dict["eval_idx"].item()}_{in_dict["obj_class"][0]}_{round(eval_result["n_error"].item(),3)}_hist.png')
+            
 
         return eval_result
     
@@ -1100,6 +1122,37 @@ class EquiAssem(pl.LightningModule):
 
         div = len(pcds_grtr)
         return rot_errors.sum() / div, trans_errors.sum() / div 
+    
+
+    def _normal_error(self, in_dict, out_dict, success_criterion_in_degree=10):
+        """
+        Args:
+            in_dict (dict): it is same as forward_pass
+            out_dict (dict): it is same as forward_pass
+            success_criterion_in_degree (int, optional): Success criterion in degree. Defaults to 10.
+
+        Returns:
+            normal_error (torch.Tensor): (1)
+        """
+        output_src_ori, output_trg_ori = out_dict['src_ori'][0], out_dict['trg_ori'][0] # (1,N,3,3) -> (N,3,3), (1,M,3,3) -> (M,3,3)
+        gt_src_normals, gt_trg_normals = in_dict['gt_normals'][0][0].float(), in_dict['gt_normals'][1][0].float() # (1,N,3) -> (N,3), (1,M,3) -> (M,3)
+
+        pred_normals = torch.cat([output_src_ori[:,0,:], output_trg_ori[:,0,:]], dim=0) # (N,3) concat (M,3) -> (N+M, 3)
+        gt_normals = torch.cat([gt_src_normals, gt_trg_normals], dim=0) # (N,3) concat (M,3) -> (N+M, 3)
+
+        cosine_similarity = torch.clamp(torch.nn.functional.cosine_similarity(pred_normals, gt_normals, dim=-1), min=-1, max=1) # (N+M, )
+        theta_deg = torch.rad2deg(torch.acos(cosine_similarity)) # (N+M, )
+        
+        normal_error = theta_deg.mean()
+        normal_error_hist = torch.histogram(theta_deg.cpu(), bins=90, range=(0, 180)) # Total 180 degrees, so we choose 90 bins
+
+        success_mask = theta_deg <= success_criterion_in_degree
+        success_count = success_mask.sum()
+        total_count = theta_deg.shape[0]
+        success_rate = success_count / total_count
+
+        return normal_error, normal_error_hist, success_rate
+
 
 
 
