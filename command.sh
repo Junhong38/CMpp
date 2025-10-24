@@ -73,16 +73,17 @@ rm -rf checkpoint/T3_S_AVN4OON_NCD_NPM_NODOCC_OG/ && CUDA_VISIBLE_DEVICES=4 pyth
 rm -rf checkpoint/T3_S_CMoriginByCMpp_MS/ && CUDA_VISIBLE_DEVICES=6 python main.py --model CMpp_equiassem --logpath T3_S_CMoriginByCMpp_MS --scale small --multiplicity 1 --epochs 0 --visualize --scheduler_mode CM --move_smaller --wandb --wandb_project CMpp
 rm -rf checkpoint/T3_S_CMorigin/ && CUDA_VISIBLE_DEVICES=7 python main.py --model CM_equiassem --logpath T3_S_CMorigin --scale small --multiplicity 1 --epochs 0 --wandb --wandb_project CMpp
 rm -rf checkpoint/T3_S_AVNOON_NCD_NPM_NODOCC_OG_MS/ && CUDA_VISIBLE_DEVICES=2 python main.py --model CMpp_equiassem --logpath T3_S_AVNOON_NCD_NPM_NODOCC_OG_MS --scale small --multiplicity 1 --epochs 0 --visualize --only_one_norm --detach_mode --use_opt_gram --move_smaller --wandb --wandb_project CMpp
-end
+
 
 
 rm -rf checkpoint/T3DD0_S_AVNOON_NCD_NPM_NODOCC_OG/ && CUDA_VISIBLE_DEVICES=0 python main.py --model CMpp_equiassem --logpath T3DD0_S_AVNOON_NCD_NPM_NODOCC_OG --scale small --multiplicity 1 --epochs 0 --visualize --only_one_norm --detach_mode --use_opt_gram --wandb --wandb_project CMpp &
 rm -rf checkpoint/T3DD1_S_AVNOON_NCD_NPM_NODOCC_OG/ && CUDA_VISIBLE_DEVICES=1 python main.py --model CMpp_equiassem --logpath T3DD1_S_AVNOON_NCD_NPM_NODOCC_OG --scale small --multiplicity 1 --epochs 0 --visualize --only_one_norm --detach_mode --use_opt_gram --wandb --wandb_project CMpp &
 rm -rf checkpoint/T3DD2_S_AVNOON_NCD_NPM_NODOCC_OG/ && CUDA_VISIBLE_DEVICES=2 python main.py --model CMpp_equiassem --logpath T3DD2_S_AVNOON_NCD_NPM_NODOCC_OG --scale small --multiplicity 1 --epochs 0 --visualize --only_one_norm --detach_mode --use_opt_gram --wandb --wandb_project CMpp &
 rm -rf checkpoint/T3DD3_S_AVNOON_NCD_NPM_NODOCC_OG/ && CUDA_VISIBLE_DEVICES=3 python main.py --model CMpp_equiassem --logpath T3DD3_S_AVNOON_NCD_NPM_NODOCC_OG --scale small --multiplicity 1 --epochs 0 --visualize --only_one_norm --detach_mode --use_opt_gram --wandb --wandb_project CMpp &
+end
 
 
 
+rm -rf checkpoint/T4_S_CMoriginByCMpp/ && CUDA_VISIBLE_DEVICES=0 python main.py --model CMpp_equiassem --logpath T4_S_CMoriginByCMpp --scale small --multiplicity 1 --epochs 0 --visualize --scheduler_mode CM --wandb --wandb_project CMpp &
+rm -rf checkpoint/T4_S_AVNOON_NCD_NPM_NODOCC_OG/ && CUDA_VISIBLE_DEVICES=2 python main.py --model CMpp_equiassem --logpath T4_S_AVNOON_NCD_NPM_NODOCC_OG --scale small --multiplicity 1 --epochs 0 --visualize --only_one_norm --detach_mode --use_opt_gram --wandb --wandb_project CMpp &
 
-
-rm -rf checkpoint/T4_O_AVNOON_NCD_NPM_NODOCC_OG/ && CUDA_VISIBLE_DEVICES=0 python main.py --model CMpp_equiassem --logpath T4_O_AVNOON_NCD_NPM_NODOCC_OG --scale overfitting --multiplicity 1 --epochs 0 --visualize --only_one_norm --detach_mode --use_opt_gram --wandb --wandb_project CMpp
