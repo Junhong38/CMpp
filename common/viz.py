@@ -239,7 +239,7 @@ def draw_normal_error_histogram(normal_error_hist, dir_path, filename):
     counts = normal_error_hist[0]
     bins = normal_error_hist[1]
 
-    plt.hist(x=counts, bins=bins)
+    plt.hist(bins[:-1], bins=bins, weights=counts)
     plt.xlabel('Normal Error (degrees)')
     plt.ylabel('Count')
     plt.title('Normal Error Histogram')
