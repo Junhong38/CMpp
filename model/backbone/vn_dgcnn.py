@@ -16,10 +16,21 @@ class TransitionDown(nn.Module):
             self.mlp = VNLinearLeakyReLU(in_planes, out_planes)
         
     def forward(self, p, x):
+        """TransitionDown
+        This module assume batch size is 1.
+
+        Args:
+            p (torch.Tensor): (num_points, 3), which is resposible for point coordinates
+            x (torch.Tensor): (channel, 3, num_points), which is resposible for point features
+
+        Returns:
+            n_p (torch.Tensor): (num_points, 3)
+            x (torch.Tensor): (batch, channel, 3, num_points)
+            n_o (torch.Tensor): (1, )
+        """
         o = torch.Tensor([p.size(0)]).to(torch.int32).cuda()
         if self.stride != 1:
             n_o, count = [o[0].item() // self.stride], o[0].item() // self.stride
-            # n_o, count = [o[0].item()], o[0].item()
             n_o = torch.cuda.IntTensor(n_o)
 
             # FPS
@@ -27,16 +38,24 @@ class TransitionDown(nn.Module):
             n_p = p[idx.long(), :]  # (m, 3)
 
             # kNN-MLP
-            x = pointops.queryandgroup(self.nsample, p, n_p, x, None, o, n_o, use_xyz=False)
+            # [TODO] pointops.queryandgroup assumes that feat format is (points, channel), but here it is (channel, 3, points)
+            # So, CM version changes original code to make it work.
+            # To upgrade and not to fix original one, we need to cgabge x.shape from (channel, 3, points) to (points, channel*3)
+            # Then, we can get (sampled_points, nsample, channel*3) as output from pointops.queryandgroup
+            x = pointops.queryandgroup(self.nsample, p, n_p, x, None, o, n_o, use_xyz=False) # (sampled_points, nsample, channel, 3)
+
+            # (sampled_points, nsample, channel, 3) -> (channel, 3, sampled_points, nsample) -> (1, channel, 3, sampled_points, nsample)
+            # -> (1, c', 3, sampled_points, nsample)
             x = self.mlp(x.permute(2,3,0,1).unsqueeze(0))
 
             # Mean Pooling
             x = x.mean(dim=-1)  # (1, c, 3, m)
+        
         else:
-            # Not Implemented for VN-DGCNN
-            x = self.mlp(x.permute(2,3,0,1).unsqueeze(0))
-            return p, x, o
+            raise NotImplementedError("Not Implemented for stride != 1")
+        
         return n_p, x, n_o
+
 
 class TransitionUp(nn.Module):
     def __init__(self, in_planes, out_planes=None):
@@ -126,13 +145,23 @@ class EQCNN_equi_unet(nn.Module):
         # self.R = rotation_matrix.unsqueeze(0)
     
     def forward(self, x):
+        """EQCNN_equi_unet
+
+        Args:
+            x (torch.Tensor): (batch_size, num_points, 3)
+
+        Returns:
+            equi_feat (torch.Tensor): (batch_size, feat_dim//3, 3, num_points)
+        """
+
         x = x.transpose(2, 1) # (batch_size, 3, num_points)
         batch_size = x.size(0)
         num_points = x.size(2)
 
-        p1 = x.transpose(1,2).squeeze(0)
+        p1 = x.transpose(1,2).squeeze(0) # (num_points, 3)
         x1 = x.unsqueeze(1) # (batch_size, 1, 3, num_points)
-        o1 = torch.Tensor([p1.size(0)]).to(torch.int32).cuda()
+        o1 = torch.Tensor([p1.size(0)]).to(torch.int32).cuda() # (1,) which shows the number of points
+
         
         ### CHECK EQUIV INIT ### 
         # R = self.R.cuda()
@@ -142,9 +171,9 @@ class EQCNN_equi_unet(nn.Module):
         ### CHECK EQUIV INIT ### 
         
         ### ENCODER 1
-        x1 = get_graph_feature(x1, k=self.k) # torch.Size([1, 2, 3, 2556, 20])
-        x1 = self.conv1(x1)
-        x1 = self.pool1(x1) # (1, 21, 3, N)
+        x1 = get_graph_feature(x1, k=self.k) # (b, 2c, 3, n, k) 
+        x1 = self.conv1(x1) # (b, 2c, 3, n, k)  -> (b, c', 3, n, k)
+        x1 = self.pool1(x1) # (b, c', 3, n, k) -> (b, c', 3, n)
         # print(p1.size(), x1.size())
         ### ENCODER 1
 
@@ -156,10 +185,10 @@ class EQCNN_equi_unet(nn.Module):
         ### CHECK EQUIVARIANCE ###
 
         ### ENCODER 2
-        p2, x2, o2 = self.downsample1(p1, x1.squeeze(0))
+        p2, x2, o2 = self.downsample1(p1, x1.squeeze(0)) # (sampled_points, 3), (batch, channel, 3, sampled_points), (1,)
         x2 = get_graph_feature(x2, k=self.k)
         x2 = self.conv2(x2)
-        x2 = self.pool2(x2) # (1, 42, 3, N/2)
+        x2 = self.pool2(x2) # (1, 42, 3, N/2))
 
         ### CHECK EQUIVARIANCE ###
         # p2_R = torch.matmul(p2, R.squeeze(0))
