@@ -11,14 +11,15 @@ from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor
 from pytorch_lightning import seed_everything
 
 
-# For reproducibility
-torch.backends.cudnn.deterministic = True
-torch.backends.cudnn.benchmark = False
-torch.use_deterministic_algorithms(True)
-
 
 def main(args):
     seed_everything(42, workers=True)
+
+    if args.deterministic:
+        # For reproducibility
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+        torch.use_deterministic_algorithms(True)
 
 
     # Create checkpoint directory
@@ -310,6 +311,10 @@ if __name__ == '__main__':
     # Wandb argument
     parser.add_argument('--wandb', action='store_true')
     parser.add_argument('--wandb_project', type=str, default='default_wandb_project')
+
+
+    # Deterministic argument
+    parser.add_argument('--deterministic', action='store_true')
 
 
     args = parser.parse_args()
