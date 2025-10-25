@@ -3,17 +3,19 @@ import torch.nn as nn
 from model.backbone.vn_layers import knn, get_graph_feature, mean_pool
 from model.backbone.vn_layers import VNLinearLeakyReLU, VNMaxPool
 
-from lib.pointops.functions import pointops
+# from lib.pointops.functions import pointops
+from pointcept_libs.pointops2.functions import pointops2 as pointops
 
 
 class TransitionDown(nn.Module):
     def __init__(self, in_planes, out_planes, stride=1, nsample=4):
         super().__init__()
-        self.stride, self.nsample = stride, nsample
-        if stride != 1:
-            self.mlp = VNLinearLeakyReLU(in_planes, out_planes)
-        else:
-            self.mlp = VNLinearLeakyReLU(in_planes, out_planes)
+        assert stride > 1, f"stride must be greater than 1, but got {stride}"
+
+        self.stride = stride
+        self.nsample = nsample
+        self.mlp = VNLinearLeakyReLU(in_planes, out_planes)
+
         
     def forward(self, p, x):
         """TransitionDown
@@ -25,71 +27,80 @@ class TransitionDown(nn.Module):
 
         Returns:
             n_p (torch.Tensor): (num_points, 3)
-            x (torch.Tensor): (batch, channel, 3, num_points)
+            x (torch.Tensor): (batch, channel, 3, num_points) where batch is 1
             n_o (torch.Tensor): (1, )
         """
+        # original offset
         o = torch.Tensor([p.size(0)]).to(torch.int32).cuda()
-        if self.stride != 1:
-            n_o, count = [o[0].item() // self.stride], o[0].item() // self.stride
-            n_o = torch.cuda.IntTensor(n_o)
 
-            # FPS
-            idx = pointops.furthestsampling(p, o, n_o)  # (m)
-            n_p = p[idx.long(), :]  # (m, 3)
+        # new offset, which is the number of points after stride
+        n_o, count = [o[0].item() // self.stride], o[0].item() // self.stride
+        n_o = torch.cuda.IntTensor(n_o)
 
-            # kNN-MLP
-            # [TODO] pointops.queryandgroup assumes that feat format is (points, channel), but here it is (channel, 3, points)
-            # So, CM version changes original code to make it work.
-            # To upgrade and not to fix original one, we need to cgabge x.shape from (channel, 3, points) to (points, channel*3)
-            # Then, we can get (sampled_points, nsample, channel*3) as output from pointops.queryandgroup
-            x = pointops.queryandgroup(self.nsample, p, n_p, x, None, o, n_o, use_xyz=False) # (sampled_points, nsample, channel, 3)
+        # FPS
+        idx = pointops.furthestsampling(p, o, n_o)  # (m)
+        n_p = p[idx.long(), :]  # (m, 3)
 
-            # (sampled_points, nsample, channel, 3) -> (channel, 3, sampled_points, nsample) -> (1, channel, 3, sampled_points, nsample)
-            # -> (1, c', 3, sampled_points, nsample)
-            x = self.mlp(x.permute(2,3,0,1).unsqueeze(0))
+        # kNN-MLP
+        reshaped_x = x.reshape(-1, x.shape[-1]).transpose(1, 0).contiguous() # (channel, 3, points) -> (channel*3, points) -> (points, channel*3)
+        x = pointops.queryandgroup(self.nsample, p, n_p, reshaped_x, None, o, n_o, use_xyz=False) # (sampled_points, nsample, channel*3)
+        x = x.reshape(x.shape[0], x.shape[1], -1, 3) # (sampled_points, nsample, channel*3) -> (sampled_points, nsample, channel, 3)
 
-            # Mean Pooling
-            x = x.mean(dim=-1)  # (1, c, 3, m)
-        
-        else:
-            raise NotImplementedError("Not Implemented for stride != 1")
+        # (sampled_points, nsample, channel, 3) -> (channel, 3, sampled_points, nsample) -> (1, channel, 3, sampled_points, nsample) -> (1, c', 3, sampled_points, nsample)
+        x = self.mlp(x.permute(2,3,0,1).unsqueeze(0))
+
+        # Mean Pooling
+        x = x.mean(dim=-1)  # (1, c, 3, m)
+        print(f"[TransitionDown] x: \n{x}")
         
         return n_p, x, n_o
 
 
 class TransitionUp(nn.Module):
-    def __init__(self, in_planes, out_planes=None):
+    def __init__(self, in_planes, out_planes):
         super().__init__()
-        if out_planes is None:
-            # Not Implemented for VN-DGCNN
-            self.linear1 = nn.Sequential(nn.Linear(2*in_planes, in_planes), nn.BatchNorm1d(in_planes), nn.ReLU(inplace=True))
-            self.linear2 = nn.Sequential(nn.Linear(in_planes, in_planes), nn.ReLU(inplace=True))
-        else:
-            self.mlp1 = VNLinearLeakyReLU(out_planes, out_planes, dim=4)
-            self.mlp2 = VNLinearLeakyReLU(in_planes, out_planes, dim=4)
+        self.mlp1 = VNLinearLeakyReLU(out_planes, out_planes, dim=4)
+        self.mlp2 = VNLinearLeakyReLU(in_planes, out_planes, dim=4)
         
-    def forward(self, pxo1, pxo2=None):
-        if pxo2 is None:
-            # Not Implemented for VN-DGCNN
-            _, x, o = pxo1  # (n, 3), (n, c), (b)
-            x_tmp = []
-            for i in range(o.shape[0]):
-                if i == 0:
-                    s_i, e_i, cnt = 0, o[0], o[0]
-                else:
-                    s_i, e_i, cnt = o[i-1], o[i], o[i] - o[i-1]
-                x_b = x[s_i:e_i, :]
-                x_b = torch.cat((x_b, self.linear2(x_b.sum(0, True) / cnt).repeat(cnt, 1)), 1)
-                x_tmp.append(x_b)
-            x = torch.cat(x_tmp, 0)
-            x = self.linear1(x)
-        else:
-            p1, x1, o1 = pxo1; p2, x2, o2 = pxo2
-            x = self.mlp1(x1) + pointops.interpolation(p2, p1, self.mlp2(x2).squeeze(0).contiguous(), o2, o1)
+    def forward(self, pxo1, pxo2):
+        """TransitionUp
+        This module assume batch size is 1.
+
+        Args:
+            pxo1 (tuple): (p1, x1, o1) where p1 is (n, 3), x1 is (b,c,3,n), o1 is (1,)
+            pxo2 (tuple, optional): (p2, x2, o2) where p2 is (m, 3), x2 is (b,c',3,m), o2 is (1,)
+
+        Returns:
+            x (torch.Tensor): (n, c)
+        """
+        p1, x1, o1 = pxo1
+        p2, x2, o2 = pxo2
+
+        # self.mlp2: (b,c',3,m) -> (b,o,3,m)
+        # channel_aligned_x2: (1,o,3,m) -> (o,3,m) -> (o*3,m) -> (m, o*3)
+        channel_aligned_x2 = self.mlp2(x2).squeeze(0).reshape(-1, x2.shape[-1]).transpose(1, 0).contiguous()
+        
+        # p2: (m, 3), p1: (n, 3), channel_aligned_x2: (m, o*3), o2: (1,), o1: (1,)
+        # pointops.interpolation: Interpolate features to enlarge p2 to p1
+        # Locations of new points will be p1, and features will be interpolated from p2.
+        # From new locations, find the closest points from p2, and interpolate features from them.
+        # Also, we need to align channel size, so use self.mlp2 to align channel size.     
+        # pointops.interpolation: (m, o*3) -> (n, o*3)
+        interpolated_x2 = pointops.interpolation(p2, p1, channel_aligned_x2, o2, o1)
+
+        # (n, o*3) -> (o*3, n) -> (o,3,n) -> (1,o,3,n) 
+        interpolated_x2 = interpolated_x2.transpose(0,1).reshape(-1, 3, interpolated_x2.shape[0]).unsqueeze(0)
+
+        # self.mlp1: (b,c,3,n) -> (b,o,3,n)
+        aligned_x1 = self.mlp1(x1)
+
+        x = aligned_x1 + interpolated_x2
+        print(f"[TransitionUp] x: \n{x}")
+
         return x
 
 
-class EQCNN_equi_unet(nn.Module):
+class EQCNN_equi_unet(nn.Module): 
 
     def __init__(self, feat_dim, pooling='mean', k=20):
         super(EQCNN_equi_unet, self).__init__()
@@ -295,6 +306,8 @@ class EQCNN_equi_unet(nn.Module):
         # equi_feat_R = self.conv9(x7_R)
         # print(torch.allclose(equi_feat_R.permute(0,3,1,2) @ R.transpose(1,2), equi_feat.permute(0,3,1,2), atol=1e-2))
         ### CHECK EQUIVARIANCE ###
+
+        exit("stop")
 
         return equi_feat
 
