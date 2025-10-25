@@ -51,8 +51,7 @@ class TransitionDown(nn.Module):
 
         # Mean Pooling
         x = x.mean(dim=-1)  # (1, c, 3, m)
-        print(f"[TransitionDown] x: \n{x}")
-        
+
         return n_p, x, n_o
 
 
@@ -95,7 +94,6 @@ class TransitionUp(nn.Module):
         aligned_x1 = self.mlp1(x1)
 
         x = aligned_x1 + interpolated_x2
-        print(f"[TransitionUp] x: \n{x}")
 
         return x
 
@@ -306,8 +304,6 @@ class EQCNN_equi_unet(nn.Module):
         # equi_feat_R = self.conv9(x7_R)
         # print(torch.allclose(equi_feat_R.permute(0,3,1,2) @ R.transpose(1,2), equi_feat.permute(0,3,1,2), atol=1e-2))
         ### CHECK EQUIVARIANCE ###
-
-        exit("stop")
 
         return equi_feat
 

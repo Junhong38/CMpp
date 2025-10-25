@@ -15,12 +15,6 @@ from pytorch_lightning import seed_everything
 def main(args):
     seed_everything(42, workers=True)
 
-    if args.deterministic:
-        # For reproducibility
-        torch.backends.cudnn.deterministic = True
-        torch.backends.cudnn.benchmark = False
-        torch.use_deterministic_algorithms(True)
-
 
     # Create checkpoint directory
     cfg_name = args.logpath
@@ -108,7 +102,6 @@ def main(args):
     else:
         raise NotImplementedError("Model not implemented")
 
-
     # This code is for running on clusters
     SLURM_JOB_ID = os.environ.get('SLURM_JOB_ID')
     print(f"SLURM_JOB_ID: {SLURM_JOB_ID} | if None, it is not running on cluster")
@@ -186,6 +179,7 @@ def main(args):
         precision=32,
         gradient_clip_val=args.gradient_clip_val,
         gradient_clip_algorithm='value',
+        deterministic=args.deterministic,
         strategy=args.parallel_strategy,
         max_epochs=args.epochs,
         callbacks=callbacks,
@@ -335,7 +329,7 @@ if __name__ == '__main__':
         args.n_worker = min(len(args.gpus) * 4, 48) # Number of workers is multiplied by the number of GPUs
     
     else: # Single-GPU training
-        args.parallel_strategy = None
+        args.parallel_strategy = 'auto'
 
 
     # Setting developing experiments arguments automatically
