@@ -46,6 +46,7 @@ class ChannelAttentionModule(nn.Module):
         out1 = torch.mean(x, dim=-1, keepdim=True)  # 1, c, 1
         out1 = self.mlp(out1) # 1, c, 1
 
+        # Because of nn.AdaptiveMaxPool1d, deterministic option is not supported
         out2 = nn.AdaptiveMaxPool1d(1)(x) # 1, c, 1
         out2 = self.mlp(out2) # 1, c, 1
         
