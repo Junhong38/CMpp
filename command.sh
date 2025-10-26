@@ -102,7 +102,7 @@ rm -rf checkpoint/DET_T5_S_NCD_NPM_NODOCC_OG/ && CUDA_VISIBLE_DEVICES=4 python m
 end
 
 
-rm -rf checkpoint/DET_T5_F_AVNOON_NCD_NPM_NODOCC_OG/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --model CMpp_equiassem --logpath DET_T5_F_AVNOON_NCD_NPM_NODOCC_OG --scale full --multiplicity 1 --epochs 0 --visualize --only_one_norm --detach_mode --use_opt_gram --deterministic --gpus 0 1 2 3 4 5 6 7 --wandb --wandb_project CMpp
+rm -rf checkpoint/DET_T5_F_AVNOON_NCD_NPM_NODOCC_OG/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --model CMpp_equiassem --logpath DET_T5_F_AVNOON_NCD_NPM_NODOCC_OG --scale full --multiplicity 1 --epochs 0 --visualize --only_one_norm --detach_mode --use_opt_gram --deterministic --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --wandb --wandb_project CMpp
 
 
 
