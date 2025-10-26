@@ -308,9 +308,11 @@ class EquiAssem(pl.LightningModule):
             self.proj = VNLinear(2 * (self.feat_dim//3), 2)
 
             # Layer for Equivariant feature
-            assert n_avn > 0, "n_avn must be greater than 0"
-            self.equi_layer = nn.Sequential(*([VNLinearLeakyReLU(self.feat_dim//3, self.feat_dim//3, no_norm=False)] + [VNLinearLeakyReLU(self.feat_dim//3, self.feat_dim//3, no_norm=only_one_norm) for _ in range(n_avn-1)]))
-
+            if n_avn > 0:
+                self.equi_layer = nn.Sequential(*([VNLinearLeakyReLU(self.feat_dim//3, self.feat_dim//3, no_norm=False)] + [VNLinearLeakyReLU(self.feat_dim//3, self.feat_dim//3, no_norm=only_one_norm) for _ in range(n_avn-1)]))
+            else:
+                self.equi_layer = nn.Identity()
+            
         else:
             # Layer for predicting frame vectors
             self.proj = VNLinear(self.feat_dim//3, 2)

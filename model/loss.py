@@ -183,7 +183,11 @@ class CircleLoss(nn.Module):
 
         if len(correspondence) == 0:
             print('[circle loss] No correspondence!')
-            return torch.tensor(0.).to(src_feats.device), None
+            zero_pos_neg_distribution = {
+                'pos_mean': 0,'pos_std': 0, 'pos_min': 0, 'pos_max': 0,
+                'neg_mean': 0,'neg_std': 0, 'neg_min': 0, 'neg_max': 0,
+            }
+            return torch.tensor(0.).to(src_feats.device), zero_pos_neg_distribution
 
         
         if self.only_corr:
