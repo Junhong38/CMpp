@@ -11,6 +11,9 @@ conda activate CMpp
 # pytorch 2.4.1
 pip install torch==2.4.1 torchvision==0.19.1 torchaudio==2.4.1 --index-url https://download.pytorch.org/whl/cu118
 
+# CUDA 11.8 Runtime
+(base 말고 해당 env 활성화)
+mamba install -c pytorch -c nvidia pytorch-cuda=11.8
 
 # pytorch3D
 pip install iopath
