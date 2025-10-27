@@ -34,4 +34,6 @@ python setup.py install
 ### Useful commands
 ```
 killall -9 /home/nahyuklee/miniforge3/envs/equiassem/bin/python
+fuser -k /dev/nvidia*
+git add . \\ git commit -m "" \\ git push -u origin develop_lee
 ```
