@@ -106,8 +106,8 @@ def ransac_rigid(
     print(f"best_translation: {best_translation}")
 
     # Optimal Estimation
-    strong_distance_threshold = 0.01
-    strong_normal_threshold = -0.7
+    strong_distance_threshold = 0.008
+    strong_normal_threshold = -0.9
     num_iters_for_optimal_estimation = 100
     
     for _ in range(num_iters_for_optimal_estimation):

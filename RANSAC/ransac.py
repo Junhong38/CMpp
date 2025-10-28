@@ -1,13 +1,13 @@
 import torch
 import math
-from RANSAC.match_selection import topk_matching, mutual_topk_matching, soft_topk_matching
+from RANSAC.match_selection import topk_matching, mutual_topk_matching, soft_topk_matching, unidirectional_nn_matching, injective_matching, bijective_matching 
 
 from RANSAC.default_ransac import ransac_rigid as ransac_rigid_original
 from RANSAC.score_dependent_ransac import ransac_rigid as score_dependent_ransac_rigid
 
 
 
-def _RANSAC(in_dict, shape_matching_scores, src_pcd, trg_pcd, match_option='topk', RANSAC_type='default'):
+def _RANSAC(in_dict, shape_matching_scores, src_pcd, trg_pcd, src_predicted_frame=None, trg_predicted_frame=None, match_option='topk', RANSAC_type='default', topk=128):
     """
     RANSAC for point cloud registration
 
@@ -23,11 +23,19 @@ def _RANSAC(in_dict, shape_matching_scores, src_pcd, trg_pcd, match_option='topk
                     
     # Initial matches for RANSAC
     if match_option == 'topk':
-        initial_matches = topk_matching(matching_scores_before_Sinkhorn, k=128) # (K, 2)
+        if topk < 0:
+            topk = int((matching_scores_before_Sinkhorn.shape[0] + matching_scores_before_Sinkhorn.shape[1]) / (-topk))
+        initial_matches = topk_matching(matching_scores_before_Sinkhorn, k=topk) # (K, 2)
     elif match_option == 'mutual_topk':
-        initial_matches = mutual_topk_matching(matching_scores_before_Sinkhorn) # (K, 2)
+        initial_matches = mutual_topk_matching(matching_scores_before_Sinkhorn, topk=topk) # (K, 2)
     elif match_option == 'soft_topk':
-        initial_matches = soft_topk_matching(matching_scores_before_Sinkhorn, topk=3) # (K, 2)
+        initial_matches = soft_topk_matching(matching_scores_before_Sinkhorn, topk=topk) # (K, 2)
+    elif match_option == 'unidirectional_nn_matching':
+        initial_matches = unidirectional_nn_matching(matching_scores_before_Sinkhorn, topk=topk) # (K, 2)
+    elif match_option == 'injective_matching':
+        initial_matches = injective_matching(matching_scores_before_Sinkhorn) # (K, 2)
+    elif match_option == 'bijective_matching':
+        initial_matches = bijective_matching(matching_scores_before_Sinkhorn) # (K, 2)
     else:
         raise ValueError(f"Invalid match option: {match_option}")
     
@@ -68,16 +76,21 @@ def _RANSAC(in_dict, shape_matching_scores, src_pcd, trg_pcd, match_option='topk
     delta = 0.05  # probability of choosing at least one outlier-free subset
     num_iters = max(math.ceil((N / k) * math.log(N / delta)), 100)
 
-
     if RANSAC_type == 'score_dependent':
         ransac_function = score_dependent_ransac_rigid
     else:
         ransac_function = ransac_rigid_original
 
+    if src_predicted_frame == None:
+        src_normal = in_dict['gt_normals'][0].squeeze(0)
+        trg_normal = in_dict['gt_normals'][1].squeeze(0)
+    else:
+        src_normal = src_predicted_frame[:,0,:]
+        trg_normal = trg_predicted_frame[:,0,:]
         
     inl_R, inl_t, inliers = ransac_function(src_corr_pts, trg_corr_pts, 
                                             src_pcd.squeeze(0), trg_pcd.squeeze(0),
-                                            in_dict['gt_normals'][0].squeeze(0), in_dict['gt_normals'][1].squeeze(0),
+                                            src_normal, trg_normal,
                                             scores = matching_scores_before_Sinkhorn,
                                             score_threshold=score_threshold,
                                             num_iters = num_iters)

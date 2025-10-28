@@ -70,7 +70,7 @@ def execute_commands_on_gpus(commands, num_gpus=None):
     # Start a worker thread for each GPU
     threads = []
     for gpu_id in range(num_gpus):
-        thread = Thread(target=worker, args=(gpu_id+1, command_queue))
+        thread = Thread(target=worker, args=(gpu_id, command_queue))
         # thread = Thread(target=worker, args=(command_queue,))
         thread.start()
         threads.append(thread)
@@ -87,23 +87,32 @@ def execute_commands_on_gpus(commands, num_gpus=None):
 #     option,
 #     logpath
 # ):
-#     option_str = f"--{option} \\" if option else "" 
 #     """Generate a command string for launching an experiment."""
 #     command = f"""
-#     python main.py \\
-#     --scale tiny \\
-#     --multiplicity 100 \\
+#     python test.py \\
+#     --scale small \\
+#     --multiplicity 1 \\
 #     --logpath {logpath} \\
 #     --visualize \\
-#     --wandb \\
-#     --wandb_project CMpp_debugging \\
-#     {option_str}
+#     --only_one_norm \\
+#     --use_opt_gram \\
+#     {option}
 #     """
 
 #     return command
 
 # # Generate command list
 # commands_list = []
+# option = ""
+# for usage in [None, '--use_RANSAC']:
+#     if usage == '--use_RANSAC':
+#         for type in ['default', 'score_dependent']:
+#             for match_option in ['topk', 'mutual_topk', 'soft_topk', 'unidirectional_nn_matching', 'injective_matching', 'bijective_matching']:
+#                 if match_option == 'topk':
+#                     for topk in ['128', '-10', '-20']:
+#                         option = usage + " \\ " + '--RANSAC_type ' + type + " \\ " + "--RANSA"
+#     breakpoint()
+    
 # for option in ['original', 'additional_VNLinearLeakyReLU', 'debugged_circle_loss', 'debugged_point_matching_loss', 'delete_occupancy_loss', 'use_opt_gram']:
 #     logpath = f"tiny_{option}"
 #     if option == 'original': option = None
@@ -115,48 +124,42 @@ def execute_commands_on_gpus(commands, num_gpus=None):
 #     )
 
 commands_list = [
-    "rm -rf checkpoint/OVER_CM_origin/ && python main.py --model CM_equiassem --logpath OVER_CM_origin --scale overfitting --multiplicity 100 --visualize  --wandb --wandb_project CMpp_debugging3",
-    "rm -rf checkpoint/OVER_CM_by_CMpp/ && python main.py --model CMpp_equiassem --logpath OVER_CM_by_CMpp --scale overfitting --multiplicity 100 --visualize --wandb --wandb_project CMpp_debugging3",
-    "rm -rf checkpoint/OVER_CM_AVN/ && python main.py --model CMpp_equiassem --logpath OVER_CM_AVN --scale overfitting --multiplicity 100 --visualize --additional_VNLinearLeakyReLU --wandb --wandb_project CMpp_debugging3",
-    "rm -rf checkpoint/OVER_CM_AVN_NC/ && python main.py --model CMpp_equiassem --logpath OVER_CM_AVN_NC --scale overfitting --multiplicity 100 --visualize --debugged_circle_loss --wandb --wandb_project CMpp_debugging3",
-    "rm -rf checkpoint/OVER_CM_AVN_NC_NPM/ && python main.py --model CMpp_equiassem --logpath OVER_CM_AVN_NC_NPM --scale overfitting --multiplicity 100 --visualize --debugged_point_matching_loss --wandb --wandb_project CMpp_debugging3",
-    # "rm -rf checkpoint/OVER_CM_AVN_NC_NPM_EXP/ && python main.py --model CMpp_equiassem --logpath OVER_CM_AVN_NC_NPM_EXP --scale overfitting --multiplicity 100 --visualize --debugged_point_matching_loss --exp_scale_for_point_matching_loss --wandb --wandb_project CMpp_debugging",
-    # "rm -rf checkpoint/OVER_CM_AVN_NC_NPM_EXP_NODOCC/ && python main.py --model CMpp_equiassem --logpath OVER_CM_AVN_NC_NPM_EXP_NODOCC --scale overfitting --multiplicity 100 --visualize --delete_occupancy_loss --exp_scale_for_point_matching_loss --wandb --wandb_project CMpp_debugging",
-    # "rm -rf checkpoint/OVER_CM_AVN_NC_NPM_EXP_NODOCC_OG/ && python main.py --model CMpp_equiassem --logpath OVER_CM_AVN_NC_NPM_EXP_NODOCC_OG --scale overfitting --multiplicity 100 --visualize --use_opt_gram --exp_scale_for_point_matching_loss --wandb --wandb_project CMpp_debugging",
-    "rm -rf checkpoint/OVER_CM_AVN_NC_NPM_NODOCC/ && python main.py --model CMpp_equiassem --logpath OVER_CM_AVN_NC_NPM_NODOCC --scale overfitting --multiplicity 100 --visualize --delete_occupancy_loss --wandb --wandb_project CMpp_debugging3",
-    "rm -rf checkpoint/OVER_CM_AVN_NC_NPM_NODOCC_OG/ && python main.py --model CMpp_equiassem --logpath OVER_CM_AVN_NC_NPM_NODOCC_OG --scale overfitting --multiplicity 100 --visualize --use_opt_gram --wandb --wandb_project CMpp_debugging3",
-    "rm -rf checkpoint/OVER_CM_AVN_NC_NPM_NODOCC_OG_10KNN/ && python main.py --model CMpp_equiassem --logpath OVER_CM_AVN_NC_NPM_NODOCC_OG_10KNN --scale overfitting --multiplicity 100 --visualize --use_opt_gram --n_knn 10 --wandb --wandb_project CMpp_debugging3",
+    "rm -rf checkpoint/SDR_static-topk_128/ && python test.py --logpath SDR_static-topk_128 --scale small --multiplicity 1 --visualize --only_one_norm --use_opt_gram --use_RANSAC --RANSAC_type score_dependent --RANSAC_match_option topk --RANSAC_topk 128 --load checkpoint/T3_S_AVNOON_NCD_NPM_NODOCC_OG/last.ckpt --use_predicted_normal",
+    "rm -rf checkpoint/SDR_dynamic-topk_10/ && python test.py --logpath SDR_dynamic-topk_10 --scale small --multiplicity 1 --visualize --only_one_norm --use_opt_gram --use_RANSAC --RANSAC_type score_dependent --RANSAC_match_option topk --RANSAC_topk -10 --load checkpoint/T3_S_AVNOON_NCD_NPM_NODOCC_OG/last.ckpt --use_predicted_normal",
+    "rm -rf checkpoint/SDR_dynamic-topk_20/ && python test.py --logpath SDR_dynamic-topk_20 --scale small --multiplicity 1 --visualize --only_one_norm --use_opt_gram --use_RANSAC --RANSAC_type score_dependent --RANSAC_match_option topk --RANSAC_topk -20 --load checkpoint/T3_S_AVNOON_NCD_NPM_NODOCC_OG/last.ckpt --use_predicted_normal",
+    "rm -rf checkpoint/SDR_mutual-topk_1/ && python test.py --logpath SDR_mutual-topk_1 --scale small --multiplicity 1 --visualize --only_one_norm --use_opt_gram --use_RANSAC --RANSAC_type score_dependent --RANSAC_match_option mutual_topk --RANSAC_topk 1 --load checkpoint/T3_S_AVNOON_NCD_NPM_NODOCC_OG/last.ckpt --use_predicted_normal",
+    "rm -rf checkpoint/SDR_mutual-topk_2/ && python test.py --logpath SDR_mutual-topk_2 --scale small --multiplicity 1 --visualize --only_one_norm --use_opt_gram --use_RANSAC --RANSAC_type score_dependent --RANSAC_match_option mutual_topk --RANSAC_topk 2 --load checkpoint/T3_S_AVNOON_NCD_NPM_NODOCC_OG/last.ckpt --use_predicted_normal",
+    "rm -rf checkpoint/SDR_mutual-topk_3/ && python test.py --logpath SDR_mutual-topk_3 --scale small --multiplicity 1 --visualize --only_one_norm --use_opt_gram --use_RANSAC --RANSAC_type score_dependent --RANSAC_match_option mutual_topk --RANSAC_topk 3 --load checkpoint/T3_S_AVNOON_NCD_NPM_NODOCC_OG/last.ckpt --use_predicted_normal",
+    "rm -rf checkpoint/SDR_soft-topk_1/ && python test.py --logpath SDR_soft-topk_1 --scale small --multiplicity 1 --visualize --only_one_norm --use_opt_gram --use_RANSAC --RANSAC_type score_dependent --RANSAC_match_option soft_topk --RANSAC_topk 1 --load checkpoint/T3_S_AVNOON_NCD_NPM_NODOCC_OG/last.ckpt --use_predicted_normal",
+    "rm -rf checkpoint/SDR_soft-topk_2/ && python test.py --logpath SDR_soft-topk_2 --scale small --multiplicity 1 --visualize --only_one_norm --use_opt_gram --use_RANSAC --RANSAC_type score_dependent --RANSAC_match_option soft_topk --RANSAC_topk 2 --load checkpoint/T3_S_AVNOON_NCD_NPM_NODOCC_OG/last.ckpt --use_predicted_normal",
+    "rm -rf checkpoint/SDR_soft-topk_3/ && python test.py --logpath SDR_soft-topk_3 --scale small --multiplicity 1 --visualize --only_one_norm --use_opt_gram --use_RANSAC --RANSAC_type score_dependent --RANSAC_match_option soft_topk --RANSAC_topk 3 --load checkpoint/T3_S_AVNOON_NCD_NPM_NODOCC_OG/last.ckpt --use_predicted_normal",
+    "rm -rf checkpoint/SDR_unidir_top_1/ && python test.py --logpath SDR_unidir_top_1 --scale small --multiplicity 1 --visualize --only_one_norm --use_opt_gram --use_RANSAC --RANSAC_type score_dependent --RANSAC_match_option unidirectional_nn_matching --RANSAC_topk 1 --load checkpoint/T3_S_AVNOON_NCD_NPM_NODOCC_OG/last.ckpt --use_predicted_normal",
+    "rm -rf checkpoint/SDR_unidir_top_2/ && python test.py --logpath SDR_unidir_top_2 --scale small --multiplicity 1 --visualize --only_one_norm --use_opt_gram --use_RANSAC --RANSAC_type score_dependent --RANSAC_match_option unidirectional_nn_matching --RANSAC_topk 2 --load checkpoint/T3_S_AVNOON_NCD_NPM_NODOCC_OG/last.ckpt --use_predicted_normal",
+    "rm -rf checkpoint/SDR_unidir_top_3/ && python test.py --logpath SDR_unidir_top_3 --scale small --multiplicity 1 --visualize --only_one_norm --use_opt_gram --use_RANSAC --RANSAC_type score_dependent --RANSAC_match_option unidirectional_nn_matching --RANSAC_topk 3 --load checkpoint/T3_S_AVNOON_NCD_NPM_NODOCC_OG/last.ckpt --use_predicted_normal",
+    "rm -rf checkpoint/SDR_inject/ && python test.py --logpath SDR_inject --scale small --multiplicity 1 --visualize --only_one_norm --use_opt_gram --use_RANSAC --RANSAC_type score_dependent --RANSAC_match_option injective_matching --load checkpoint/T3_S_AVNOON_NCD_NPM_NODOCC_OG/last.ckpt --use_predicted_normal",
+    "rm -rf checkpoint/SDR_biject/ && python test.py --logpath SDR_biject --scale small --multiplicity 1 --visualize --only_one_norm --use_opt_gram --use_RANSAC --RANSAC_type score_dependent --RANSAC_match_option bijective_matching --load checkpoint/T3_S_AVNOON_NCD_NPM_NODOCC_OG/last.ckpt --use_predicted_normal",
 
+    "rm -rf checkpoint/R_static-topk_128/ && python test.py --logpath  R_static-topk_128 --scale small --multiplicity 1 --visualize --only_one_norm --use_opt_gram --use_RANSAC --RANSAC_type default --RANSAC_match_option topk --RANSAC_topk 128 --load checkpoint/T3_S_AVNOON_NCD_NPM_NODOCC_OG/last.ckpt --use_predicted_normal",
+    "rm -rf checkpoint/R_dynamic-topk_10/ && python test.py --logpath  R_dynamic-topk_10 --scale small --multiplicity 1 --visualize --only_one_norm --use_opt_gram --use_RANSAC --RANSAC_type default --RANSAC_match_option topk --RANSAC_topk -10 --load checkpoint/T3_S_AVNOON_NCD_NPM_NODOCC_OG/last.ckpt --use_predicted_normal",
+    "rm -rf checkpoint/R_dynamic-topk_20/ && python test.py --logpath  R_dynamic-topk_20 --scale small --multiplicity 1 --visualize --only_one_norm --use_opt_gram --use_RANSAC --RANSAC_type default --RANSAC_match_option topk --RANSAC_topk -20 --load checkpoint/T3_S_AVNOON_NCD_NPM_NODOCC_OG/last.ckpt --use_predicted_normal",
+    "rm -rf checkpoint/R_mutual-topk_1/ && python test.py --logpath  R_mutual-topk_1 --scale small --multiplicity 1 --visualize --only_one_norm --use_opt_gram --use_RANSAC --RANSAC_type default --RANSAC_match_option mutual_topk --RANSAC_topk 1 --load checkpoint/T3_S_AVNOON_NCD_NPM_NODOCC_OG/last.ckpt --use_predicted_normal",
+    "rm -rf checkpoint/R_mutual-topk_2/ && python test.py --logpath  R_mutual-topk_2 --scale small --multiplicity 1 --visualize --only_one_norm --use_opt_gram --use_RANSAC --RANSAC_type default --RANSAC_match_option mutual_topk --RANSAC_topk 2 --load checkpoint/T3_S_AVNOON_NCD_NPM_NODOCC_OG/last.ckpt --use_predicted_normal",
+    "rm -rf checkpoint/R_mutual-topk_3/ && python test.py --logpath  R_mutual-topk_3 --scale small --multiplicity 1 --visualize --only_one_norm --use_opt_gram --use_RANSAC --RANSAC_type default --RANSAC_match_option mutual_topk --RANSAC_topk 3 --load checkpoint/T3_S_AVNOON_NCD_NPM_NODOCC_OG/last.ckpt --use_predicted_normal",
+    "rm -rf checkpoint/R_soft-topk_1/ && python test.py --logpath  R_soft-topk_1 --scale small --multiplicity 1 --visualize --only_one_norm --use_opt_gram --use_RANSAC --RANSAC_type default --RANSAC_match_option soft_topk --RANSAC_topk 1 --load checkpoint/T3_S_AVNOON_NCD_NPM_NODOCC_OG/last.ckpt --use_predicted_normal",
+    "rm -rf checkpoint/R_soft-topk_2/ && python test.py --logpath  R_soft-topk_2 --scale small --multiplicity 1 --visualize --only_one_norm --use_opt_gram --use_RANSAC --RANSAC_type default --RANSAC_match_option soft_topk --RANSAC_topk 2 --load checkpoint/T3_S_AVNOON_NCD_NPM_NODOCC_OG/last.ckpt --use_predicted_normal",
+    "rm -rf checkpoint/R_soft-topk_3/ && python test.py --logpath  R_soft-topk_3 --scale small --multiplicity 1 --visualize --only_one_norm --use_opt_gram --use_RANSAC --RANSAC_type default --RANSAC_match_option soft_topk --RANSAC_topk 3 --load checkpoint/T3_S_AVNOON_NCD_NPM_NODOCC_OG/last.ckpt --use_predicted_normal",
+    "rm -rf checkpoint/R_unidir_top_1/ && python test.py --logpath  R_unidir_top_1 --scale small --multiplicity 1 --visualize --only_one_norm --use_opt_gram --use_RANSAC --RANSAC_type default --RANSAC_match_option unidirectional_nn_matching --RANSAC_topk 1 --load checkpoint/T3_S_AVNOON_NCD_NPM_NODOCC_OG/last.ckpt --use_predicted_normal",
+    "rm -rf checkpoint/R_unidir_top_2/ && python test.py --logpath  R_unidir_top_2 --scale small --multiplicity 1 --visualize --only_one_norm --use_opt_gram --use_RANSAC --RANSAC_type default --RANSAC_match_option unidirectional_nn_matching --RANSAC_topk 2 --load checkpoint/T3_S_AVNOON_NCD_NPM_NODOCC_OG/last.ckpt --use_predicted_normal",
+    "rm -rf checkpoint/R_unidir_top_3/ && python test.py --logpath  R_unidir_top_3 --scale small --multiplicity 1 --visualize --only_one_norm --use_opt_gram --use_RANSAC --RANSAC_type default --RANSAC_match_option unidirectional_nn_matching --RANSAC_topk 3 --load checkpoint/T3_S_AVNOON_NCD_NPM_NODOCC_OG/last.ckpt --use_predicted_normal",
+    "rm -rf checkpoint/R_inject/ && python test.py --logpath  R_inject --scale small --multiplicity 1 --visualize --only_one_norm --use_opt_gram --use_RANSAC --RANSAC_type default --RANSAC_match_option injective_matching --load checkpoint/T3_S_AVNOON_NCD_NPM_NODOCC_OG/last.ckpt --use_predicted_normal",
+    "rm -rf checkpoint/R_biject/ && python test.py --logpath  R_biject --scale small --multiplicity 1 --visualize --only_one_norm --use_opt_gram --use_RANSAC --RANSAC_type default --RANSAC_match_option bijective_matching --load checkpoint/T3_S_AVNOON_NCD_NPM_NODOCC_OG/last.ckpt --use_predicted_normal",
 
-    "rm -rf checkpoint/TINY_CM_origin/ && python main.py --model CM_equiassem --logpath TINY_CM_origin --scale tiny --multiplicity 33 --visualize --wandb --wandb_project CMpp_debugging3",
-    "rm -rf checkpoint/TINY_CM_by_CMpp/ && python main.py --model CMpp_equiassem --logpath TINY_CM_by_CMpp --scale tiny --multiplicity 33 --visualize --wandb --wandb_project CMpp_debugging3",
-    "rm -rf checkpoint/TINY_CM_AVN/ && python main.py --model CMpp_equiassem --logpath TINY_CM_AVN --scale tiny --multiplicity 33 --visualize --additional_VNLinearLeakyReLU --wandb --wandb_project CMpp_debugging3",
-    "rm -rf checkpoint/TINY_CM_AVN_NC/ && python main.py --model CMpp_equiassem --logpath TINY_CM_AVN_NC --scale tiny --multiplicity 33 --visualize --debugged_circle_loss --wandb --wandb_project CMpp_debugging3",
-    "rm -rf checkpoint/TINY_CM_AVN_NC_NPM/ && python main.py --model CMpp_equiassem --logpath TINY_CM_AVN_NC_NPM --scale tiny --multiplicity 33 --visualize --debugged_point_matching_loss --wandb --wandb_project CMpp_debugging3",
-    # "rm -rf checkpoint/TINY_CM_AVN_NC_NPM_EXP/ && python main.py --model CMpp_equiassem --logpath TINY_CM_AVN_NC_NPM_EXP --scale tiny --multiplicity 33 --visualize --debugged_point_matching_loss --exp_scale_for_point_matching_loss --wandb --wandb_project CMpp_debugging",
-    # "rm -rf checkpoint/TINY_CM_AVN_NC_NPM_EXP_NODOCC/ && python main.py --model CMpp_equiassem --logpath TINY_CM_AVN_NC_NPM_EXP_NODOCC --scale tiny --multiplicity 33 --visualize --delete_occupancy_loss --exp_scale_for_point_matching_loss --wandb --wandb_project CMpp_debugging",
-    # "rm -rf checkpoint/TINY_CM_AVN_NC_NPM_EXP_NODOCC_OG/ && python main.py --model CMpp_equiassem --logpath TINY_CM_AVN_NC_NPM_EXP_NODOCC_OG --scale tiny --multiplicity 33 --visualize --use_opt_gram --exp_scale_for_point_matching_loss --wandb --wandb_project CMpp_debugging",
-    "rm -rf checkpoint/TINY_CM_AVN_NC_NPM_NODOCC/ && python main.py --model CMpp_equiassem --logpath TINY_CM_AVN_NC_NPM_NODOCC --scale tiny --multiplicity 33 --visualize --delete_occupancy_loss --wandb --wandb_project CMpp_debugging3",
-    "rm -rf checkpoint/TINY_CM_AVN_NC_NPM_NODOCC_OG/ && python main.py --model CMpp_equiassem --logpath TINY_CM_AVN_NC_NPM_NODOCC_OG --scale tiny --multiplicity 33 --visualize --use_opt_gram --wandb --wandb_project CMpp_debugging3",
-    "rm -rf checkpoint/TINY_CM_AVN_NC_NPM_NODOCC_OG_10KNN/ && python main.py --model CMpp_equiassem --logpath TINY_CM_AVN_NC_NPM_NODOCC_OG_10KNN --scale tiny --multiplicity 33 --visualize --use_opt_gram --n_knn 10 --wandb --wandb_project CMpp_debugging3",
-
-
-    "rm -rf checkpoint/SMALL_CM_origin/ && python main.py --model CM_equiassem --logpath SMALL_CM_origin --scale small --multiplicity 1 --wandb --wandb_project CMpp_debugging3",
-    "rm -rf checkpoint/SMALL_CM_by_CMpp/ &&  python main.py --model CMpp_equiassem --logpath SMALL_CM_by_CMpp --scale small --multiplicity 1 --visualize --wandb --wandb_project CMpp_debugging3",
-    "rm -rf checkpoint/SMALL_CM_AVN/ && python main.py --model CMpp_equiassem --logpath SMALL_CM_AVN --scale small --multiplicity 1 --visualize --additional_VNLinearLeakyReLU --wandb --wandb_project CMpp_debugging3",
-    "rm -rf checkpoint/SMALL_CM_AVN_NC/ && python main.py --model CMpp_equiassem --logpath SMALL_CM_AVN_NC --scale small --multiplicity 1 --visualize --debugged_circle_loss --wandb --wandb_project CMpp_debugging3",
-    "rm -rf checkpoint/SMALL_CM_AVN_NC_NPM/ && python main.py --model CMpp_equiassem --logpath SMALL_CM_AVN_NC_NPM --scale small --multiplicity 1 --visualize --debugged_point_matching_loss --wandb --wandb_project CMpp_debugging3",
-    # "rm -rf checkpoint/SMALL_CM_AVN_NC_NPM_EXP/ && python main.py --model CMpp_equiassem --logpath SMALL_CM_AVN_NC_NPM_EXP --scale small --multiplicity 1 --visualize --debugged_point_matching_loss --exp_scale_for_point_matching_loss --wandb --wandb_project CMpp_debugging",
-    # "rm -rf checkpoint/SMALL_CM_AVN_NC_NPM_EXP_NODOCC/ && python main.py --model CMpp_equiassem --logpath SMALL_CM_AVN_NC_NPM_EXP_NODOCC --scale small --multiplicity 1 --visualize --delete_occupancy_loss --exp_scale_for_point_matching_loss --wandb --wandb_project CMpp_debugging",
-    # "rm -rf checkpoint/SMALL_CM_AVN_NC_NPM_EXP_NODOCC_OG/ && python main.py --model CMpp_equiassem --logpath SMALL_CM_AVN_NC_NPM_EXP_NODOCC_OG --scale small --multiplicity 1 --visualize --use_opt_gram --exp_scale_for_point_matching_loss --wandb --wandb_project CMpp_debugging"
-    "rm -rf checkpoint/SMALL_CM_AVN_NC_NPM_NODOCC/ && python main.py --model CMpp_equiassem --logpath SMALL_CM_AVN_NC_NPM_NODOCC --scale small --multiplicity 1 --visualize --delete_occupancy_loss --wandb --wandb_project CMpp_debugging3",
-    "rm -rf checkpoint/SMALL_CM_AVN_NC_NPM_NODOCC_OG/ && python main.py --model CMpp_equiassem --logpath SMALL_CM_AVN_NC_NPM_NODOCC_OG --scale small --multiplicity 1 --visualize --use_opt_gram --wandb --wandb_project CMpp_debugging3",
-    "rm -rf checkpoint/SMALL_CM_AVN_NC_NPM_NODOCC_OG_10KNN/ && python main.py --model CMpp_equiassem --logpath SMALL_CM_AVN_NC_NPM_NODOCC_OG_10KNN --scale small --multiplicity 1 --visualize --use_opt_gram --n_knn 10 --wandb --wandb_project CMpp_debugging3"
+    # "rm -rf checkpoint/CMpp-topk_128/ && python test.py --logpath CMpp-topk_128 --scale small --multiplicity 1 --visualize --only_one_norm --use_opt_gram --load checkpoint/T3_S_AVNOON_NCD_NPM_NODOCC_OG/last.ckpt"
 
 ]
+# commands_list = commands_list[::-1]
 
-commands_list = commands_list[::-1]
 # print(commands_list[0])
 # Execute the commands across the GPUs
-execute_commands_on_gpus(commands_list, num_gpus=7)
+execute_commands_on_gpus(commands_list, num_gpus=8)
 
