@@ -464,9 +464,9 @@ class EquiAssem(pl.LightningModule):
     
 
     def on_train_batch_end(self, outputs, batch, batch_idx):
-        pass
+        # pass
         # If you want to check the gradient and NaN, uncomment the following line
-        # self.check_grad_and_nan()
+        self.check_grad_and_nan()
 
     
     def check_grad_and_nan(self):
@@ -609,11 +609,21 @@ class EquiAssem(pl.LightningModule):
         src_pcd = in_dict['pcd_t'][0] # (1, N ,3)
         trg_pcd = in_dict['pcd_t'][1] # (1, M ,3)
         gt_corr = in_dict['gt_correspondence'].squeeze(0) # (1, P, 2) -> (P, 2)
+        
+        check_inf_or_nan(src_pcd_raw, 'src_pcd_raw')
+        check_inf_or_nan(trg_pcd_raw, 'trg_pcd_raw')
+        check_inf_or_nan(src_pcd, 'src_pcd')
+        check_inf_or_nan(trg_pcd, 'trg_pcd')
+        check_inf_or_nan(gt_corr, 'gt_corr')
 
 
         # 1. SO(3)-Equivariant Feature Extractor
         src_equi_feats_backbone = self.backbone(src_pcd) # (1, C, 3, N)
         trg_equi_feats_backbone = self.backbone(trg_pcd) # (1, C, 3, M)
+
+
+        check_inf_or_nan(src_equi_feats_backbone, 'src_equi_feats_backbone')
+        check_inf_or_nan(trg_equi_feats_backbone, 'trg_equi_feats_backbone')
 
         
         if self.additional_VNLinearLeakyReLU: # 2. Frame Prediction
@@ -632,6 +642,10 @@ class EquiAssem(pl.LightningModule):
         else: # 2. Basis Vector Projection 
             src_vecs = self.proj(src_equi_feats_backbone).permute(0, 3, 1, 2) # (1, N, 2, 3)
             trg_vecs = self.proj(trg_equi_feats_backbone).permute(0, 3, 1, 2) # (1, M, 2, 3)
+        
+
+        check_inf_or_nan(src_vecs, 'src_vecs')
+        check_inf_or_nan(trg_vecs, 'trg_vecs')
 
         
         # 3. Calculate equivariant shape features
@@ -639,10 +653,17 @@ class EquiAssem(pl.LightningModule):
         trg_equi_feats = self.equi_layer(trg_equi_feats_backbone.unsqueeze(-1)).squeeze(-1) # (1, C, 3, M)
 
 
+        check_inf_or_nan(src_equi_feats, 'src_equi_feats')
+        check_inf_or_nan(trg_equi_feats, 'trg_equi_feats')
+
+
         # 4. Gram Schmidt & Cross-product, this is for making three basis vectors by using two predicted vectors
         src_ori = ortho2rotation(src_vecs, optimum=self.use_opt_gram) # (1, N, 2, 3) -> (1, N, 3, 3)
         trg_ori = ortho2rotation(trg_vecs, optimum=self.use_opt_gram) # (1, M, 2, 3) -> (1, M, 3, 3)
 
+
+        check_inf_or_nan(src_ori, 'src_ori')
+        check_inf_or_nan(trg_ori, 'trg_ori')
 
         # Save for visualization
         out_dict['src_ori'] = src_ori
@@ -652,9 +673,15 @@ class EquiAssem(pl.LightningModule):
         # 5. Invariant Features
         src_inv_feats = torch.matmul(src_equi_feats.permute(0, 3, 1, 2).float(), src_ori.transpose(-2,-1).float()) # (1, N, C, 3) x (1, N, 3, 3) -> (1, N, C, 3)
         trg_inv_feats = torch.matmul(trg_equi_feats.permute(0, 3, 1, 2).float(), trg_ori.transpose(-2,-1).float()) # (1, M, C, 3) x (1, M, 3, 3) -> (1, M, C, 3)
+
+        check_inf_or_nan(src_inv_feats, 'src_inv_feats 1')
+        check_inf_or_nan(trg_inv_feats, 'trg_inv_feats 1')
+
         src_inv_feats = rearrange(src_inv_feats, 'b n c r -> b (c r) n') # (1, N, C, 3) -> (1, C*3, N)
         trg_inv_feats = rearrange(trg_inv_feats, 'b n c r -> b (c r) n') # (1, M, C, 3) -> (1, C*3, M)
 
+        check_inf_or_nan(src_inv_feats, 'src_inv_feats 2')
+        check_inf_or_nan(trg_inv_feats, 'trg_inv_feats 2')
 
         # OPTIONAL 5. Chaneel Attention Map
         if self.attention == 'channel':
@@ -671,6 +698,10 @@ class EquiAssem(pl.LightningModule):
         trg_shape_feats = self.shape_mlp(trg_inv_feats) # # (1, C*3, M) -> (1, D, N)
         if self.attention == 'channel': # (1, D, M) * channel attention
             trg_shape_feats = trg_shape_feats * shape_attention
+        
+
+        check_inf_or_nan(src_shape_feats, 'src_shape_feats')
+        check_inf_or_nan(trg_shape_feats, 'trg_shape_feats')
 
 
         if not self.delete_occupancy_loss:
@@ -698,6 +729,9 @@ class EquiAssem(pl.LightningModule):
         
         matching_scores = self.optimal_transport(shape_matching_scores) # Optimal Transport is in log space, so inside registration, there is exp operation
         matching_scores_drop = matching_scores[:,:-1,:-1]   
+
+        
+        check_inf_or_nan(matching_scores, 'matching_scores')
 
 
         # 8. Calculate Loss

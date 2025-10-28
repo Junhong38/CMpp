@@ -4,6 +4,11 @@ import random
 import numpy as np
 import open3d as o3d
 from scipy.spatial.transform import Rotation as R
+
+# Set matplotlib backend before any other matplotlib imports
+# This must be done in every process (including worker processes)
+import matplotlib
+matplotlib.use('Agg')  # Use non-interactive backend to avoid X server issues
 import matplotlib.pyplot as plt
 
 

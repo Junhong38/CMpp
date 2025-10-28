@@ -3,6 +3,10 @@ import pwd
 import argparse
 import torch
 
+# Set matplotlib backend environment variable to avoid X server issues
+# This ensures all processes (including worker processes) use the correct backend
+os.environ['MPLBACKEND'] = 'Agg'
+
 from data.dataset import GADataset
 
 import pytorch_lightning as pl
@@ -223,7 +227,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Equivariant Assembly Pytorch Implementation')
 
     # Dataset arguments
-    parser.add_argument('--datapath', type=str, default='/mnt/nvme2n1p1/kimsangki_datasets/breaking_bad/volume_constrained') 
+    parser.add_argument('--datapath', type=str, default='/home/kimsangki/breaking_bad/volume_constrained') 
     #'../../../../hdd/junhong/data/bbad_v2' and /mnt/nvme2n1p1/kimsangki_datasets/breaking_bad/volume_constrained , /home/kimsangki/breaking_bad/volume_constrained
     parser.add_argument('--data_category', type=str, default='everyday', choices=['everyday', 'artifact', 'synthetic'])
     parser.add_argument('--sub_category', type=str, default='all')
