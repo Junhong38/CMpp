@@ -449,10 +449,9 @@ class EquiAssem(pl.LightningModule):
 
 
     def test_step(self, in_dict, batch_idx):
-        print("DEBUGGING")
-
         _, loss_dict = self.forward_pass(in_dict, mode='test')
         self.test_step_outputs.append(loss_dict)
+        print(f'[--------- {self.trainer.global_rank} ---------]; '.join([f'{k}: {v.item():.6f}' for k, v in loss_dict.items()]))
         return loss_dict
 
 
@@ -463,9 +462,9 @@ class EquiAssem(pl.LightningModule):
             for k in self.test_step_outputs[0].keys()
         }
         avg_loss = {k: (v).sum() / v.size(0) for k, v in losses.items()}
-        print('; '.join([f'{k}: {v.item():.6f}' for k, v in avg_loss.items()]))
         # this is a hack to get results outside `Trainer.test()` function
         self.test_results = avg_loss
+        self.log_dict(avg_loss, logger=True, sync_dist=True, batch_size=1,)
         self.test_step_outputs.clear()
     
 
@@ -711,8 +710,8 @@ class EquiAssem(pl.LightningModule):
             trg_shape_feats = trg_shape_feats * shape_attention
         
 
-        check_inf_or_nan(src_shape_feats, 'src_shape_feats', log=self.log)
-        check_inf_or_nan(trg_shape_feats, 'trg_shape_feats', log=self.log)
+        check_inf_or_nan(src_shape_feats, 'src_shape_feats', log=(self.log if mode=='train' else None))
+        check_inf_or_nan(trg_shape_feats, 'trg_shape_feats', log=(self.log if mode=='train' else None))
 
 
         if not self.delete_occupancy_loss:
@@ -745,45 +744,46 @@ class EquiAssem(pl.LightningModule):
         check_inf_or_nan(matching_scores, 'matching_scores')
 
 
-        # 8. Calculate Loss
-        # Orientation loss
-        if self.new_orientation_module:
-            loss['o_loss'] = self.orientation_loss(src_ori, trg_ori, gt_corr, in_dict['gt_normals'])
-        else:
-            loss['o_loss'] = self.orientation_loss(src_ori, trg_ori, gt_corr, in_dict['gt_rotat'])
-        
+        if mode in ['train', 'val']: # Do not calculate for test
+            # 8. Calculate Loss
+            # Orientation loss
+            if self.new_orientation_module:
+                loss['o_loss'] = self.orientation_loss(src_ori, trg_ori, gt_corr, in_dict['gt_normals'])
+            else:
+                loss['o_loss'] = self.orientation_loss(src_ori, trg_ori, gt_corr, in_dict['gt_rotat'])
+            
 
-        # Shape loss
-        if self.debugged_circle_loss:
-            loss['s_loss'], pos_neg_distribution = self.shape_loss(src_pcd_raw, trg_pcd_raw, src_shape_feats.transpose(-2,-1), trg_shape_feats.transpose(-2,-1), gt_corr)
-        else:
-            loss['s_loss'], pos_neg_distribution = self.shape_loss(src_pcd_raw, trg_pcd_raw, src_shape_feats.transpose(-2,-1), trg_shape_feats.transpose(-2,-1), gt_corr)
+            # Shape loss
+            if self.debugged_circle_loss:
+                loss['s_loss'], pos_neg_distribution = self.shape_loss(src_pcd_raw, trg_pcd_raw, src_shape_feats.transpose(-2,-1), trg_shape_feats.transpose(-2,-1), gt_corr)
+            else:
+                loss['s_loss'], pos_neg_distribution = self.shape_loss(src_pcd_raw, trg_pcd_raw, src_shape_feats.transpose(-2,-1), trg_shape_feats.transpose(-2,-1), gt_corr)
 
-        
-        # Point matching loss
-        if self.exp_scale_for_point_matching_loss:
-            loss['p_loss'] = 1.0 + self.matching_loss(torch.exp(matching_scores), gt_corr, src_pcd_raw, trg_pcd_raw).float() # Optimal Transport is in log space, so before registration, we need to exp it
-        else:
-            loss['p_loss'] = self.matching_loss(matching_scores, gt_corr, src_pcd_raw, trg_pcd_raw).float()
+            
+            # Point matching loss
+            if self.exp_scale_for_point_matching_loss:
+                loss['p_loss'] = 1.0 + self.matching_loss(torch.exp(matching_scores), gt_corr, src_pcd_raw, trg_pcd_raw).float() # Optimal Transport is in log space, so before registration, we need to exp it
+            else:
+                loss['p_loss'] = self.matching_loss(matching_scores, gt_corr, src_pcd_raw, trg_pcd_raw).float()
 
 
-        if not self.delete_occupancy_loss:
-            loss['occ_loss'], _ = self.occupancy_loss(src_pcd_raw, trg_pcd_raw, src_occ_feats.transpose(-2,-1), -trg_occ_feats.transpose(-2,-1), gt_corr)
-        
+            if not self.delete_occupancy_loss:
+                loss['occ_loss'], _ = self.occupancy_loss(src_pcd_raw, trg_pcd_raw, src_occ_feats.transpose(-2,-1), -trg_occ_feats.transpose(-2,-1), gt_corr)
+            
 
-        # Final loss
-        if not self.delete_occupancy_loss:
-            loss['loss'] = self.o_loss_weight * loss['o_loss'] + self.s_loss_weight * loss['s_loss'] + self.p_loss_weight * loss['p_loss'] + self.occ_loss_weight * loss['occ_loss']
-        else:
-            loss['loss'] = self.o_loss_weight * loss['o_loss'] + self.s_loss_weight * loss['s_loss'] + self.p_loss_weight * loss['p_loss']
+            # Final loss
+            if not self.delete_occupancy_loss:
+                loss['loss'] = self.o_loss_weight * loss['o_loss'] + self.s_loss_weight * loss['s_loss'] + self.p_loss_weight * loss['p_loss'] + self.occ_loss_weight * loss['occ_loss']
+            else:
+                loss['loss'] = self.o_loss_weight * loss['o_loss'] + self.s_loss_weight * loss['s_loss'] + self.p_loss_weight * loss['p_loss']
 
-        
-        # Check for Inf or Nan
-        for loss_name, loss_value in loss.items():
-            check_inf_or_nan(loss_value, f'{loss_name}')
-        
+            
+            # Check for Inf or Nan
+            for loss_name, loss_value in loss.items():
+                check_inf_or_nan(loss_value, f'{loss_name}')
+            
 
-        out_dict.update(loss)
+            out_dict.update(loss)
 
 
         if mode == 'train':

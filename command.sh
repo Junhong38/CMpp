@@ -110,6 +110,15 @@ rm -rf checkpoint/DET_T5_F_AVNOON_NCD_NPM_NODOCC_OG_32/ && CUDA_VISIBLE_DEVICES=
 
 rm -rf checkpoint/DEBUG/ && CUDA_VISIBLE_DEVICES=0 python main.py --model CMpp_equiassem --logpath DEBUG --scale full --multiplicity 1 --epochs 0 --visualize --only_one_norm --detach_mode --use_opt_gram --deterministic --gpus 0
 rm -rf checkpoint/DEBUG/ && CUDA_VISIBLE_DEVICES=0 python main.py --model CMpp_equiassem --logpath DEBUG --scale overfitting --multiplicity 1 --epochs 0 --visualize --detach_mode --use_opt_gram --deterministic --gpus 0
+rm -rf checkpoint/DEBUG_test/ && CUDA_VISIBLE_DEVICES=0 python test.py --load checkpoint/DEBUG/models/last.ckpt --model CMpp_equiassem --logpath DEBUG_test --scale overfitting --multiplicity 1 --visualize --use_opt_gram --deterministic --gpus 0
+
+
+
+rm -rf checkpoint/DEBUG_tiny/ && CUDA_VISIBLE_DEVICES=0 python main.py --model CMpp_equiassem --logpath DEBUG_tiny --scale tiny --multiplicity 1 --epochs 0 --visualize --detach_mode --use_opt_gram --deterministic --gpus 0
+rm -rf checkpoint/DEBUG_tiny_test/ && CUDA_VISIBLE_DEVICES=0,1,2 python test.py --load checkpoint/DEBUG_tiny/models/last.ckpt --model CMpp_equiassem --logpath DEBUG_tiny_test --scale tiny --multiplicity 1 --visualize --use_opt_gram --deterministic --gpus 0 1 2
+
+
+
 
 
 

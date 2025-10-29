@@ -8,6 +8,7 @@ from data.dataset import GADataset
 
 import pytorch_lightning as pl
 from pytorch_lightning import seed_everything
+from pytorch_lightning.loggers import WandbLogger, CSVLogger
 
 
 @torch.no_grad()
@@ -93,6 +94,25 @@ def test(args):
         raise NotImplementedError("Model not implemented")
 
 
+    
+    # Wandb logger
+    if args.wandb:
+        logger = WandbLogger(
+            project=args.wandb_project,
+            name=args.logpath, # same as logpath
+            id=None, 
+            save_dir=ckp_dir,
+            tags=[args.scale],
+        )
+    else:
+        # CSV logger for saving all metrics in a text file
+        logger = CSVLogger(
+            save_dir=ckp_dir,
+            name="csv_logs",
+            version=None,
+        )
+    
+    
     all_gpus = list(args.gpus)
     print(f"all_gpus: {all_gpus}")
 
@@ -100,10 +120,22 @@ def test(args):
     assert ckpt_path is not None, "Checkpoint path is not set"
 
 
-    trainer = pl.Trainer(accelerator='gpu', devices=all_gpus)
+    trainer = pl.Trainer(
+        logger=logger,
+        accelerator='gpu',
+        devices=all_gpus,
+        precision=32,
+        deterministic=args.deterministic,
+        strategy=args.parallel_strategy,
+    )
+
+
     trainer.test(model, dataloader_val, ckpt_path=ckpt_path)
     results = model.test_results
     results = {k[5:]: v.detach().cpu().numpy() for k, v in results.items()}
+    print('--------------------------------')
+    print(results)
+    print('--------------------------------')
     print('Done testing...')
 
 
@@ -113,7 +145,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Equivariant Assembly Pytorch Implementation')
 
     # Dataset arguments
-    parser.add_argument('--datapath', type=str, default='/mnt/nvme2n1p1/kimsangki_datasets/breaking_bad/volume_constrained') 
+    parser.add_argument('--datapath', type=str, default='/home/kimsangki/breaking_bad/volume_constrained') 
     #'../../../../hdd/junhong/data/bbad_v2' and /mnt/nvme2n1p1/kimsangki_datasets/breaking_bad/volume_constrained , /home/kimsangki/breaking_bad/volume_constrained
     parser.add_argument('--data_category', type=str, default='everyday', choices=['everyday', 'artifact', 'synthetic'])
     parser.add_argument('--sub_category', type=str, default='all')
@@ -181,6 +213,10 @@ if __name__ == '__main__':
     parser.add_argument('--wandb_project', type=str, default='default_wandb_project')
 
 
+    # Deterministic argument
+    parser.add_argument('--deterministic', action='store_true')
+
+
     args = parser.parse_args()
 
 
@@ -188,10 +224,9 @@ if __name__ == '__main__':
     if len(args.gpus) > 1: # Multi-GPU training
         from pytorch_lightning.strategies import DDPStrategy
         args.parallel_strategy = DDPStrategy(find_unused_parameters=False)
-        args.n_worker = min(len(args.gpus) * 4, 48) # Number of workers is multiplied by the number of GPUs
     
     else: # Single-GPU training
-        args.parallel_strategy = None
+        args.parallel_strategy = 'auto'
 
 
     # Setting developing experiments arguments automatically

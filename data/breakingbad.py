@@ -228,6 +228,8 @@ class DatasetBreakingBad(Dataset):
             np.random.seed(idx)
             random.seed(idx)
         """
+
+        
         idx = idx % self.len_filepaths
 
         # Read mesh, point cloud of a fractured object
