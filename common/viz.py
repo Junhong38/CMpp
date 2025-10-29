@@ -4,6 +4,9 @@ import random
 import numpy as np
 import open3d as o3d
 from scipy.spatial.transform import Rotation as R
+import matplotlib.pyplot as plt
+
+
 
 global_colors_for_objs = {
     "red": [1.0, 0.0, 0.0],
@@ -220,4 +223,26 @@ def save_meshes_as_ply(meshes, dir_path, filename):
     ply_filename = os.path.join(dir_path, f"{filename}.ply")
     o3d.io.write_triangle_mesh(ply_filename, combined_mesh)
 
+
+
+def draw_normal_error_histogram(normal_error_hist, dir_path, filename):
+    """
+    Draw normal error histogram.
+
+    Args:
+        normal_error_hist (numpy.ndarray): histogram of normal error
+             - [0] (torch.Tensor): number of points in each bin
+             - [1] (torch.Tensor): bin edges
+        dir_path (str): directory path to save
+        filename (str): filename to save
+    """
+    counts = normal_error_hist[0]
+    bins = normal_error_hist[1]
+
+    plt.hist(bins[:-1], bins=bins, weights=counts)
+    plt.xlabel('Normal Error (degrees)')
+    plt.ylabel('Count')
+    plt.title('Normal Error Histogram')
+    plt.savefig(os.path.join(dir_path, f"{filename}.png"))
+    plt.close()
 

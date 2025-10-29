@@ -11,6 +11,7 @@ from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor
 from pytorch_lightning import seed_everything
 
 
+
 def main(args):
     seed_everything(42, workers=True)
 
@@ -78,6 +79,7 @@ def main(args):
                           viz_max_arrow_num=args.viz_max_arrow_num,
                           ckp_dir=ckp_dir,
                           debug=args.debug,
+                          success_criterion_in_degree=args.success_criterion_in_degree,
 
                           additional_VNLinearLeakyReLU=args.additional_VNLinearLeakyReLU,
                           debugged_circle_loss=args.debugged_circle_loss,
@@ -99,7 +101,6 @@ def main(args):
                           )
     else:
         raise NotImplementedError("Model not implemented")
-
 
     # This code is for running on clusters
     SLURM_JOB_ID = os.environ.get('SLURM_JOB_ID')
@@ -178,6 +179,7 @@ def main(args):
         precision=32,
         gradient_clip_val=args.gradient_clip_val,
         gradient_clip_algorithm='value',
+        deterministic=args.deterministic,
         strategy=args.parallel_strategy,
         max_epochs=args.epochs,
         callbacks=callbacks,
@@ -221,7 +223,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Equivariant Assembly Pytorch Implementation')
 
     # Dataset arguments
-    parser.add_argument('--datapath', type=str, default='../../../../hdd/junhong/data/bbad_v2') 
+    parser.add_argument('--datapath', type=str, default='../data') 
     #'../../../../hdd/junhong/data/bbad_v2' and /mnt/nvme2n1p1/kimsangki_datasets/breaking_bad/volume_constrained , /home/kimsangki/breaking_bad/volume_constrained
     parser.add_argument('--data_category', type=str, default='everyday', choices=['everyday', 'artifact', 'synthetic'])
     parser.add_argument('--sub_category', type=str, default='all')
@@ -292,6 +294,7 @@ if __name__ == '__main__':
     parser.add_argument('--viz_epoch', type=int, default=30, help='Epoch for visualization. This only works when visualize is True')
     parser.add_argument('--viz_max_arrow_num', type=int, default=0, help='Maximum number of arrows for visualization. This only works when visualize is True')
     parser.add_argument('--debug', action='store_true')
+    parser.add_argument('--success_criterion_in_degree', type=int, default=10, help='Success criterion in degree for normal error')
 
         
 
@@ -302,6 +305,10 @@ if __name__ == '__main__':
     # Wandb argument
     parser.add_argument('--wandb', action='store_true')
     parser.add_argument('--wandb_project', type=str, default='default_wandb_project')
+
+
+    # Deterministic argument
+    parser.add_argument('--deterministic', action='store_true')
 
 
     args = parser.parse_args()
@@ -319,10 +326,9 @@ if __name__ == '__main__':
         from pytorch_lightning.strategies import DDPStrategy
         args.parallel_strategy = DDPStrategy(find_unused_parameters=False)
         args.lr = len(args.gpus) * args.lr # Learning rate is multiplied by the number of GPUs
-        args.n_worker = min(len(args.gpus) * 4, 48) # Number of workers is multiplied by the number of GPUs
     
     else: # Single-GPU training
-        args.parallel_strategy = None
+        args.parallel_strategy = 'auto'
 
 
     # Setting developing experiments arguments automatically

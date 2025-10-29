@@ -22,7 +22,7 @@ from RANSAC.ransac import _RANSAC
 
 from common.rotation import ortho2rotation
 from common.utils import save_pc, check_inf_or_nan
-from common.viz import draw_frames
+from common.viz import draw_frames, draw_normal_error_histogram
 
 from pytorch3d.ops import iterative_closest_point
 
@@ -46,6 +46,7 @@ class ChannelAttentionModule(nn.Module):
         out1 = torch.mean(x, dim=-1, keepdim=True)  # 1, c, 1
         out1 = self.mlp(out1) # 1, c, 1
 
+        # Because of nn.AdaptiveMaxPool1d, deterministic option is not supported
         out2 = nn.AdaptiveMaxPool1d(1)(x) # 1, c, 1
         out2 = self.mlp(out2) # 1, c, 1
         
@@ -65,6 +66,7 @@ class EquiAssem(pl.LightningModule):
             pos_margin=0.1, neg_margin=1.4, log_scale=24, detach_mode=False, same_opt=False, only_corr=False, max_points=0, no_balance=False, div_mode='none',
             s_loss_weight=1.0, p_loss_weight=1.0, o_loss_weight=1.0,
             visualize=False, viz_epoch=30, viz_max_arrow_num=0, ckp_dir=None, debug=False,
+            success_criterion_in_degree=10,
 
             # Developing temporarily used experiments arguments
             additional_VNLinearLeakyReLU=False,
@@ -117,6 +119,7 @@ class EquiAssem(pl.LightningModule):
             viz_max_arrow_num (int, optional): Maximum number of arrows for visualization. Defaults to 0.
             ckp_dir (str, optional): Checkpoint directory. Defaults to None.
             debug (bool, optional): Whether to enable debug mode. Defaults to False.
+            success_criterion_in_degree (int, optional): Success criterion in degree for normal error. Defaults to 10.
 
 
             # Developing temporarily used experiments arguments
@@ -136,8 +139,9 @@ class EquiAssem(pl.LightningModule):
 
             # RANSAC arguments
             use_RANSAC (bool, optional): Whether to use RANSAC for transformation estimation. Defaults to False.
-            RANSAC_match_option (str, optional): 'topk' or 'mutual_topk' or 'soft_topk'. Defaults to 'topk'.
+            RANSAC_match_option (str, optional): 'topk' or 'mutual_topk' or 'soft_topk' or 'unidirectional_topk' or 'injective' or 'bijective'. Defaults to 'topk'.
             RANSAC_type (str, optional): 'default' or 'score_dependent'. Defaults to 'default'.
+            RANSAC_topk (int, optional): 128, -10, -20 for topk, 1, 2, 3 for 'mutual_topk', 'soft_topk', 'unidirectional_topk'. Defaults to 128.
             use_predicted_normal (bool, optional): Whether to use predicted normal for inlier counting. Defaults to False.
         """
         super(EquiAssem, self).__init__()
@@ -170,6 +174,7 @@ class EquiAssem(pl.LightningModule):
         print(f"viz_max_arrow_num: {viz_max_arrow_num}")
         print(f"ckp_dir: {ckp_dir}")
         print(f"debug: {debug}")
+        print(f"success_criterion_in_degree: {success_criterion_in_degree}")
 
         print(f"additional_VNLinearLeakyReLU: {additional_VNLinearLeakyReLU}")
         print(f"debugged_circle_loss: {debugged_circle_loss}")
@@ -202,6 +207,7 @@ class EquiAssem(pl.LightningModule):
         self.viz_max_arrow_num = viz_max_arrow_num
         self.ckp_dir = ckp_dir
         self.debug = debug
+        self.success_criterion_in_degree = success_criterion_in_degree
 
         self.additional_VNLinearLeakyReLU = additional_VNLinearLeakyReLU
         self.debugged_circle_loss = debugged_circle_loss
@@ -311,9 +317,11 @@ class EquiAssem(pl.LightningModule):
             self.proj = VNLinear(2 * (self.feat_dim//3), 2)
 
             # Layer for Equivariant feature
-            assert n_avn > 0, "n_avn must be greater than 0"
-            self.equi_layer = nn.Sequential(*([VNLinearLeakyReLU(self.feat_dim//3, self.feat_dim//3, no_norm=False)] + [VNLinearLeakyReLU(self.feat_dim//3, self.feat_dim//3, no_norm=only_one_norm) for _ in range(n_avn-1)]))
-
+            if n_avn > 0:
+                self.equi_layer = nn.Sequential(*([VNLinearLeakyReLU(self.feat_dim//3, self.feat_dim//3, no_norm=False)] + [VNLinearLeakyReLU(self.feat_dim//3, self.feat_dim//3, no_norm=only_one_norm) for _ in range(n_avn-1)]))
+            else:
+                self.equi_layer = nn.Identity()
+            
         else:
             # Layer for predicting frame vectors
             self.proj = VNLinear(self.feat_dim//3, 2)
@@ -456,7 +464,7 @@ class EquiAssem(pl.LightningModule):
         }
         avg_loss = {k: (v).sum() / v.size(0) for k, v in losses.items()}
         print('; '.join([f'{k}: {v.item():.6f}' for k, v in avg_loss.items()]))
-        with open("RANSAC_TEST_results.txt", "a") as f:
+        with open("RANSAC_Auto_TEST_results.txt", "a") as f:
             f.write("======================")
             f.write(f'''
                     use_RANSAC={self.use_RANSAC},
@@ -471,7 +479,9 @@ class EquiAssem(pl.LightningModule):
     
 
     def on_train_batch_end(self, outputs, batch, batch_idx):
-        self.check_grad_and_nan()
+        pass
+        # If you want to check the gradient and NaN, uncomment the following line
+        # self.check_grad_and_nan()
 
     
     def check_grad_and_nan(self):
@@ -620,11 +630,6 @@ class EquiAssem(pl.LightningModule):
         src_equi_feats_backbone = self.backbone(src_pcd) # (1, C, 3, N)
         trg_equi_feats_backbone = self.backbone(trg_pcd) # (1, C, 3, M)
 
-
-        # Check for Inf or Nan
-        check_inf_or_nan(src_equi_feats_backbone, 'src_equi_feats_backbone')
-        check_inf_or_nan(trg_equi_feats_backbone, 'trg_equi_feats_backbone')
-
         
         if self.additional_VNLinearLeakyReLU: # 2. Frame Prediction
             # 2-1. Merge global information by averaging
@@ -642,11 +647,6 @@ class EquiAssem(pl.LightningModule):
         else: # 2. Basis Vector Projection 
             src_vecs = self.proj(src_equi_feats_backbone).permute(0, 3, 1, 2) # (1, N, 2, 3)
             trg_vecs = self.proj(trg_equi_feats_backbone).permute(0, 3, 1, 2) # (1, M, 2, 3)
-        
-
-        # Check for Inf or Nan
-        check_inf_or_nan(src_vecs, 'src_vecs')
-        check_inf_or_nan(trg_vecs, 'trg_vecs')
 
         
         # 3. Calculate equivariant shape features
@@ -654,19 +654,9 @@ class EquiAssem(pl.LightningModule):
         trg_equi_feats = self.equi_layer(trg_equi_feats_backbone.unsqueeze(-1)).squeeze(-1) # (1, C, 3, M)
 
 
-        # Check for Inf or Nan
-        check_inf_or_nan(src_equi_feats, 'src_equi_feats')
-        check_inf_or_nan(trg_equi_feats, 'trg_equi_feats')
-
-
         # 4. Gram Schmidt & Cross-product, this is for making three basis vectors by using two predicted vectors
         src_ori = ortho2rotation(src_vecs, optimum=self.use_opt_gram) # (1, N, 2, 3) -> (1, N, 3, 3)
         trg_ori = ortho2rotation(trg_vecs, optimum=self.use_opt_gram) # (1, M, 2, 3) -> (1, M, 3, 3)
-
-
-        # Check for Inf or Nan
-        check_inf_or_nan(src_ori, 'src_ori')
-        check_inf_or_nan(trg_ori, 'trg_ori')
 
 
         # Save for visualization
@@ -679,11 +669,6 @@ class EquiAssem(pl.LightningModule):
         trg_inv_feats = torch.matmul(trg_equi_feats.permute(0, 3, 1, 2).float(), trg_ori.transpose(-2,-1).float()) # (1, M, C, 3) x (1, M, 3, 3) -> (1, M, C, 3)
         src_inv_feats = rearrange(src_inv_feats, 'b n c r -> b (c r) n') # (1, N, C, 3) -> (1, C*3, N)
         trg_inv_feats = rearrange(trg_inv_feats, 'b n c r -> b (c r) n') # (1, M, C, 3) -> (1, C*3, M)
-
-
-        # Check for Inf or Nan
-        check_inf_or_nan(src_inv_feats, 'src_inv_feats')
-        check_inf_or_nan(trg_inv_feats, 'trg_inv_feats')
 
 
         # OPTIONAL 5. Chaneel Attention Map
@@ -701,11 +686,6 @@ class EquiAssem(pl.LightningModule):
         trg_shape_feats = self.shape_mlp(trg_inv_feats) # # (1, C*3, M) -> (1, D, N)
         if self.attention == 'channel': # (1, D, M) * channel attention
             trg_shape_feats = trg_shape_feats * shape_attention
-        
-
-        # Check for Inf or Nan
-        check_inf_or_nan(src_shape_feats, 'src_shape_feats')
-        check_inf_or_nan(trg_shape_feats, 'trg_shape_feats')
 
 
         if not self.delete_occupancy_loss:
@@ -717,11 +697,6 @@ class EquiAssem(pl.LightningModule):
             trg_occ_feats = self.occ_mlp(trg_inv_feats) # (1, 1023, M) -> (1, 512, M)
             if self.attention == 'channel': 
                 trg_occ_feats = trg_occ_feats * occ_attention
-            
-
-            # Check for Inf or Nan
-            check_inf_or_nan(src_occ_feats, 'src_occ_feats')
-            check_inf_or_nan(trg_occ_feats, 'trg_occ_feats')
         
 
         # 7. Optimal Transport
@@ -781,6 +756,12 @@ class EquiAssem(pl.LightningModule):
         out_dict.update(loss)
 
 
+        if mode == 'train':
+            with torch.no_grad():
+                # This is for checking the normal error
+                loss['n_error'], _, loss['n_suc_rate'] = self._normal_error(in_dict, out_dict, success_criterion_in_degree=self.success_criterion_in_degree) 
+
+
         # 9. Evaluation
         if mode in ['val', 'test']:
             # Point cloud registration
@@ -800,7 +781,6 @@ class EquiAssem(pl.LightningModule):
                                                   match_option=self.RANSAC_match_option, 
                                                   RANSAC_type=self.RANSAC_type, 
                                                   topk=self.RANSAC_topk)
-                
                 else:
                     # fine_matching predict Rt to move points from src_points to ref_points
                     # Also, matching_scores_drop should be ref x src. However, in this model, we use src x trg(ref) style
@@ -910,6 +890,10 @@ class EquiAssem(pl.LightningModule):
         if (eval_result['rrmse'] - eval_result['rrmse_rpf']) > 10:
             breakpoint()
 
+        # (d) Compute Normal Error
+        eval_result['n_error'], normal_error_hist, eval_result['n_suc_rate'] = self._normal_error(in_dict, out_dict, success_criterion_in_degree=self.success_criterion_in_degree)
+
+
         if (mode=='val' and (not self.trainer.sanity_checking) and \
             self.trainer.global_rank == 0 and \
             self.visualize and \
@@ -922,8 +906,10 @@ class EquiAssem(pl.LightningModule):
             # However, if it is the last epoch, then visualize
             # Also, only visualize first batch
 
-            vis_folder = os.path.join(self.ckp_dir, 'vis', mode)
+            vis_folder = os.path.join(self.ckp_dir, 'vis', mode) # For mesh visualization
+            vis_hist_folder = os.path.join(self.ckp_dir, 'vis_hist', mode) # For normal error histogram visualization
             os.makedirs(vis_folder, exist_ok=True)
+            os.makedirs(vis_hist_folder, exist_ok=True)
 
             # PCD light visualization
             pcds_pred_for_viz = [] + pcds_pred
@@ -961,6 +947,12 @@ class EquiAssem(pl.LightningModule):
             draw_frames(frame_ori=rot_frame_ori_in_pred, gt_normals=rot_gt_normals_in_pred, pcds_list=pcds_pred, dir_path=vis_folder,
                         filename=f'E{self.current_epoch}_{in_dict["eval_idx"].item()}_{in_dict["obj_class"][0]}_{round(eval_result["crd"].item(),3)}_in_pred',
                         viz_max_arrow_num=self.viz_max_arrow_num)
+            
+
+            # DRAW NORMAL ERROR HISTOGRAM
+            draw_normal_error_histogram(normal_error_hist=normal_error_hist, dir_path=vis_hist_folder, 
+                                        filename=f'E{self.current_epoch}_{in_dict["eval_idx"].item()}_{in_dict["obj_class"][0]}_{round(eval_result["n_error"].item(),3)}_hist.png')
+            
 
         return eval_result
     
@@ -1129,6 +1121,37 @@ class EquiAssem(pl.LightningModule):
 
         div = len(pcds_grtr)
         return rot_errors.sum() / div, trans_errors.sum() / div 
+    
+
+    def _normal_error(self, in_dict, out_dict, success_criterion_in_degree=10):
+        """
+        Args:
+            in_dict (dict): it is same as forward_pass
+            out_dict (dict): it is same as forward_pass
+            success_criterion_in_degree (int, optional): Success criterion in degree. Defaults to 10.
+
+        Returns:
+            normal_error (torch.Tensor): (1)
+        """
+        output_src_ori, output_trg_ori = out_dict['src_ori'][0], out_dict['trg_ori'][0] # (1,N,3,3) -> (N,3,3), (1,M,3,3) -> (M,3,3)
+        gt_src_normals, gt_trg_normals = in_dict['gt_normals'][0][0].float(), in_dict['gt_normals'][1][0].float() # (1,N,3) -> (N,3), (1,M,3) -> (M,3)
+
+        pred_normals = torch.cat([output_src_ori[:,0,:], output_trg_ori[:,0,:]], dim=0) # (N,3) concat (M,3) -> (N+M, 3)
+        gt_normals = torch.cat([gt_src_normals, gt_trg_normals], dim=0) # (N,3) concat (M,3) -> (N+M, 3)
+
+        cosine_similarity = torch.clamp(torch.nn.functional.cosine_similarity(pred_normals, gt_normals, dim=-1), min=-1, max=1) # (N+M, )
+        theta_deg = torch.rad2deg(torch.acos(cosine_similarity)) # (N+M, )
+        
+        normal_error = theta_deg.mean()
+        normal_error_hist = torch.histogram(theta_deg.cpu(), bins=90, range=(0, 180)) # Total 180 degrees, so we choose 90 bins
+
+        success_mask = theta_deg <= success_criterion_in_degree
+        success_count = success_mask.sum()
+        total_count = theta_deg.shape[0]
+        success_rate = success_count / total_count
+
+        return normal_error, normal_error_hist, success_rate
+
 
 
 
