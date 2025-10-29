@@ -35,11 +35,6 @@ def main(args):
     dataloader_val = GADataset.build_dataloader(args.batch_size, args.n_worker, 'val')
 
 
-    # Training total steps
-    training_total_steps = len(dataloader_trn) * args.epochs
-    print(f"training_total_steps: {training_total_steps}")
-
-
     # Model initialization
     # [TODO] MODEL IS CHANGED
     if args.model == 'CM_equiassem':
@@ -58,7 +53,6 @@ def main(args):
         model = EquiAssem(lr=args.lr,
                           
                           scheduler_mode=args.scheduler_mode,
-                          total_steps=training_total_steps,
 
                           backbone=args.backbone,
                           attention=args.attention,
@@ -227,7 +221,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Equivariant Assembly Pytorch Implementation')
 
     # Dataset arguments
-    parser.add_argument('--datapath', type=str, default='/home/kimsangki/breaking_bad/volume_constrained') 
+    parser.add_argument('--datapath', type=str, default='/mnt/nvme2n1p1/kimsangki_datasets/breaking_bad/volume_constrained') 
     #'../../../../hdd/junhong/data/bbad_v2' and /mnt/nvme2n1p1/kimsangki_datasets/breaking_bad/volume_constrained , /home/kimsangki/breaking_bad/volume_constrained
     parser.add_argument('--data_category', type=str, default='everyday', choices=['everyday', 'artifact', 'synthetic'])
     parser.add_argument('--sub_category', type=str, default='all')

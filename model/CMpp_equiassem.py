@@ -61,7 +61,7 @@ class EquiAssem(pl.LightningModule):
     def __init__(
             self, 
             lr, 
-            scheduler_mode='cos', total_steps=-1,
+            scheduler_mode='cos',
             backbone='vn_unet', attention='channel', 
             pos_margin=0.1, neg_margin=1.4, log_scale=24, detach_mode=False, same_opt=False, only_corr=False, max_points=0, no_balance=False, div_mode='none',
             s_loss_weight=1.0, p_loss_weight=1.0, o_loss_weight=1.0,
@@ -94,7 +94,6 @@ class EquiAssem(pl.LightningModule):
         Args:
             lr (float): Learning rate for optimizer.
             scheduler_mode (str, optional): Scheduler type ('cos' or 'onecycle'). Defaults to 'cos'.
-            total_steps (int, optional): Total steps for scheduler. Defaults to -1.
             backbone (str, optional): Backbone network architecture. Defaults to 'vn_unet'.
             attention (str, optional): Attention mechanism type ('channel' or 'none'). Defaults to 'channel'.
             
@@ -147,7 +146,6 @@ class EquiAssem(pl.LightningModule):
         print("------------------------------------------------------")
         print(f"lr: {lr}")
         print(f"scheduler_mode: {scheduler_mode}")
-        print(f"total_steps: {total_steps}")
         print(f"backbone: {backbone}")
         print(f"attention: {attention}")
         
@@ -194,7 +192,6 @@ class EquiAssem(pl.LightningModule):
 
         self.lr = lr
         self.scheduler_mode = scheduler_mode
-        self.total_steps = total_steps
         self.attention = attention
         self.visualize = visualize
         self.viz_epoch = viz_epoch
@@ -383,16 +380,25 @@ class EquiAssem(pl.LightningModule):
     
     def configure_optimizers(self):
         """Build optimizer and lr scheduler."""
-        assert self.total_steps > 0, "Total steps must be greater than 0"
+        # Lightning 2.x: Support this funcionality
+        total_steps = self.trainer.estimated_stepping_batches
+        steps_per_epoch = self.trainer.num_training_batches
+        max_epochs = self.trainer.max_epochs
+
+        print(f"total_steps: {total_steps}")
+        print(f"steps_per_epoch: {steps_per_epoch}")
+        print(f"max_epochs: {max_epochs}")
+
+        assert total_steps > 0, "Total steps must be greater than 0"
 
         optimizer = optim.AdamW(self.parameters(), lr=self.lr, weight_decay=0.)
         
         if self.scheduler_mode == 'cos':
             # T_max should be the total number of training steps, not a fixed value
-            scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=self.total_steps, eta_min=1e-3)
+            scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=total_steps, eta_min=1e-3)
             
         elif self.scheduler_mode == 'onecycle':
-            scheduler = optim.lr_scheduler.OneCycleLR(optimizer=optimizer, max_lr=self.lr, total_steps=self.total_steps,
+            scheduler = optim.lr_scheduler.OneCycleLR(optimizer=optimizer, max_lr=self.lr, epochs=max_epochs, steps_per_epoch=steps_per_epoch,
                                                       pct_start=0.05, anneal_strategy="cos", div_factor=10.0,
                                                       final_div_factor=1000.0)
         
@@ -529,6 +535,10 @@ class EquiAssem(pl.LightningModule):
                 - mesh_t (list): length is 2, only for two pieces
                     - mesh_t[0]: (1, N', 3)
                     - mesh_t[1]: (1, M', 3)
+
+                - mesh_faces (list): length is 2, only for two pieces
+                    - mesh_faces[0]: (F, 3)
+                    - mesh_faces[1]: (F, 3)
                 
                 - pcd_t (list): length is 2, only for two pieces
                     - pcd_t[0]: (1, N, 3)
@@ -601,6 +611,12 @@ class EquiAssem(pl.LightningModule):
                     - rpf_rmse: (1, )
                     - rpf_tmse: (1, )
         """
+
+        # print(f"in_dict['mesh_faces'][0]: {type(in_dict['mesh_faces'][0])}, {in_dict['mesh_faces'][0].shape}")
+        # print(f"in_dict['mesh_faces'][1]: {type(in_dict['mesh_faces'][1])}, {in_dict['mesh_faces'][1].shape}")
+        # print(f"in_dict['mesh_faces'][0] :\n{in_dict['mesh_faces'][0]}")
+        # exit("stop")
+
         out_dict, loss = {}, {}
 
         # 0. Get Point Clouds and Ground Truth Correspondence
@@ -897,6 +913,18 @@ class EquiAssem(pl.LightningModule):
 
         # (d) Compute Normal Error
         eval_result['n_error'], normal_error_hist, eval_result['n_suc_rate'] = self._normal_error(in_dict, out_dict, success_criterion_in_degree=self.success_criterion_in_degree)
+
+        
+        """
+        src_mesh, trg_mesh = in_dict['mesh'][0], in_dict['mesh'][1]
+        src_mesh_t, trg_mesh_t = in_dict['mesh_t'][0], in_dict['mesh_t'][1]
+
+        print(f"src_mesh.faces: {type(src_mesh.faces)}")
+        print(f"trg_mesh.faces: {type(trg_mesh.faces)}")
+        exit("stop")
+        """
+
+
 
 
         if (mode=='val' and (not self.trainer.sanity_checking) and \

@@ -75,6 +75,27 @@ def draw_frames(frame_ori, gt_normals, pcds_list, dir_path, filename, sphere_rad
 
 
 
+"""
+def make_mesh_from_pcd_tensors(pcds, mesh_faces):
+   
+    Convert trimesh mesh to Open3D mesh
+    
+    Args:
+        trimesh_mesh: trimesh mesh object
+        
+    Returns:
+        list of o3d.geometry.TriangleMesh: Open3D mesh object
+    
+    all_meshes = []
+    for pcd_tensor, mesh_face in zip(pcds, mesh_faces):
+        points = pcd_tensor.cpu().numpy()
+        mesh = o3d.geometry.TriangleMesh()
+        mesh.vertices = o3d.utility.Vector3dVector(points)
+        mesh.triangles = o3d.utility.Vector3iVector(mesh_face)
+        all_meshes.append(mesh)
+    return all_meshes
+"""
+
 def make_spheres_from_pcd_tensors(pcds, sphere_radius=0.005):
     """
     Args:

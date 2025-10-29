@@ -46,7 +46,6 @@ def test(args):
         model = EquiAssem(lr=0, # We don't need to use learning rate for testing
                           
                           scheduler_mode=None,
-                          total_steps=0, # We don't need to use total steps for testing
 
                           backbone=args.backbone,
                           attention=args.attention,
@@ -71,6 +70,7 @@ def test(args):
                           viz_max_arrow_num=args.viz_max_arrow_num,
                           ckp_dir=ckp_dir,
                           debug=args.debug, 
+                          success_criterion_in_degree=args.success_criterion_in_degree,
 
                           additional_VNLinearLeakyReLU=args.additional_VNLinearLeakyReLU,
                           debugged_circle_loss=args.debugged_circle_loss,
@@ -169,6 +169,7 @@ if __name__ == '__main__':
     parser.add_argument('--viz_epoch', type=int, default=30, help='Epoch for visualization. This only works when visualize is True')
     parser.add_argument('--viz_max_arrow_num', type=int, default=0, help='Maximum number of arrows for visualization. This only works when visualize is True')
     parser.add_argument('--debug', action='store_true')
+    parser.add_argument('--success_criterion_in_degree', type=int, default=10, help='Success criterion in degree for normal error')
 
 
     # DDP argument

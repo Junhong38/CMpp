@@ -233,6 +233,11 @@ class DatasetBreakingBad(Dataset):
         # Read mesh, point cloud of a fractured object
         mesh, pcd, face = self.read_obj_data(idx)
 
+        # print(f"mesh[0].faces: {type(mesh[0].faces)}, {mesh[0].faces.shape}")
+        # print(f"mesh[1].faces: {type(mesh[1].faces.copy())}, {mesh[1].faces.shape}")
+        # print(f"mesh[0].faces :\n{mesh[0].faces}")
+        # print(f"np.array(mesh[0].faces) :\n{np.array(mesh[0].faces)}")
+
 
         # Get all possible pairs. If two parts, then [0,1], [1,0]
         pair_indices = list(itertools.permutations([i for i in range(self.n_frac[idx])], 2))
@@ -265,6 +270,8 @@ class DatasetBreakingBad(Dataset):
 
                 'mesh': [torch.tensor(_mesh.vertices).float() for _mesh in mesh], # list of torch.Tensor, (N', 3)
                 'mesh_t': [torch.tensor(_mesh.vertices).float() for _mesh in mesh_t], # list of torch.Tensor, (N', 3)
+
+                'mesh_faces': [torch.tensor(_mesh.faces) for _mesh in mesh], # list of torch.Tensor, (F, 3)
                 
                 'pcd': pcd, # list of torch.Tensor, (N, 3)
                 'pcd_t': pcd_t, # list of torch.Tensor, (N, 3)
@@ -280,7 +287,7 @@ class DatasetBreakingBad(Dataset):
                 
                 'relative_trsfm': gt_relative_trsfm, # dict, key: string e.g. '0-1', value: tuple of (torch.Tensor (3, 3), torch.Tensor (3, ))
 
-                'gt_normals': gt_normals, # list of torch.Tensor, (N, 3)
+                'gt_normals': gt_normals, # list of np.array, (N, 3)
                 'gt_correspondence': matching_inds, # if test then dict, key: string e.g. '0-1', value: torch.Tensor, (P, 2) else torch.Tensor, (P, 2)
                 }
     
