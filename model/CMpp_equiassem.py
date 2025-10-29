@@ -88,6 +88,8 @@ class EquiAssem(pl.LightningModule):
             use_RANSAC=False,
             RANSAC_match_option='topk',
             RANSAC_type='default',
+            RANSAC_topk=128,
+            use_predicted_normal=False
             ):
         """Equivariant Assembly Model for 3D Object Assembly
 
@@ -137,8 +139,10 @@ class EquiAssem(pl.LightningModule):
 
             # RANSAC arguments
             use_RANSAC (bool, optional): Whether to use RANSAC for transformation estimation. Defaults to False.
-            RANSAC_match_option (str, optional): 'topk' or 'mutual_topk' or 'soft_topk'. Defaults to 'topk'.
+            RANSAC_match_option (str, optional): 'topk' or 'mutual_topk' or 'soft_topk' or 'unidirectional_topk' or 'injective' or 'bijective'. Defaults to 'topk'.
             RANSAC_type (str, optional): 'default' or 'score_dependent'. Defaults to 'default'.
+            RANSAC_topk (int, optional): 128, -10, -20 for topk, 1, 2, 3 for 'mutual_topk', 'soft_topk', 'unidirectional_topk'. Defaults to 128.
+            use_predicted_normal (bool, optional): Whether to use predicted normal for inlier counting. Defaults to False.
         """
         super(EquiAssem, self).__init__()
 
@@ -190,6 +194,8 @@ class EquiAssem(pl.LightningModule):
         print(f"use_RANSAC: {use_RANSAC}")
         print(f"RANSAC_match_option: {RANSAC_match_option}")
         print(f"RANSAC_type: {RANSAC_type}")
+        print(f"RANSAC_topk: {RANSAC_topk}")
+        print(f"use_predicted_normal: {use_predicted_normal}")
         print("------------------------------------------------------")
 
         self.lr = lr
@@ -217,6 +223,8 @@ class EquiAssem(pl.LightningModule):
         self.use_RANSAC = use_RANSAC
         self.RANSAC_match_option = RANSAC_match_option
         self.RANSAC_type = RANSAC_type
+        self.RANSAC_topk = RANSAC_topk
+        self.use_predicted_normal = use_predicted_normal
         
         # Output feature dimension of Feature Extractor
         self.feat_dim = 1024
@@ -458,6 +466,15 @@ class EquiAssem(pl.LightningModule):
         }
         avg_loss = {k: (v).sum() / v.size(0) for k, v in losses.items()}
         print('; '.join([f'{k}: {v.item():.6f}' for k, v in avg_loss.items()]))
+        with open("RANSAC_Auto_TEST_results.txt", "a") as f:
+            f.write("======================")
+            f.write(f'''
+                    use_RANSAC={self.use_RANSAC},
+                    RANSAC_match_option={self.RANSAC_match_option},
+                    RANSAC_type={self.RANSAC_type},
+                    RANSAC_topk={self.RANSAC_topk},
+                    ''')
+            f.write('; '.join([f'{k}: {v.item():.6f}' for k, v in avg_loss.items()]) + "\n")
         # this is a hack to get results outside `Trainer.test()` function
         self.test_results = avg_loss
         self.test_step_outputs.clear()
@@ -750,10 +767,22 @@ class EquiAssem(pl.LightningModule):
         # 9. Evaluation
         if mode in ['val', 'test']:
             # Point cloud registration
+            src_predicted_frame = None
+            trg_predicted_frame = None
+            if self.use_predicted_normal:
+                src_predicted_frame = src_ori.squeeze(0)
+                trg_predicted_frame = trg_ori.squeeze(0)
             with torch.no_grad():
                 if self.use_RANSAC:
-                    estimated_transform = _RANSAC(in_dict=in_dict, shape_matching_scores=shape_matching_scores, src_pcd=src_pcd, trg_pcd=trg_pcd, match_option=self.RANSAC_match_option, RANSAC_type=self.RANSAC_type)
-                
+                    estimated_transform = _RANSAC(in_dict=in_dict, 
+                                                  shape_matching_scores=shape_matching_scores, 
+                                                  src_pcd=src_pcd, 
+                                                  trg_pcd=trg_pcd, 
+                                                  src_predicted_frame=src_predicted_frame,
+                                                  trg_predicted_frame=trg_predicted_frame,
+                                                  match_option=self.RANSAC_match_option, 
+                                                  RANSAC_type=self.RANSAC_type, 
+                                                  topk=self.RANSAC_topk)
                 else:
                     # fine_matching predict Rt to move points from src_points to ref_points
                     # Also, matching_scores_drop should be ref x src. However, in this model, we use src x trg(ref) style

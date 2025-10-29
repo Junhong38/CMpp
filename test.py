@@ -88,7 +88,9 @@ def test(args):
                           
                           use_RANSAC=args.use_RANSAC,
                           RANSAC_match_option=args.RANSAC_match_option,
-                          RANSAC_type=args.RANSAC_type)
+                          RANSAC_type=args.RANSAC_type,
+                          RANSAC_topk=args.RANSAC_topk,
+                          use_predicted_normal=args.use_predicted_normal)
     else:
         raise NotImplementedError("Model not implemented")
 
@@ -113,7 +115,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Equivariant Assembly Pytorch Implementation')
 
     # Dataset arguments
-    parser.add_argument('--datapath', type=str, default='/mnt/nvme2n1p1/kimsangki_datasets/breaking_bad/volume_constrained') 
+    parser.add_argument('--datapath', type=str, default='../data') 
     #'../../../../hdd/junhong/data/bbad_v2' and /mnt/nvme2n1p1/kimsangki_datasets/breaking_bad/volume_constrained , /home/kimsangki/breaking_bad/volume_constrained
     parser.add_argument('--data_category', type=str, default='everyday', choices=['everyday', 'artifact', 'synthetic'])
     parser.add_argument('--sub_category', type=str, default='all')
@@ -160,8 +162,10 @@ if __name__ == '__main__':
 
     # RANSAC arguments
     parser.add_argument('--use_RANSAC', action='store_true', help='If True, use RANSAC for transformation estimation')
-    parser.add_argument('--RANSAC_match_option', type=str, default='topk', choices=['topk', 'mutual_topk', 'soft_topk'])
+    parser.add_argument('--RANSAC_match_option', type=str, default='topk', choices=['topk', 'mutual_topk', 'soft_topk', 'unidirectional_nn_matching', 'injective_matching', 'bijective_matching'])
     parser.add_argument('--RANSAC_type', type=str, default='default', choices=['default', 'score_dependent'])
+    parser.add_argument('--RANSAC_topk', type=int, default=128)
+    parser.add_argument('--use_predicted_normal', action='store_true', help='If True, use predicted normal for inlier counting')
 
 
     # Additional experiments
