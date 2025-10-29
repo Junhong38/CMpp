@@ -537,8 +537,8 @@ class EquiAssem(pl.LightningModule):
                     - mesh_t[1]: (1, M', 3)
 
                 - mesh_faces (list): length is 2, only for two pieces
-                    - mesh_faces[0]: (F, 3)
-                    - mesh_faces[1]: (F, 3)
+                    - mesh_faces[0]: (1, F, 3)
+                    - mesh_faces[1]: (1, F, 3)
                 
                 - pcd_t (list): length is 2, only for two pieces
                     - pcd_t[0]: (1, N, 3)
@@ -611,11 +611,6 @@ class EquiAssem(pl.LightningModule):
                     - rpf_rmse: (1, )
                     - rpf_tmse: (1, )
         """
-
-        # print(f"in_dict['mesh_faces'][0]: {type(in_dict['mesh_faces'][0])}, {in_dict['mesh_faces'][0].shape}")
-        # print(f"in_dict['mesh_faces'][1]: {type(in_dict['mesh_faces'][1])}, {in_dict['mesh_faces'][1].shape}")
-        # print(f"in_dict['mesh_faces'][0] :\n{in_dict['mesh_faces'][0]}")
-        # exit("stop")
 
         out_dict, loss = {}, {}
 
@@ -716,8 +711,8 @@ class EquiAssem(pl.LightningModule):
             trg_shape_feats = trg_shape_feats * shape_attention
         
 
-        check_inf_or_nan(src_shape_feats, 'src_shape_feats')
-        check_inf_or_nan(trg_shape_feats, 'trg_shape_feats')
+        check_inf_or_nan(src_shape_feats, 'src_shape_feats', log=self.log)
+        check_inf_or_nan(trg_shape_feats, 'trg_shape_feats', log=self.log)
 
 
         if not self.delete_occupancy_loss:
@@ -914,18 +909,6 @@ class EquiAssem(pl.LightningModule):
         # (d) Compute Normal Error
         eval_result['n_error'], normal_error_hist, eval_result['n_suc_rate'] = self._normal_error(in_dict, out_dict, success_criterion_in_degree=self.success_criterion_in_degree)
 
-        
-        """
-        src_mesh, trg_mesh = in_dict['mesh'][0], in_dict['mesh'][1]
-        src_mesh_t, trg_mesh_t = in_dict['mesh_t'][0], in_dict['mesh_t'][1]
-
-        print(f"src_mesh.faces: {type(src_mesh.faces)}")
-        print(f"trg_mesh.faces: {type(trg_mesh.faces)}")
-        exit("stop")
-        """
-
-
-
 
         if (mode=='val' and (not self.trainer.sanity_checking) and \
             self.trainer.global_rank == 0 and \
@@ -951,13 +934,17 @@ class EquiAssem(pl.LightningModule):
             pcds_pred_for_viz.append(pcds_pred[1][gt_corr[:,1]])
             pcds_grtr_for_viz.append(pcds_grtr[0][gt_corr[:,0]])
             pcds_grtr_for_viz.append(pcds_grtr[1][gt_corr[:,1]])
-            save_pc(f'{vis_folder}/E{self.current_epoch}_{in_dict["eval_idx"].item()}_{in_dict["obj_class"][0]}_{round(eval_result["crd"].item(),3)}_pred.pcd', pcds_pred_for_viz)
-            save_pc(f"{vis_folder}/E{self.current_epoch}_{in_dict['eval_idx'].item()}_{in_dict['obj_class'][0]}_{round(eval_result['crd'].item(),3)}_grtr.pcd", pcds_grtr_for_viz)
+            save_pc(f'{vis_folder}/E{self.current_epoch}_{in_dict["eval_idx"].item()}_{in_dict["obj_class"][0]}_{round(eval_result["crd"].item(),3)}_pred.ply', pcds_pred_for_viz)
+            save_pc(f"{vis_folder}/E{self.current_epoch}_{in_dict['eval_idx'].item()}_{in_dict['obj_class'][0]}_{round(eval_result['crd'].item(),3)}_grtr.ply", pcds_grtr_for_viz)
 
             # MESH AND FRAME VISUALIZATION
             output_src_ori, output_trg_ori = out_dict['src_ori'][0], out_dict['trg_ori'][0] # (1,N,3,3) -> (N,3,3), (1,M,3,3) -> (M,3,3)
             gt_src_normals, gt_trg_normals = in_dict['gt_normals'][0][0].float(), in_dict['gt_normals'][1][0].float() # (1,N,3) -> (N,3), (1,M,3) -> (M,3)
-            
+            src_mesh_verts, trg_mesh_verts = in_dict['mesh_t'][0][0].float(), in_dict['mesh_t'][1][0].float() # (1,N,3) -> (N,3), (1,M,3) -> (M,3)
+            src_mesh_faces, trg_mesh_faces = in_dict['mesh_faces'][0][0].float(), in_dict['mesh_faces'][1][0].float() # (1,F,3) -> (F,3), (1,F,3) -> (F,3)
+            mesh_faces_for_viz = [src_mesh_faces, trg_mesh_faces]
+
+
             reshaped_output_src_ori = output_src_ori.reshape(-1,3) # (N,3,3) -> (N*3,3)
             reshaped_output_trg_ori = output_trg_ori.reshape(-1,3) # (M,3,3) -> (M*3,3)
 
@@ -966,20 +953,27 @@ class EquiAssem(pl.LightningModule):
             # Rotate by using gt
             _, rot_frame_ori_in_gt = self._pairwise_mating(reshaped_output_src_ori, reshaped_output_trg_ori, grtr_relative_trsfm[0], zero_trans)
             _, rot_gt_normals_in_gt = self._pairwise_mating(gt_src_normals, gt_trg_normals, grtr_relative_trsfm[0], zero_trans)
+            _, rot_mesh_verts_in_gt = self._pairwise_mating(src_mesh_verts, trg_mesh_verts, grtr_relative_trsfm[0], grtr_relative_trsfm[1])
+
 
             # DRAW FRAME by using gt
-            draw_frames(frame_ori=rot_frame_ori_in_gt, gt_normals=rot_gt_normals_in_gt, pcds_list=pcds_grtr, dir_path=vis_folder,
+            draw_frames(mesh_verts=rot_mesh_verts_in_gt, mesh_faces=mesh_faces_for_viz, 
+                        frame_ori=rot_frame_ori_in_gt, gt_normals=rot_gt_normals_in_gt, pcds_list=pcds_grtr, dir_path=vis_folder,
                         filename=f'E{self.current_epoch}_{in_dict["eval_idx"].item()}_{in_dict["obj_class"][0]}_{round(eval_result["crd"].item(),3)}_in_gt',
-                        viz_max_arrow_num=self.viz_max_arrow_num)
+                        viz_max_arrow_num=self.viz_max_arrow_num,
+                        viz_piece=True, viz_full=True)
 
             # Rotate by using pred
             _, rot_frame_ori_in_pred = self._pairwise_mating(reshaped_output_src_ori, reshaped_output_trg_ori, pred_relative_trsfm[0], zero_trans)
             _, rot_gt_normals_in_pred = self._pairwise_mating(gt_src_normals, gt_trg_normals, pred_relative_trsfm[0], zero_trans)
+            _, rot_mesh_verts_in_pred = self._pairwise_mating(src_mesh_verts, trg_mesh_verts, pred_relative_trsfm[0], pred_relative_trsfm[1])
 
             # DRAW FRAME by using prediction
-            draw_frames(frame_ori=rot_frame_ori_in_pred, gt_normals=rot_gt_normals_in_pred, pcds_list=pcds_pred, dir_path=vis_folder,
+            draw_frames(mesh_verts=rot_mesh_verts_in_pred, mesh_faces=mesh_faces_for_viz, 
+                        frame_ori=rot_frame_ori_in_pred, gt_normals=rot_gt_normals_in_pred, pcds_list=pcds_pred, dir_path=vis_folder,
                         filename=f'E{self.current_epoch}_{in_dict["eval_idx"].item()}_{in_dict["obj_class"][0]}_{round(eval_result["crd"].item(),3)}_in_pred',
-                        viz_max_arrow_num=self.viz_max_arrow_num)
+                        viz_max_arrow_num=self.viz_max_arrow_num,
+                        viz_piece=False, viz_full=True)
             
 
             # DRAW NORMAL ERROR HISTOGRAM

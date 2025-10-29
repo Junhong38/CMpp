@@ -34,11 +34,16 @@ global_colors_for_arrows = {
 
 
 
-def draw_frames(frame_ori, gt_normals, pcds_list, dir_path, filename, sphere_radius=0.001, cylinder_radius=0.001, cone_radius=0.002, arrow_scale=0.01, viz_max_arrow_num=5000):
+def draw_frames(mesh_verts, mesh_faces, 
+                frame_ori, gt_normals, pcds_list, dir_path, filename, 
+                sphere_radius=0.001, cylinder_radius=0.001, cone_radius=0.002, arrow_scale=0.01, viz_max_arrow_num=5000,
+                viz_piece=False, viz_full=False):
     """
     Draw frames and GT normals, and save as HTML.
 
     Args:
+        mesh_verts (list of torch.Tensor): each element is (N', 3)
+        mesh_faces (list of torch.Tensor): each element is (F, 3)
         frame_ori (list of torch.Tensor): each element is (N*3, 3), where three means three basis vectors
         gt_normals (list of torch.Tensor): each element is (N, 3)
         pcds_list (list of torch.Tensor): each element is (N, 3)
@@ -49,15 +54,19 @@ def draw_frames(frame_ori, gt_normals, pcds_list, dir_path, filename, sphere_rad
         cone_radius (float): radius of cone
         arrow_scale (float): scale of arrow
         viz_max_arrow_num (int): maximum number of points
+        viz_piece (bool): if True, visualize each piece of mesh
+        viz_full (bool): if True, visualize full mesh
     """
-    assert len(frame_ori) == len(gt_normals) == len(pcds_list), f"must have same length, frame_ori: {len(frame_ori)}, gt_normals: {len(gt_normals)}, pcds_list: {len(pcds_list)}"
+    assert viz_piece or viz_full, f"viz_piece or viz_full must be True, but got {viz_piece} and {viz_full}"
+    assert len(mesh_verts) == len(mesh_faces) == len(frame_ori) == len(gt_normals) == len(pcds_list), f"must have same length, mesh_verts: {len(mesh_verts)}, mesh_faces: {len(mesh_faces)}, frame_ori: {len(frame_ori)}, gt_normals: {len(gt_normals)}, pcds_list: {len(pcds_list)}"
 
     for frame_ori_i, gt_normals_i, pcds_i in zip(frame_ori, gt_normals, pcds_list):
         assert gt_normals_i.shape == pcds_i.shape, f"must have same shape, gt_normals_i: {gt_normals_i.shape}, pcds_i: {pcds_i.shape}"
         assert frame_ori_i.shape[0] == gt_normals_i.shape[0] * 3, f"frame_ori_i should have 3 times more points than gt_normals_i, frame_ori_i: {frame_ori_i.shape}, gt_normals_i: {gt_normals_i.shape}"
 
     # pcd -> sphere meshes
-    sphere_meshes = make_spheres_from_pcd_tensors(pcds=pcds_list, sphere_radius=sphere_radius)
+    # sphere_meshes = make_spheres_from_pcd_tensors(pcds=pcds_list, sphere_radius=sphere_radius)
+    recovered_meshes = make_mesh_from_pcd_tensors(pcds=mesh_verts, mesh_faces=mesh_faces)
     
     # vector -> arrow meshes
     arrow_meshes_gt_normals = make_arrows_from_vector_tensors(pcds=pcds_list, vectors=gt_normals, colors=['red'], cylinder_radius=cylinder_radius, cone_radius=cone_radius, arrow_scale=arrow_scale, viz_max_arrow_num=viz_max_arrow_num, reshape=False)
@@ -65,36 +74,68 @@ def draw_frames(frame_ori, gt_normals, pcds_list, dir_path, filename, sphere_rad
     arrows = arrow_meshes_gt_normals + arrow_meshes_pred_frame_ori
 
 
-    # save meshes
-    # save each piece of mesh
-    for ith, (a_sphere, a_arrow) in enumerate(zip(sphere_meshes, arrows)):
-        save_meshes_as_ply(meshes=([a_sphere, a_arrow]), dir_path=dir_path, filename=f"{filename}_piece_{ith}")
-
-    # save all meshes
-    save_meshes_as_ply(meshes=(sphere_meshes + arrows), dir_path=dir_path, filename=filename)
+    assert len(recovered_meshes) == len(arrow_meshes_gt_normals) == len(arrow_meshes_pred_frame_ori), \
+    f"must have same length, recovered_meshes: {len(recovered_meshes)}, arrow_meshes_gt_normals: {len(arrow_meshes_gt_normals)}, arrow_meshes_pred_frame_ori: {len(arrow_meshes_pred_frame_ori)}"
 
 
+    if viz_piece:
+        # save meshes
+        # save each piece of mesh
+        for ith, (a_mesh, a_arrow_gt_normals, a_arrow_pred_frame_ori) in enumerate(zip(recovered_meshes, arrow_meshes_gt_normals, arrow_meshes_pred_frame_ori)):
+            save_meshes_as_ply(meshes=([a_mesh, a_arrow_gt_normals, a_arrow_pred_frame_ori]), dir_path=dir_path, filename=f"{filename}_piece_{ith}")
+    
+    if viz_full:
+        # save all meshes
+        save_meshes_as_ply(meshes=(recovered_meshes + arrow_meshes_gt_normals + arrow_meshes_pred_frame_ori), dir_path=dir_path, filename=filename)
 
-"""
+
+def make_pcds_from_pcd_tensors(pcds):
+    """
+    Args:
+        pcds (list of torch.Tensor): each element is (N, 3)
+    
+    Returns:
+        list of o3d.utility.Vector3dVector: each element is (N, 3)
+    """
+    all_colors = list(global_colors_for_objs.keys())
+    all_pcds = []
+    for i, pcd_tensor in enumerate(pcds):
+        points = pcd_tensor.cpu().numpy()
+        selected_color = all_colors[i % len(all_colors)]
+
+        pcd_open3d = o3d.geometry.PointCloud()
+        pcd_open3d.points = o3d.utility.Vector3dVector(points)
+        pcd_open3d.paint_uniform_color(global_colors_for_objs[selected_color])
+        all_pcds.append(pcd_open3d)
+    return all_pcds
+
+
+
 def make_mesh_from_pcd_tensors(pcds, mesh_faces):
-   
+    """
     Convert trimesh mesh to Open3D mesh
     
     Args:
-        trimesh_mesh: trimesh mesh object
+        pcds (list of torch.Tensor): each element is (N', 3)
+        mesh_faces (list of torch.Tensor): each element is (F, 3)
         
     Returns:
         list of o3d.geometry.TriangleMesh: Open3D mesh object
+    """
+    all_colors = list(global_colors_for_objs.keys())
     
     all_meshes = []
-    for pcd_tensor, mesh_face in zip(pcds, mesh_faces):
+    for i, (pcd_tensor, mesh_face) in enumerate(zip(pcds, mesh_faces)):
+        selected_color = all_colors[i % len(all_colors)]
+        faces = mesh_face.cpu().numpy()
         points = pcd_tensor.cpu().numpy()
         mesh = o3d.geometry.TriangleMesh()
         mesh.vertices = o3d.utility.Vector3dVector(points)
-        mesh.triangles = o3d.utility.Vector3iVector(mesh_face)
+        mesh.triangles = o3d.utility.Vector3iVector(faces)
+        mesh.paint_uniform_color(global_colors_for_objs[selected_color])
         all_meshes.append(mesh)
     return all_meshes
-"""
+
 
 def make_spheres_from_pcd_tensors(pcds, sphere_radius=0.005):
     """

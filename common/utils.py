@@ -11,11 +11,14 @@ import torch
 from common.viz import global_colors_for_objs
 
 
-def check_inf_or_nan(tensor, message: str):
+def check_inf_or_nan(tensor, message: str, log=None):
     if torch.isinf(tensor).any():
         assert False, f"Inf found from {message}\n{tensor}"
     if torch.isnan(tensor).any():
         assert False, f"Nan found from {message}\n{tensor}"
+    
+    if log is not None:
+        log(f'DEBUG/{str(message)}', tensor.mean().item(), prog_bar=False, logger=True, sync_dist=True, rank_zero_only=True, on_step=False, on_epoch=True, batch_size=1)
 
 
 

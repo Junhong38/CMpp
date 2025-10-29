@@ -233,12 +233,6 @@ class DatasetBreakingBad(Dataset):
         # Read mesh, point cloud of a fractured object
         mesh, pcd, face = self.read_obj_data(idx)
 
-        # print(f"mesh[0].faces: {type(mesh[0].faces)}, {mesh[0].faces.shape}")
-        # print(f"mesh[1].faces: {type(mesh[1].faces.copy())}, {mesh[1].faces.shape}")
-        # print(f"mesh[0].faces :\n{mesh[0].faces}")
-        # print(f"np.array(mesh[0].faces) :\n{np.array(mesh[0].faces)}")
-
-
         # Get all possible pairs. If two parts, then [0,1], [1,0]
         pair_indices = list(itertools.permutations([i for i in range(self.n_frac[idx])], 2))
         
@@ -261,7 +255,7 @@ class DatasetBreakingBad(Dataset):
 
 
         gt_normals = self._extract_gt_normals(mesh_t, face, self.filepaths[idx])
-        
+
 
         batch = {
                 'eval_idx': idx, # integer e.g. 0

@@ -109,7 +109,9 @@ rm -rf checkpoint/DET_T5_F_AVNOON_NCD_NPM_NODOCC_OG_32/ && CUDA_VISIBLE_DEVICES=
 
 
 rm -rf checkpoint/DEBUG/ && CUDA_VISIBLE_DEVICES=0 python main.py --model CMpp_equiassem --logpath DEBUG --scale full --multiplicity 1 --epochs 0 --visualize --only_one_norm --detach_mode --use_opt_gram --deterministic --gpus 0
+rm -rf checkpoint/DEBUG/ && CUDA_VISIBLE_DEVICES=0 python main.py --model CMpp_equiassem --logpath DEBUG --scale overfitting --multiplicity 1 --epochs 0 --visualize --detach_mode --use_opt_gram --deterministic --gpus 0
 
 
 
 rm -rf checkpoint/DET_T5_F_NCD_NPM_NODOCC_OG_FIXCOS/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --model CMpp_equiassem --logpath DET_T5_F_NCD_NPM_NODOCC_OG_FIXCOS --scale full --multiplicity 1 --epochs 0 --visualize --detach_mode --use_opt_gram --deterministic --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --n_avn 0 --wandb --wandb_project CMpp
+rm -rf checkpoint/DET_T5_F_AVNOON_NCD_NPM_NODOCC_OG_32/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --model CMpp_equiassem --logpath DET_T5_F_AVNOON_NCD_NPM_NODOCC_OG_32 --scale full --multiplicity 1 --epochs 0 --visualize --detach_mode --use_opt_gram --deterministic --gpus 0 1 2 3 4 5 6 7 --n_worker 32 --wandb --wandb_project CMpp
