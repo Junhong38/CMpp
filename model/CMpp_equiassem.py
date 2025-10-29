@@ -451,7 +451,6 @@ class EquiAssem(pl.LightningModule):
     def test_step(self, in_dict, batch_idx):
         _, loss_dict = self.forward_pass(in_dict, mode='test')
         self.test_step_outputs.append(loss_dict)
-        print(f'[--------- {self.trainer.global_rank} ---------]; '.join([f'{k}: {v.item():.6f}' for k, v in loss_dict.items()]))
         return loss_dict
 
 
