@@ -71,6 +71,7 @@ def test(args):
                           viz_max_arrow_num=args.viz_max_arrow_num,
                           ckp_dir=ckp_dir,
                           debug=args.debug, 
+                          delete_Sinkhorn=args.delete_Sinkhorn,
 
                           additional_VNLinearLeakyReLU=args.additional_VNLinearLeakyReLU,
                           debugged_circle_loss=args.debugged_circle_loss,
@@ -173,6 +174,8 @@ if __name__ == '__main__':
     parser.add_argument('--viz_epoch', type=int, default=30, help='Epoch for visualization. This only works when visualize is True')
     parser.add_argument('--viz_max_arrow_num', type=int, default=0, help='Maximum number of arrows for visualization. This only works when visualize is True')
     parser.add_argument('--debug', action='store_true')
+    parser.add_argument('--delete_Sinkhorn', action='store_true', help='If True, delte the optimal transport (Sinkhorn).')
+
 
 
     # DDP argument

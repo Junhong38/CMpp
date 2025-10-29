@@ -376,7 +376,8 @@ class EquiAssem(pl.LightningModule):
         
 
         # Optimal Transport
-        self.optimal_transport = LearnableLogOptimalTransport(num_iterations=100)
+        if not self.delete_Sinkhorn:
+            self.optimal_transport = LearnableLogOptimalTransport(num_iterations=100)
 
         if not self.use_RANSAC: # If not using RANSAC, use LGR for fine matching
             # LGR
@@ -716,7 +717,13 @@ class EquiAssem(pl.LightningModule):
             shape_matching_scores = shape_matching_scores / (src_shape_feats.shape[1] ** 0.5 + 1e-8) # 1e-8 is for avoiding division by zero
         
         if self.delete_Sinkhorn:
-            matching_scores = torch.nn.funtional.pad(shape_matching_scores, pad=(0, 1, 0, 1)) # (1, N, M) with slacks as 0s.
+            row_slack = -shape_matching_scores.mean(dim=1)
+            col_slack = -shape_matching_scores.mean(dim=2)
+            corner = torch.tensor([[0.0]], device=shape_matching_scores.device, dtype=shape_matching_scores.dtype)
+            matching_scores = torch.cat([
+                torch.cat([shape_matching_scores, col_slack.unsqueeze(2)], dim=2),
+                torch.cat([row_slack, corner], dim=1).unsqueeze(1)
+            ], dim=1) # (1, N, M) each slack is fill with minus mean value of each row/column.
             matching_scores_drop = shape_matching_scores
         else:
             matching_scores = self.optimal_transport(shape_matching_scores) # Optimal Transport is in log space, so inside registration, there is exp operation
@@ -802,19 +809,23 @@ class EquiAssem(pl.LightningModule):
 
             # Evaluation
             eval_dict = self.evaluate_prediction(in_dict, out_dict, gt_corr, mode)
+
+            ## Matching Recall
+            with torch.no_grad():
+                _N = matching_scores_drop.shape[2]
+                gt_corr_size = in_dict['gt_correspondence'].shape[1]
+                scores_flat = matching_scores_drop.reshape(-1)
+                _, topk_indices_flat = torch.topk(scores_flat, k=gt_corr_size)
+                topk_rows = topk_indices_flat // _N
+                topk_cols = topk_indices_flat % _N
+                topk_indices = torch.stack([topk_rows, topk_cols], dim=-1)
+                success_matches = (topk_indices[:, None, :] == in_dict['gt_correspondence'].squeeze(0)[None, :, :]).all(dim=-1)
+                matching_recall = success_matches.sum() / gt_corr_size
+                eval_dict['matching_recall'] = matching_recall
+                print(f"MATCHING_RECALL: {matching_recall}")
+
             loss.update(eval_dict)
         
-        ## Matching Recall
-        _N = matching_scores_drop.shape[2]
-        gt_corr_size = in_dict['gt_correspondence'].shape[1]
-        scores_flat = matching_scores_drop.reshape(-1)
-        _, topk_indices_flat = torch.topk(scores_flat, k=gt_corr_size)
-        topk_rows = topk_indices_flat // _N
-        topk_cols = topk_indices_flat % _N
-        topk_indices = torch.stack([topk_rows, topk_cols], dim=-1)
-        success_matches = (topk_indices[:, None, :] == in_dict['gt_correspondence'].squeeze(0)[None, :, :]).all(dim=-1)
-        matching_recall = {'matching_recall': success_matches.sum() / gt_corr_size}
-        print(f"MATCHING_RECALL: {matching_recall['matching_recall'].item()}")
 
         if self.debug:
             vis_dict = {}
@@ -839,8 +850,6 @@ class EquiAssem(pl.LightningModule):
             log_dict = {f'{mode}/{k}': v.item() for k, v in loss.items()}
             log_pos_neg_distribution = {f'{mode}-dist/{k}': v for k, v in pos_neg_distribution.items()}
             log_dict.update(log_pos_neg_distribution)
-            log_matching_recall = {f'{mode}-recall/{k}': v for k, v in matching_recall.items()}
-            log_dict.update(log_matching_recall)
 
             training_loss = log_dict.pop(f'{mode}/loss')
             current_lr = self.trainer.optimizers[0].param_groups[0]['lr']
