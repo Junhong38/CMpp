@@ -67,6 +67,7 @@ class EquiAssem(pl.LightningModule):
             s_loss_weight=1.0, p_loss_weight=1.0, o_loss_weight=1.0,
             visualize=False, viz_epoch=30, viz_max_arrow_num=0, ckp_dir=None, debug=False,
             success_criterion_in_degree=10,
+            delete_Sinkhorn=False,
 
             # Developing temporarily used experiments arguments
             additional_VNLinearLeakyReLU=False,
@@ -120,6 +121,7 @@ class EquiAssem(pl.LightningModule):
             ckp_dir (str, optional): Checkpoint directory. Defaults to None.
             debug (bool, optional): Whether to enable debug mode. Defaults to False.
             success_criterion_in_degree (int, optional): Success criterion in degree for normal error. Defaults to 10.
+            delete_Sinkhorn (bool, optional): Whether to delete the optimal transport (Sinkhorn). Defaults to False.
 
 
             # Developing temporarily used experiments arguments
@@ -175,6 +177,7 @@ class EquiAssem(pl.LightningModule):
         print(f"ckp_dir: {ckp_dir}")
         print(f"debug: {debug}")
         print(f"success_criterion_in_degree: {success_criterion_in_degree}")
+        print(f"delete_Sinkhorn: {delete_Sinkhorn}")
 
         print(f"additional_VNLinearLeakyReLU: {additional_VNLinearLeakyReLU}")
         print(f"debugged_circle_loss: {debugged_circle_loss}")
@@ -208,6 +211,7 @@ class EquiAssem(pl.LightningModule):
         self.ckp_dir = ckp_dir
         self.debug = debug
         self.success_criterion_in_degree = success_criterion_in_degree
+        self.delete_Sinkhorn = delete_Sinkhorn
 
         self.additional_VNLinearLeakyReLU = additional_VNLinearLeakyReLU
         self.debugged_circle_loss = debugged_circle_loss
@@ -711,8 +715,12 @@ class EquiAssem(pl.LightningModule):
         else:
             shape_matching_scores = shape_matching_scores / (src_shape_feats.shape[1] ** 0.5 + 1e-8) # 1e-8 is for avoiding division by zero
         
-        matching_scores = self.optimal_transport(shape_matching_scores) # Optimal Transport is in log space, so inside registration, there is exp operation
-        matching_scores_drop = matching_scores[:,:-1,:-1]   
+        if self.delete_Sinkhorn:
+            matching_scores = torch.nn.funtional.pad(shape_matching_scores, pad=(0, 1, 0, 1)) # (1, N, M) with slacks as 0s.
+            matching_scores_drop = shape_matching_scores
+        else:
+            matching_scores = self.optimal_transport(shape_matching_scores) # Optimal Transport is in log space, so inside registration, there is exp operation
+            matching_scores_drop = matching_scores[:,:-1,:-1]   
 
 
         # 8. Calculate Loss
@@ -796,6 +804,17 @@ class EquiAssem(pl.LightningModule):
             eval_dict = self.evaluate_prediction(in_dict, out_dict, gt_corr, mode)
             loss.update(eval_dict)
         
+        ## Matching Recall
+        _N = matching_scores_drop.shape[2]
+        gt_corr_size = in_dict['gt_correspondence'].shape[1]
+        scores_flat = matching_scores_drop.reshape(-1)
+        _, topk_indices_flat = torch.topk(scores_flat, k=gt_corr_size)
+        topk_rows = topk_indices_flat // _N
+        topk_cols = topk_indices_flat % _N
+        topk_indices = torch.stack([topk_rows, topk_cols], dim=-1)
+        success_matches = (topk_indices[:, None, :] == in_dict['gt_correspondence'].squeeze(0)[None, :, :]).all(dim=-1)
+        matching_recall = {'matching_recall': success_matches.sum() / gt_corr_size}
+        print(f"MATCHING_RECALL: {matching_recall['matching_recall'].item()}")
 
         if self.debug:
             vis_dict = {}
@@ -820,6 +839,8 @@ class EquiAssem(pl.LightningModule):
             log_dict = {f'{mode}/{k}': v.item() for k, v in loss.items()}
             log_pos_neg_distribution = {f'{mode}-dist/{k}': v for k, v in pos_neg_distribution.items()}
             log_dict.update(log_pos_neg_distribution)
+            log_matching_recall = {f'{mode}-recall/{k}': v for k, v in matching_recall.items()}
+            log_dict.update(log_matching_recall)
 
             training_loss = log_dict.pop(f'{mode}/loss')
             current_lr = self.trainer.optimizers[0].param_groups[0]['lr']
@@ -887,8 +908,6 @@ class EquiAssem(pl.LightningModule):
 
         # (c) Compute CoRrespondence Distance (CRD) betwween prediction & ground-truth
         eval_result['crd'] = self._correspondence_distance(assm_pred, assm_grtr)
-        if (eval_result['rrmse'] - eval_result['rrmse_rpf']) > 10:
-            breakpoint()
 
         # (d) Compute Normal Error
         eval_result['n_error'], normal_error_hist, eval_result['n_suc_rate'] = self._normal_error(in_dict, out_dict, success_criterion_in_degree=self.success_criterion_in_degree)
