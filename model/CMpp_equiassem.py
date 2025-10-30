@@ -468,6 +468,11 @@ class EquiAssem(pl.LightningModule):
         self.validation_step_outputs.clear()
 
 
+        # [TODO] THIS IS ONLY FOR NAN DEBUGGING
+        if self.current_epoch > 29:
+            exit("stop")
+
+
     def test_step(self, in_dict, batch_idx):
         _, loss_dict = self.forward_pass(in_dict, mode='test')
         self.test_step_outputs.append(loss_dict)
