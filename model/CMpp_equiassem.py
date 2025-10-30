@@ -857,31 +857,20 @@ class EquiAssem(pl.LightningModule):
 
             ## Matching Recall
             with torch.no_grad():
-                print(f"matching_scores_drop: {matching_scores_drop.shape}")
-                print(f"in_dict['gt_correspondence']: {in_dict['gt_correspondence'].shape}")
-                
-                _N = matching_scores_drop.shape[2] # (1, N, M) -> M
-                gt_corr_size = in_dict['gt_correspondence'].shape[1] # (1, P, 2) -> P
+                _M = matching_scores_drop.shape[2] # (1, N, M) -> M
+                gt_corr_size = gt_corr.shape[0] # (P, 2) -> P
                 scores_flat = matching_scores_drop.reshape(-1) # (1, N, M) -> (N*M, )
-
-                print(f"scores_flat: {scores_flat.shape}")
-                
+      
                 _, topk_indices_flat = torch.topk(scores_flat, k=gt_corr_size) # indices of topk scores, P
-                topk_rows = topk_indices_flat // _N # indices for rows
-                topk_cols = topk_indices_flat % _N # indices for columns
+                topk_rows = topk_indices_flat // _M # indices for rows
+                topk_cols = topk_indices_flat % _M # indices for columns
                 topk_indices = torch.stack([topk_rows, topk_cols], dim=-1) # (P, 2)
-
-                print(f"topk_indices: {topk_indices.shape}")
                 
-                
-                success_matches = (topk_indices[:, None, :] == in_dict['gt_correspondence'].squeeze(0)[None, :, :]).all(dim=-1)
-                print(f"topk_indices[:, None, :] : {topk_indices[:, None, :].shape}")
-                print(f"in_dict['gt_correspondence'].squeeze(0)[None, :, :] : {in_dict['gt_correspondence'].squeeze(0)[None, :, :].shape}")
-                print(f"success_matches: {success_matches.shape}")
-
+                # (P, 2) -> (P, 1, 2) == (P,2) -> (1,P,2) -> (P,P,2)
+                # This reason for implementing this way is sequence of indices is not aligned with gt_corr
+                success_matches = (topk_indices[:, None, :] == gt_corr[None, :, :]).all(dim=-1)
                 matching_recall = success_matches.sum() / gt_corr_size
                 eval_dict['m_recall'] = matching_recall
-
 
             loss.update(eval_dict)
         
