@@ -764,13 +764,13 @@ class EquiAssem(pl.LightningModule):
             shape_matching_scores = shape_matching_scores / (src_shape_feats.shape[1] ** 0.5 + 1e-8) # 1e-8 is for avoiding division by zero
         
         if self.delete_Sinkhorn:
-            row_slack = -shape_matching_scores.mean(dim=1)
-            col_slack = -shape_matching_scores.mean(dim=2)
-            corner = torch.tensor([[0.0]], device=shape_matching_scores.device, dtype=shape_matching_scores.dtype)
+            row_slack = -shape_matching_scores.mean(dim=1) # (1, N, M) -> (1, M)
+            col_slack = -shape_matching_scores.mean(dim=2) # (1, N, M) -> (1, N)
+            corner = torch.tensor([[0.0]], device=shape_matching_scores.device, dtype=shape_matching_scores.dtype) # (1, 1)
             matching_scores = torch.cat([
-                torch.cat([shape_matching_scores, col_slack.unsqueeze(2)], dim=2),
-                torch.cat([row_slack, corner], dim=1).unsqueeze(1)
-            ], dim=1) # (1, N, M) each slack is fill with minus mean value of each row/column.
+                torch.cat([shape_matching_scores, col_slack.unsqueeze(2)], dim=2), # (1, N, M+1)
+                torch.cat([row_slack, corner], dim=1).unsqueeze(1) # (1, 1, M+1)
+            ], dim=1) # (1, N+1, M+1) each slack is fill with minus mean value of each row/column.
             matching_scores_drop = shape_matching_scores
         else:
             matching_scores = self.optimal_transport(shape_matching_scores) # Optimal Transport is in log space, so inside registration, there is exp operation

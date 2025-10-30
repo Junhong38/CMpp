@@ -96,7 +96,9 @@ def main(args):
                           
                           use_RANSAC=False, # RANSAC is not used for training
                           RANSAC_match_option='topk', # RANSAC is not used for training
-                          RANSAC_type='default' # RANSAC is not used for training
+                          RANSAC_type='default', # RANSAC is not used for training
+                          RANSAC_topk=128, # RANSAC is not used for training
+                          use_predicted_normal=False # RANSAC is not used for training
                           )
     else:
         raise NotImplementedError("Model not implemented")
