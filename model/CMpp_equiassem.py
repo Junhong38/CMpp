@@ -62,6 +62,7 @@ class EquiAssem(pl.LightningModule):
             self, 
             lr, 
             scheduler_mode='cos',
+            training_total_steps=0,
             backbone='vn_unet', attention='channel', 
             pos_margin=0.1, neg_margin=1.4, log_scale=24, detach_mode=False, same_opt=False, only_corr=False, max_points=0, no_balance=False, div_mode='none',
             s_loss_weight=1.0, p_loss_weight=1.0, o_loss_weight=1.0,
@@ -97,6 +98,7 @@ class EquiAssem(pl.LightningModule):
         Args:
             lr (float): Learning rate for optimizer.
             scheduler_mode (str, optional): Scheduler type ('cos' or 'onecycle'). Defaults to 'cos'.
+            training_total_steps (int, optional): Total number of training steps. Defaults to 0.
             backbone (str, optional): Backbone network architecture. Defaults to 'vn_unet'.
             attention (str, optional): Attention mechanism type ('channel' or 'none'). Defaults to 'channel'.
             
@@ -152,6 +154,7 @@ class EquiAssem(pl.LightningModule):
         print("------------------------------------------------------")
         print(f"lr: {lr}")
         print(f"scheduler_mode: {scheduler_mode}")
+        print(f"training_total_steps: {training_total_steps}")
         print(f"backbone: {backbone}")
         print(f"attention: {attention}")
         
@@ -201,6 +204,7 @@ class EquiAssem(pl.LightningModule):
 
         self.lr = lr
         self.scheduler_mode = scheduler_mode
+        self.training_total_steps = training_total_steps
         self.attention = attention
         self.visualize = visualize
         self.viz_epoch = viz_epoch
@@ -406,7 +410,10 @@ class EquiAssem(pl.LightningModule):
 
         optimizer = optim.AdamW(self.parameters(), lr=self.lr, weight_decay=0.)
         
-        if self.scheduler_mode == 'cos':
+        if self.scheduler_mode in ['cos', 'CMpp']:
+            if self.scheduler_mode == 'CMpp':
+                assert self.training_total_steps > 0, "Training total steps must be greater than 0"
+                total_steps = self.training_total_steps
             # T_max should be the total number of training steps, not a fixed value
             scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=total_steps, eta_min=1e-3)
             
@@ -475,19 +482,8 @@ class EquiAssem(pl.LightningModule):
         }
         avg_loss = {k: (v).sum() / v.size(0) for k, v in losses.items()}
         print('; '.join([f'{k}: {v.item():.6f}' for k, v in avg_loss.items()]))
-        
-        # [TODO] This is only for single GPU environment
-        with open("RANSAC_Auto_TEST_results.txt", "a") as f:
-            f.write("======================")
-            f.write(f'''
-                    use_RANSAC={self.use_RANSAC},
-                    RANSAC_match_option={self.RANSAC_match_option},
-                    RANSAC_type={self.RANSAC_type},
-                    RANSAC_topk={self.RANSAC_topk},
-                    ''')
-            f.write('; '.join([f'{k}: {v.item():.6f}' for k, v in avg_loss.items()]) + "\n")
-        
-        
+
+
         # this is a hack to get results outside `Trainer.test()` function
         self.test_results = avg_loss
         self.log_dict(avg_loss, logger=True, sync_dist=True, batch_size=1,)
@@ -658,8 +654,8 @@ class EquiAssem(pl.LightningModule):
         trg_equi_feats_backbone = self.backbone(trg_pcd) # (1, C, 3, M)
 
 
-        check_inf_or_nan(src_equi_feats_backbone, 'src_equi_feats_backbone')
-        check_inf_or_nan(trg_equi_feats_backbone, 'trg_equi_feats_backbone')
+        check_inf_or_nan(src_equi_feats_backbone, 'src_equi_feats_backbone', log=(self.log if mode=='train' else None))
+        check_inf_or_nan(trg_equi_feats_backbone, 'trg_equi_feats_backbone', log=(self.log if mode=='train' else None))
 
         
         if self.additional_VNLinearLeakyReLU: # 2. Frame Prediction
@@ -689,8 +685,8 @@ class EquiAssem(pl.LightningModule):
         trg_equi_feats = self.equi_layer(trg_equi_feats_backbone.unsqueeze(-1)).squeeze(-1) # (1, C, 3, M)
 
 
-        check_inf_or_nan(src_equi_feats, 'src_equi_feats')
-        check_inf_or_nan(trg_equi_feats, 'trg_equi_feats')
+        check_inf_or_nan(src_equi_feats, 'src_equi_feats', log=(self.log if mode=='train' else None))
+        check_inf_or_nan(trg_equi_feats, 'trg_equi_feats', log=(self.log if mode=='train' else None))
 
 
         # 4. Gram Schmidt & Cross-product, this is for making three basis vectors by using two predicted vectors
@@ -710,14 +706,12 @@ class EquiAssem(pl.LightningModule):
         src_inv_feats = torch.matmul(src_equi_feats.permute(0, 3, 1, 2).float(), src_ori.transpose(-2,-1).float()) # (1, N, C, 3) x (1, N, 3, 3) -> (1, N, C, 3)
         trg_inv_feats = torch.matmul(trg_equi_feats.permute(0, 3, 1, 2).float(), trg_ori.transpose(-2,-1).float()) # (1, M, C, 3) x (1, M, 3, 3) -> (1, M, C, 3)
 
-        check_inf_or_nan(src_inv_feats, 'src_inv_feats 1')
-        check_inf_or_nan(trg_inv_feats, 'trg_inv_feats 1')
-
         src_inv_feats = rearrange(src_inv_feats, 'b n c r -> b (c r) n') # (1, N, C, 3) -> (1, C*3, N)
         trg_inv_feats = rearrange(trg_inv_feats, 'b n c r -> b (c r) n') # (1, M, C, 3) -> (1, C*3, M)
 
-        check_inf_or_nan(src_inv_feats, 'src_inv_feats 2')
-        check_inf_or_nan(trg_inv_feats, 'trg_inv_feats 2')
+        check_inf_or_nan(src_inv_feats, 'src_inv_feats', log=(self.log if mode=='train' else None))
+        check_inf_or_nan(trg_inv_feats, 'trg_inv_feats', log=(self.log if mode=='train' else None))
+
 
         # OPTIONAL 5. Chaneel Attention Map
         if self.attention == 'channel':
@@ -863,17 +857,31 @@ class EquiAssem(pl.LightningModule):
 
             ## Matching Recall
             with torch.no_grad():
-                _N = matching_scores_drop.shape[2]
-                gt_corr_size = in_dict['gt_correspondence'].shape[1]
-                scores_flat = matching_scores_drop.reshape(-1)
-                _, topk_indices_flat = torch.topk(scores_flat, k=gt_corr_size)
-                topk_rows = topk_indices_flat // _N
-                topk_cols = topk_indices_flat % _N
-                topk_indices = torch.stack([topk_rows, topk_cols], dim=-1)
+                print(f"matching_scores_drop: {matching_scores_drop.shape}")
+                print(f"in_dict['gt_correspondence']: {in_dict['gt_correspondence'].shape}")
+                
+                _N = matching_scores_drop.shape[2] # (1, N, M) -> M
+                gt_corr_size = in_dict['gt_correspondence'].shape[1] # (1, P, 2) -> P
+                scores_flat = matching_scores_drop.reshape(-1) # (1, N, M) -> (N*M, )
+
+                print(f"scores_flat: {scores_flat.shape}")
+                
+                _, topk_indices_flat = torch.topk(scores_flat, k=gt_corr_size) # indices of topk scores, P
+                topk_rows = topk_indices_flat // _N # indices for rows
+                topk_cols = topk_indices_flat % _N # indices for columns
+                topk_indices = torch.stack([topk_rows, topk_cols], dim=-1) # (P, 2)
+
+                print(f"topk_indices: {topk_indices.shape}")
+                
+                
                 success_matches = (topk_indices[:, None, :] == in_dict['gt_correspondence'].squeeze(0)[None, :, :]).all(dim=-1)
+                print(f"topk_indices[:, None, :] : {topk_indices[:, None, :].shape}")
+                print(f"in_dict['gt_correspondence'].squeeze(0)[None, :, :] : {in_dict['gt_correspondence'].squeeze(0)[None, :, :].shape}")
+                print(f"success_matches: {success_matches.shape}")
+
                 matching_recall = success_matches.sum() / gt_corr_size
-                eval_dict['matching_recall'] = matching_recall
-                print(f"MATCHING_RECALL: {matching_recall}")
+                eval_dict['m_recall'] = matching_recall
+
 
             loss.update(eval_dict)
         

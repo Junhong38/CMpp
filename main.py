@@ -34,6 +34,10 @@ def main(args):
     dataloader_trn = GADataset.build_dataloader(args.batch_size, args.n_worker, 'train')
     dataloader_val = GADataset.build_dataloader(args.batch_size, args.n_worker, 'val')
 
+    # Training total steps
+    training_total_steps = len(dataloader_trn) * args.epochs
+    print(f"training_total_steps: {training_total_steps}")
+
 
     # Model initialization
     # [TODO] MODEL IS CHANGED
@@ -53,6 +57,7 @@ def main(args):
         model = EquiAssem(lr=args.lr,
                           
                           scheduler_mode=args.scheduler_mode,
+                          training_total_steps=training_total_steps,
 
                           backbone=args.backbone,
                           attention=args.attention,
@@ -103,6 +108,8 @@ def main(args):
     else:
         raise NotImplementedError("Model not implemented")
 
+
+    
     # This code is for running on clusters
     SLURM_JOB_ID = os.environ.get('SLURM_JOB_ID')
     print(f"SLURM_JOB_ID: {SLURM_JOB_ID} | if None, it is not running on cluster")
@@ -224,7 +231,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Equivariant Assembly Pytorch Implementation')
 
     # Dataset arguments
-    parser.add_argument('--datapath', type=str, default='/home/kimsangki/breaking_bad/volume_constrained') 
+    parser.add_argument('--datapath', type=str, default='/mnt/nvme2n1p1/kimsangki_datasets/breaking_bad/volume_constrained') 
     #'../../../../hdd/junhong/data/bbad_v2' and /mnt/nvme2n1p1/kimsangki_datasets/breaking_bad/volume_constrained , /home/kimsangki/breaking_bad/volume_constrained
     parser.add_argument('--data_category', type=str, default='everyday', choices=['everyday', 'artifact', 'synthetic'])
     parser.add_argument('--sub_category', type=str, default='all')
@@ -241,7 +248,7 @@ if __name__ == '__main__':
     parser.add_argument('--epochs', type=int, default=0, help='Number of epochs. If 0, it is automatically set to 200 for everyday dataset and 300 for other datasets.')
     parser.add_argument('--n_worker', type=int, default=4, help='Number of workers. If you use multi-GPU training, the number of workers is multiplied by the number of GPUs.')
     parser.add_argument('--load', type=str, default='')
-    parser.add_argument('--scheduler_mode', type=str, default='cos', choices=['none', 'cos', 'onecycle', 'CM'])
+    parser.add_argument('--scheduler_mode', type=str, default='cos', choices=['none', 'cos', 'onecycle', 'CM', 'CMpp'])
     parser.add_argument('--gradient_clip_val', type=float, default=0.0, help='Gradient clip value')
 
 
