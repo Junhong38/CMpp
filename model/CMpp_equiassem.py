@@ -67,6 +67,7 @@ class EquiAssem(pl.LightningModule):
             s_loss_weight=1.0, p_loss_weight=1.0, o_loss_weight=1.0,
             visualize=False, viz_epoch=30, viz_max_arrow_num=0, ckp_dir=None, debug=False,
             success_criterion_in_degree=10,
+            delete_Sinkhorn=False,
 
             # Developing temporarily used experiments arguments
             additional_VNLinearLeakyReLU=False,
@@ -88,6 +89,8 @@ class EquiAssem(pl.LightningModule):
             use_RANSAC=False,
             RANSAC_match_option='topk',
             RANSAC_type='default',
+            RANSAC_topk=128,
+            use_predicted_normal=False
             ):
         """Equivariant Assembly Model for 3D Object Assembly
 
@@ -117,6 +120,7 @@ class EquiAssem(pl.LightningModule):
             ckp_dir (str, optional): Checkpoint directory. Defaults to None.
             debug (bool, optional): Whether to enable debug mode. Defaults to False.
             success_criterion_in_degree (int, optional): Success criterion in degree for normal error. Defaults to 10.
+            delete_Sinkhorn (bool, optional): Whether to delete the optimal transport (Sinkhorn). Defaults to False.
 
 
             # Developing temporarily used experiments arguments
@@ -136,8 +140,10 @@ class EquiAssem(pl.LightningModule):
 
             # RANSAC arguments
             use_RANSAC (bool, optional): Whether to use RANSAC for transformation estimation. Defaults to False.
-            RANSAC_match_option (str, optional): 'topk' or 'mutual_topk' or 'soft_topk'. Defaults to 'topk'.
+            RANSAC_match_option (str, optional): 'topk' or 'mutual_topk' or 'soft_topk' or 'unidirectional_topk' or 'injective' or 'bijective'. Defaults to 'topk'.
             RANSAC_type (str, optional): 'default' or 'score_dependent'. Defaults to 'default'.
+            RANSAC_topk (int, optional): 128, -10, -20 for topk, 1, 2, 3 for 'mutual_topk', 'soft_topk', 'unidirectional_topk'. Defaults to 128.
+            use_predicted_normal (bool, optional): Whether to use predicted normal for inlier counting. Defaults to False.
         """
         super(EquiAssem, self).__init__()
 
@@ -169,6 +175,7 @@ class EquiAssem(pl.LightningModule):
         print(f"ckp_dir: {ckp_dir}")
         print(f"debug: {debug}")
         print(f"success_criterion_in_degree: {success_criterion_in_degree}")
+        print(f"delete_Sinkhorn: {delete_Sinkhorn}")
 
         print(f"additional_VNLinearLeakyReLU: {additional_VNLinearLeakyReLU}")
         print(f"debugged_circle_loss: {debugged_circle_loss}")
@@ -188,6 +195,8 @@ class EquiAssem(pl.LightningModule):
         print(f"use_RANSAC: {use_RANSAC}")
         print(f"RANSAC_match_option: {RANSAC_match_option}")
         print(f"RANSAC_type: {RANSAC_type}")
+        print(f"RANSAC_topk: {RANSAC_topk}")
+        print(f"use_predicted_normal: {use_predicted_normal}")
         print("------------------------------------------------------")
 
         self.lr = lr
@@ -199,6 +208,7 @@ class EquiAssem(pl.LightningModule):
         self.ckp_dir = ckp_dir
         self.debug = debug
         self.success_criterion_in_degree = success_criterion_in_degree
+        self.delete_Sinkhorn = delete_Sinkhorn
 
         self.additional_VNLinearLeakyReLU = additional_VNLinearLeakyReLU
         self.debugged_circle_loss = debugged_circle_loss
@@ -214,6 +224,8 @@ class EquiAssem(pl.LightningModule):
         self.use_RANSAC = use_RANSAC
         self.RANSAC_match_option = RANSAC_match_option
         self.RANSAC_type = RANSAC_type
+        self.RANSAC_topk = RANSAC_topk
+        self.use_predicted_normal = use_predicted_normal
         
         # Output feature dimension of Feature Extractor
         self.feat_dim = 1024
@@ -361,7 +373,8 @@ class EquiAssem(pl.LightningModule):
         
 
         # Optimal Transport
-        self.optimal_transport = LearnableLogOptimalTransport(num_iterations=100)
+        if not self.delete_Sinkhorn:
+            self.optimal_transport = LearnableLogOptimalTransport(num_iterations=100)
 
         if not self.use_RANSAC: # If not using RANSAC, use LGR for fine matching
             # LGR
@@ -461,6 +474,20 @@ class EquiAssem(pl.LightningModule):
             for k in self.test_step_outputs[0].keys()
         }
         avg_loss = {k: (v).sum() / v.size(0) for k, v in losses.items()}
+        print('; '.join([f'{k}: {v.item():.6f}' for k, v in avg_loss.items()]))
+        
+        # [TODO] This is only for single GPU environment
+        with open("RANSAC_Auto_TEST_results.txt", "a") as f:
+            f.write("======================")
+            f.write(f'''
+                    use_RANSAC={self.use_RANSAC},
+                    RANSAC_match_option={self.RANSAC_match_option},
+                    RANSAC_type={self.RANSAC_type},
+                    RANSAC_topk={self.RANSAC_topk},
+                    ''')
+            f.write('; '.join([f'{k}: {v.item():.6f}' for k, v in avg_loss.items()]) + "\n")
+        
+        
         # this is a hack to get results outside `Trainer.test()` function
         self.test_results = avg_loss
         self.log_dict(avg_loss, logger=True, sync_dist=True, batch_size=1,)
@@ -736,8 +763,18 @@ class EquiAssem(pl.LightningModule):
         else:
             shape_matching_scores = shape_matching_scores / (src_shape_feats.shape[1] ** 0.5 + 1e-8) # 1e-8 is for avoiding division by zero
         
-        matching_scores = self.optimal_transport(shape_matching_scores) # Optimal Transport is in log space, so inside registration, there is exp operation
-        matching_scores_drop = matching_scores[:,:-1,:-1]   
+        if self.delete_Sinkhorn:
+            row_slack = -shape_matching_scores.mean(dim=1)
+            col_slack = -shape_matching_scores.mean(dim=2)
+            corner = torch.tensor([[0.0]], device=shape_matching_scores.device, dtype=shape_matching_scores.dtype)
+            matching_scores = torch.cat([
+                torch.cat([shape_matching_scores, col_slack.unsqueeze(2)], dim=2),
+                torch.cat([row_slack, corner], dim=1).unsqueeze(1)
+            ], dim=1) # (1, N, M) each slack is fill with minus mean value of each row/column.
+            matching_scores_drop = shape_matching_scores
+        else:
+            matching_scores = self.optimal_transport(shape_matching_scores) # Optimal Transport is in log space, so inside registration, there is exp operation
+            matching_scores_drop = matching_scores[:,:-1,:-1]   
 
         
         check_inf_or_nan(matching_scores, 'matching_scores')
@@ -794,10 +831,22 @@ class EquiAssem(pl.LightningModule):
         # 9. Evaluation
         if mode in ['val', 'test']:
             # Point cloud registration
+            src_predicted_frame = None
+            trg_predicted_frame = None
+            if self.use_predicted_normal:
+                src_predicted_frame = src_ori.squeeze(0)
+                trg_predicted_frame = trg_ori.squeeze(0)
             with torch.no_grad():
                 if self.use_RANSAC:
-                    estimated_transform = _RANSAC(in_dict=in_dict, shape_matching_scores=shape_matching_scores, src_pcd=src_pcd, trg_pcd=trg_pcd, match_option=self.RANSAC_match_option, RANSAC_type=self.RANSAC_type)
-                
+                    estimated_transform = _RANSAC(in_dict=in_dict, 
+                                                  shape_matching_scores=shape_matching_scores, 
+                                                  src_pcd=src_pcd, 
+                                                  trg_pcd=trg_pcd, 
+                                                  src_predicted_frame=src_predicted_frame,
+                                                  trg_predicted_frame=trg_predicted_frame,
+                                                  match_option=self.RANSAC_match_option, 
+                                                  RANSAC_type=self.RANSAC_type, 
+                                                  topk=self.RANSAC_topk)
                 else:
                     # fine_matching predict Rt to move points from src_points to ref_points
                     # Also, matching_scores_drop should be ref x src. However, in this model, we use src x trg(ref) style
@@ -811,6 +860,21 @@ class EquiAssem(pl.LightningModule):
 
             # Evaluation
             eval_dict = self.evaluate_prediction(in_dict, out_dict, gt_corr, mode)
+
+            ## Matching Recall
+            with torch.no_grad():
+                _N = matching_scores_drop.shape[2]
+                gt_corr_size = in_dict['gt_correspondence'].shape[1]
+                scores_flat = matching_scores_drop.reshape(-1)
+                _, topk_indices_flat = torch.topk(scores_flat, k=gt_corr_size)
+                topk_rows = topk_indices_flat // _N
+                topk_cols = topk_indices_flat % _N
+                topk_indices = torch.stack([topk_rows, topk_cols], dim=-1)
+                success_matches = (topk_indices[:, None, :] == in_dict['gt_correspondence'].squeeze(0)[None, :, :]).all(dim=-1)
+                matching_recall = success_matches.sum() / gt_corr_size
+                eval_dict['matching_recall'] = matching_recall
+                print(f"MATCHING_RECALL: {matching_recall}")
+
             loss.update(eval_dict)
         
 

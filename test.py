@@ -72,6 +72,7 @@ def test(args):
                           ckp_dir=ckp_dir,
                           debug=args.debug, 
                           success_criterion_in_degree=args.success_criterion_in_degree,
+                          delete_Sinkhorn=args.delete_Sinkhorn,
 
                           additional_VNLinearLeakyReLU=args.additional_VNLinearLeakyReLU,
                           debugged_circle_loss=args.debugged_circle_loss,
@@ -89,7 +90,9 @@ def test(args):
                           
                           use_RANSAC=args.use_RANSAC,
                           RANSAC_match_option=args.RANSAC_match_option,
-                          RANSAC_type=args.RANSAC_type)
+                          RANSAC_type=args.RANSAC_type,
+                          RANSAC_topk=args.RANSAC_topk,
+                          use_predicted_normal=args.use_predicted_normal)
     else:
         raise NotImplementedError("Model not implemented")
 
@@ -192,8 +195,10 @@ if __name__ == '__main__':
 
     # RANSAC arguments
     parser.add_argument('--use_RANSAC', action='store_true', help='If True, use RANSAC for transformation estimation')
-    parser.add_argument('--RANSAC_match_option', type=str, default='topk', choices=['topk', 'mutual_topk', 'soft_topk'])
+    parser.add_argument('--RANSAC_match_option', type=str, default='topk', choices=['topk', 'mutual_topk', 'soft_topk', 'unidirectional_nn_matching', 'injective_matching', 'bijective_matching'])
     parser.add_argument('--RANSAC_type', type=str, default='default', choices=['default', 'score_dependent'])
+    parser.add_argument('--RANSAC_topk', type=int, default=128)
+    parser.add_argument('--use_predicted_normal', action='store_true', help='If True, use predicted normal for inlier counting')
 
 
     # Additional experiments
@@ -202,6 +207,7 @@ if __name__ == '__main__':
     parser.add_argument('--viz_max_arrow_num', type=int, default=0, help='Maximum number of arrows for visualization. This only works when visualize is True')
     parser.add_argument('--debug', action='store_true')
     parser.add_argument('--success_criterion_in_degree', type=int, default=10, help='Success criterion in degree for normal error')
+    parser.add_argument('--delete_Sinkhorn', action='store_true', help='If True, delte the optimal transport (Sinkhorn).')
 
 
     # DDP argument

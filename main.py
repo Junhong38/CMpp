@@ -78,6 +78,7 @@ def main(args):
                           ckp_dir=ckp_dir,
                           debug=args.debug,
                           success_criterion_in_degree=args.success_criterion_in_degree,
+                          delete_Sinkhorn=args.delete_Sinkhorn,
 
                           additional_VNLinearLeakyReLU=args.additional_VNLinearLeakyReLU,
                           debugged_circle_loss=args.debugged_circle_loss,
@@ -293,6 +294,7 @@ if __name__ == '__main__':
     parser.add_argument('--viz_max_arrow_num', type=int, default=0, help='Maximum number of arrows for visualization. This only works when visualize is True')
     parser.add_argument('--debug', action='store_true')
     parser.add_argument('--success_criterion_in_degree', type=int, default=10, help='Success criterion in degree for normal error')
+    parser.add_argument('--delete_Sinkhorn', action='store_true', help='If True, delte the optimal transport (Sinkhorn).')
 
         
 
