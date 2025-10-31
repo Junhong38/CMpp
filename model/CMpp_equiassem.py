@@ -862,20 +862,7 @@ class EquiAssem(pl.LightningModule):
 
             ## Matching Recall
             with torch.no_grad():
-                _M = matching_scores_drop.shape[2] # (1, N, M) -> M
-                gt_corr_size = gt_corr.shape[0] # (P, 2) -> P
-                scores_flat = matching_scores_drop.reshape(-1) # (1, N, M) -> (N*M, )
-      
-                _, topk_indices_flat = torch.topk(scores_flat, k=gt_corr_size) # indices of topk scores, P
-                topk_rows = topk_indices_flat // _M # indices for rows
-                topk_cols = topk_indices_flat % _M # indices for columns
-                topk_indices = torch.stack([topk_rows, topk_cols], dim=-1) # (P, 2)
-                
-                # (P, 2) -> (P, 1, 2) == (P,2) -> (1,P,2) -> (P,P,2)
-                # This reason for implementing this way is sequence of indices is not aligned with gt_corr
-                success_matches = (topk_indices[:, None, :] == gt_corr[None, :, :]).all(dim=-1)
-                matching_recall = success_matches.sum() / gt_corr_size
-                eval_dict['m_recall'] = matching_recall
+                eval_dict['m_recall'] = self._calculate_recall(matching_scores_drop, gt_corr)
 
             loss.update(eval_dict)
         
@@ -1243,6 +1230,33 @@ class EquiAssem(pl.LightningModule):
         success_rate = success_count / total_count
 
         return normal_error, normal_error_hist, success_rate
+
+    def _calculate_recall(self, matching_scores_drop, gt_corr):
+        """
+        Calculate recall of matching scores
+
+        Args:
+            matching_scores_drop (torch.Tensor): (1, N, M)
+            gt_corr (torch.Tensor): (P, 2)
+
+        Returns:
+            matching_recall (torch.Tensor): (1)
+        """
+        _M = matching_scores_drop.shape[2] # (1, N, M) -> M
+        gt_corr_size = gt_corr.shape[0] # (P, 2) -> P
+        scores_flat = matching_scores_drop.reshape(-1) # (1, N, M) -> (N*M, )
+
+        _, topk_indices_flat = torch.topk(scores_flat, k=gt_corr_size) # indices of topk scores, P
+        topk_rows = topk_indices_flat // _M # indices for rows
+        topk_cols = topk_indices_flat % _M # indices for columns
+        topk_indices = torch.stack([topk_rows, topk_cols], dim=-1) # (P, 2)
+        
+        # (P, 2) -> (P, 1, 2) == (P,2) -> (1,P,2) -> (P,P,2)
+        # This reason for implementing this way is sequence of indices is not aligned with gt_corr
+        success_matches = (topk_indices[:, None, :] == gt_corr[None, :, :]).all(dim=-1)
+        matching_recall = success_matches.sum() / gt_corr_size
+        
+        return matching_recall
 
 
 

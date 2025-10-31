@@ -38,6 +38,8 @@ import os, trimesh
 # REBUTTAL
 # from vecAdam.vectoradam import VectorAdam
 
+from pytorch3d.ops import iterative_closest_point
+
 class ChannelAttentionModule(nn.Module):
     """ this function is used to achieve the channel attention module in CBAM paper"""
     def __init__(self, in_dim=1023, out_dim=1024, ratio=4):
@@ -201,6 +203,7 @@ class EquiAssem(pl.LightningModule):
         print('; '.join([f'{k}: {v.item():.6f}' for k, v in avg_loss.items()]))
         # this is a hack to get results outside `Trainer.test()` function
         self.test_results = avg_loss
+        self.log_dict(avg_loss, logger=True, sync_dist=True, batch_size=1,)
         self.test_step_outputs.clear()
 
     def forward_pass(self, in_dict, mode):
@@ -275,28 +278,33 @@ class EquiAssem(pl.LightningModule):
         # 10. Calculate Loss
         gt_corr = in_dict['gt_correspondence'].squeeze(0)
         
-        # 9-1. circle loss
-        loss['s_loss'], _ = self.circle_loss(src_pcd_raw, trg_pcd_raw, src_shape_feats.transpose(-2,-1), trg_shape_feats.transpose(-2,-1), gt_corr)
+        if mode in ['train', 'val']: # Do not calculate for test
+            # 9-1. circle loss
+            loss['s_loss'], _ = self.circle_loss(src_pcd_raw, trg_pcd_raw, src_shape_feats.transpose(-2,-1), trg_shape_feats.transpose(-2,-1), gt_corr)
 
-        # 9-2 point matching loss
-        loss['p_loss'] = self.matching_loss(matching_scores, gt_corr, src_pcd_raw, trg_pcd_raw)
+            # 9-2 point matching loss
+            loss['p_loss'] = self.matching_loss(matching_scores, gt_corr, src_pcd_raw, trg_pcd_raw)
 
-        # 9-3. orientation loss
-        loss['o_loss'] = self.orientation_loss(src_ori, trg_ori, gt_corr, in_dict['gt_rotat'])
-        
-        # 9-4. occupancy loss
-        if self.occ_loss=='positive': 
-            loss['occ_loss'], _ = self.occupancy_loss(src_pcd_raw, trg_pcd_raw, src_occ_feats.transpose(-2,-1), trg_occ_feats.transpose(-2,-1), gt_corr)
-        else:
-            loss['occ_loss'], _ = self.occupancy_loss(src_pcd_raw, trg_pcd_raw, src_occ_feats.transpose(-2,-1), -trg_occ_feats.transpose(-2,-1), gt_corr)
+            # 9-3. orientation loss
+            loss['o_loss'] = self.orientation_loss(src_ori, trg_ori, gt_corr, in_dict['gt_rotat'])
+            
+            # 9-4. occupancy loss
+            if self.occ_loss=='positive': 
+                loss['occ_loss'], _ = self.occupancy_loss(src_pcd_raw, trg_pcd_raw, src_occ_feats.transpose(-2,-1), trg_occ_feats.transpose(-2,-1), gt_corr)
+            else:
+                loss['occ_loss'], _ = self.occupancy_loss(src_pcd_raw, trg_pcd_raw, src_occ_feats.transpose(-2,-1), -trg_occ_feats.transpose(-2,-1), gt_corr)
 
-        # 9-4. final loss
-        loss['loss'] = self.c_loss_weight * loss['s_loss'] + self.p_loss_weight * loss['p_loss'] + self.o_loss_weight * loss['o_loss'] +  self.occ_loss_weight * loss['occ_loss']
-        out_dict.update(loss)
+            # 9-4. final loss
+            loss['loss'] = self.c_loss_weight * loss['s_loss'] + self.p_loss_weight * loss['p_loss'] + self.o_loss_weight * loss['o_loss'] +  self.occ_loss_weight * loss['occ_loss']
+            out_dict.update(loss)
         
         # 10. Evaluation
         if mode in ['val', 'test']:
             eval_dict = self.evaluate_prediction(in_dict, out_dict, gt_corr)
+            ## Matching Recall
+            with torch.no_grad():
+                eval_dict['m_recall'] = self._calculate_recall(matching_scores_drop, gt_corr)
+
             loss.update(eval_dict)
 
         if self.debug:
@@ -355,6 +363,7 @@ class EquiAssem(pl.LightningModule):
         eval_result['cd'] = self._chamfer_distance(assm_pred, assm_grtr, is_trg_larger)
 
         # (b) Compute MSE between prediction & ground-truth for rotation (in degree) and translation
+        eval_result['rrmse_rpf'], eval_result['trmse_rpf'] = self._transformation_error_RPFver(pcds_pred, pcds_grtr, multi_part)
         eval_result['rrmse'], eval_result['trmse'] = self._transformation_error(pred_relative_trsfm, grtr_relative_trsfm, multi_part)
 
         # (c) Compute CoRrespondence Distance (CRD) betwween prediction & ground-truth
@@ -472,8 +481,41 @@ class EquiAssem(pl.LightningModule):
             rrmse += diff.pow(2).mean().pow(0.5)
             trmse += (t1 - t2).pow(2).mean().pow(0.5) * rrmse_scaling
         div = len(rotat1) if multi_part else 1
-        return rrmse / div, trmse / div
 
+        return (rrmse / div).to(trmse.device), trmse / div
+
+    def _transformation_error_RPFver(self, pcds_pred, pcds_grtr, multi_part, scaling=100):
+        """
+        Args:
+            pcds_pred (list): [(N, 3), (M, 3)]
+            pcds_grtr (list): [(N, 3), (M, 3)]
+            multi_part (bool): True if multi-part
+            scaling (int, optional): Scaling factor for TRMSE. Defaults to 100. 
+
+        Returns:
+            rrmse (torch.Tensor): (1)
+            trmse (torch.Tensor): (1)
+        """
+        
+        num_parts = len(pcds_grtr)
+        rot_errors = torch.zeros(num_parts, device=pcds_grtr[0].device) # (K), rotation error
+        trans_errors = torch.zeros(num_parts, device=pcds_grtr[0].device)  # (K), translation error
+
+        for p in range(num_parts):
+            pcd_pred = pcds_pred[p].unsqueeze(0) # (N, 3) -> (1, N, 3)
+            pcd_grtr = pcds_grtr[p].unsqueeze(0) # (N, 3) -> (1, N, 3)
+            assert pcd_pred.shape == pcd_grtr.shape, f"Point clouds should be same size, but got {pcd_pred.shape} and {pcd_grtr.shape}"
+
+            # ICP algorithm
+            error = iterative_closest_point(pcd_grtr, pcd_pred).RTs
+            
+            # tr(R) = 1 + 2cos(θ) -> θ = acos((tr(R) - 1) / 2), torch.acos is in radian, so we need to convert to degree
+            rot_errors[p] = torch.rad2deg(torch.acos(torch.clamp(0.5 * (torch.trace(error.R[0]) - 1.0), -1.0, 1.0)))
+            trans_errors[p] = torch.norm(error.T[0]) * scaling
+
+        div = len(pcds_grtr)
+        return rot_errors.sum() / div, trans_errors.sum() / div 
+    
     def _part_accuracy(self, assm_pts1, assm_pts2, scaling=100):
         success = 0
         for pred_pts, gt_pts in zip(assm_pts1, assm_pts2):
@@ -562,3 +604,31 @@ class EquiAssem(pl.LightningModule):
         out_dict['matching_scores_drop'] = matching_scores_drop
         
         return out_dict
+    
+    
+    def _calculate_recall(self, matching_scores_drop, gt_corr):
+        """
+        Calculate recall of matching scores
+
+        Args:
+            matching_scores_drop (torch.Tensor): (1, N, M)
+            gt_corr (torch.Tensor): (P, 2)
+
+        Returns:
+            matching_recall (torch.Tensor): (1)
+        """
+        _M = matching_scores_drop.shape[2] # (1, N, M) -> M
+        gt_corr_size = gt_corr.shape[0] # (P, 2) -> P
+        scores_flat = matching_scores_drop.reshape(-1) # (1, N, M) -> (N*M, )
+
+        _, topk_indices_flat = torch.topk(scores_flat, k=gt_corr_size) # indices of topk scores, P
+        topk_rows = topk_indices_flat // _M # indices for rows
+        topk_cols = topk_indices_flat % _M # indices for columns
+        topk_indices = torch.stack([topk_rows, topk_cols], dim=-1) # (P, 2)
+        
+        # (P, 2) -> (P, 1, 2) == (P,2) -> (1,P,2) -> (P,P,2)
+        # This reason for implementing this way is sequence of indices is not aligned with gt_corr
+        success_matches = (topk_indices[:, None, :] == gt_corr[None, :, :]).all(dim=-1)
+        matching_recall = success_matches.sum() / gt_corr_size
+        
+        return matching_recall

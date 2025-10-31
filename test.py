@@ -33,7 +33,7 @@ def test(args):
     # Model initialization
     if args.model == 'CM_equiassem':
         from model.CM_equiassem import EquiAssem
-        model = EquiAssem(lr=args.lr,
+        model = EquiAssem(lr=0, # We don't need to use learning rate for testing
                           backbone=args.backbone,
                           shape_loss=args.shape_loss, 
                           occ_loss=args.occ_loss, 
@@ -47,6 +47,7 @@ def test(args):
         model = EquiAssem(lr=0, # We don't need to use learning rate for testing
                           
                           scheduler_mode=None,
+                          training_total_steps=0, # We don't need to use training total steps for testing
 
                           backbone=args.backbone,
                           attention=args.attention,
