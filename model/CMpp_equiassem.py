@@ -760,11 +760,12 @@ class EquiAssem(pl.LightningModule):
         # 7. Optimal Transport
         if not self.delete_occupancy_loss: # Only negative occupancy loss is used
             shape_matching_scores = self.calculate_matching_score(src_shape_feats, trg_shape_feats, eps=0.0)
-            occ_matching_scores = self.calculate_matching_score(src_occ_feats, trg_occ_feats, eps=0.0)
+            occ_matching_scores = - self.calculate_matching_score(src_occ_feats, trg_occ_feats, eps=0.0)
             shape_matching_scores = shape_matching_scores + occ_matching_scores # Combine shape and occupancy scores
-        
+            
         else:
             shape_matching_scores = self.calculate_matching_score(src_shape_feats, trg_shape_feats, eps=1e-8)
+        
         
 
         if self.delete_Sinkhorn:
@@ -924,7 +925,7 @@ class EquiAssem(pl.LightningModule):
         """
         if self.matching_score_mode == 'CM':
             matching_scores = torch.einsum('b c n , b c m -> b n m', src_feats, trg_feats) # (1, N, M)
-            matching_scores = matching_scores / (matching_scores.shape[1] ** 0.5 + eps) # 1e-8 is for avoiding division by zero
+            matching_scores = matching_scores / (src_feats.shape[1] ** 0.5 + eps) # 1e-8 is for avoiding division by zero
 
         else:
             # Calculate cosine similarity for all pairs (N, M)
