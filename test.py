@@ -74,6 +74,8 @@ def test(args):
                           debug=args.debug, 
                           success_criterion_in_degree=args.success_criterion_in_degree,
                           delete_Sinkhorn=args.delete_Sinkhorn,
+                          matching_score_mode=args.matching_score_mode,
+                          svd_no_exp=args.svd_no_exp,
 
                           additional_VNLinearLeakyReLU=args.additional_VNLinearLeakyReLU,
                           debugged_circle_loss=args.debugged_circle_loss,
@@ -84,7 +86,6 @@ def test(args):
                           delete_occupancy_loss=args.delete_occupancy_loss,
                           use_opt_gram=args.use_opt_gram,
                           
-                          
                           only_one_norm=args.only_one_norm,
                           n_avn=args.n_avn,
                           move_smaller=args.move_smaller,
@@ -93,7 +94,8 @@ def test(args):
                           RANSAC_match_option=args.RANSAC_match_option,
                           RANSAC_type=args.RANSAC_type,
                           RANSAC_topk=args.RANSAC_topk,
-                          use_predicted_normal=args.use_predicted_normal)
+                          use_predicted_normal=args.use_predicted_normal
+                          )
     else:
         raise NotImplementedError("Model not implemented")
 
@@ -209,6 +211,8 @@ if __name__ == '__main__':
     parser.add_argument('--debug', action='store_true')
     parser.add_argument('--success_criterion_in_degree', type=int, default=10, help='Success criterion in degree for normal error')
     parser.add_argument('--delete_Sinkhorn', action='store_true', help='If True, delte the optimal transport (Sinkhorn).')
+    parser.add_argument('--matching_score_mode', type=str, default='CM', choices=['CM', 'cos'])
+    parser.add_argument('--svd_no_exp', action='store_true', help='If True, do not use exp for SVD')
 
 
     # DDP argument

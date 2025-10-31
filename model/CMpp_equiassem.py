@@ -69,6 +69,8 @@ class EquiAssem(pl.LightningModule):
             visualize=False, viz_epoch=30, viz_max_arrow_num=0, ckp_dir=None, debug=False,
             success_criterion_in_degree=10,
             delete_Sinkhorn=False,
+            matching_score_mode='CM',
+            svd_no_exp=False,
 
             # Developing temporarily used experiments arguments
             additional_VNLinearLeakyReLU=False,
@@ -123,7 +125,8 @@ class EquiAssem(pl.LightningModule):
             debug (bool, optional): Whether to enable debug mode. Defaults to False.
             success_criterion_in_degree (int, optional): Success criterion in degree for normal error. Defaults to 10.
             delete_Sinkhorn (bool, optional): Whether to delete the optimal transport (Sinkhorn). Defaults to False.
-
+            matching_score_mode (str, optional): 'CM' or 'cos'. Defaults to 'CM'.
+            svd_no_exp (bool, optional): Whether to do not use exp for SVD. Defaults to False.
 
             # Developing temporarily used experiments arguments
             additional_VNLinearLeakyReLU (bool, optional): Whether to use additional VNLinearLeakyReLU layers for the equivariant shape feature. Defaults to False.
@@ -179,6 +182,8 @@ class EquiAssem(pl.LightningModule):
         print(f"debug: {debug}")
         print(f"success_criterion_in_degree: {success_criterion_in_degree}")
         print(f"delete_Sinkhorn: {delete_Sinkhorn}")
+        print(f"matching_score_mode: {matching_score_mode}")
+        print(f"svd_no_exp: {svd_no_exp}")
 
         print(f"additional_VNLinearLeakyReLU: {additional_VNLinearLeakyReLU}")
         print(f"debugged_circle_loss: {debugged_circle_loss}")
@@ -213,6 +218,8 @@ class EquiAssem(pl.LightningModule):
         self.debug = debug
         self.success_criterion_in_degree = success_criterion_in_degree
         self.delete_Sinkhorn = delete_Sinkhorn
+        self.matching_score_mode = matching_score_mode
+        self.svd_no_exp = svd_no_exp
 
         self.additional_VNLinearLeakyReLU = additional_VNLinearLeakyReLU
         self.debugged_circle_loss = debugged_circle_loss
@@ -751,24 +758,22 @@ class EquiAssem(pl.LightningModule):
         
 
         # 7. Optimal Transport
-        shape_matching_scores = torch.einsum('b c n , b c m -> b n m', src_shape_feats, trg_shape_feats) # (1, N, M)
-        
         if not self.delete_occupancy_loss: # Only negative occupancy loss is used
-            shape_matching_scores = shape_matching_scores / src_shape_feats.shape[1] ** 0.5
-            occ_matching_scores = - torch.einsum('b c n , b c m -> b n m', src_occ_feats, trg_occ_feats) # (1, N, M)
-            occ_matching_scores = occ_matching_scores / src_occ_feats.shape[1] ** 0.5
+            shape_matching_scores = self.calculate_matching_score(src_shape_feats, trg_shape_feats, eps=0.0)
+            occ_matching_scores = self.calculate_matching_score(src_occ_feats, trg_occ_feats, eps=0.0)
             shape_matching_scores = shape_matching_scores + occ_matching_scores # Combine shape and occupancy scores
         
         else:
-            shape_matching_scores = shape_matching_scores / (src_shape_feats.shape[1] ** 0.5 + 1e-8) # 1e-8 is for avoiding division by zero
+            shape_matching_scores = self.calculate_matching_score(src_shape_feats, trg_shape_feats, eps=1e-8)
         
+
         if self.delete_Sinkhorn:
             row_slack = -shape_matching_scores.mean(dim=1) # (1, N, M) -> (1, M)
             col_slack = -shape_matching_scores.mean(dim=2) # (1, N, M) -> (1, N)
             corner = torch.tensor([[0.0]], device=shape_matching_scores.device, dtype=shape_matching_scores.dtype) # (1, 1)
             matching_scores = torch.cat([
-                torch.cat([shape_matching_scores, col_slack.unsqueeze(2)], dim=2), # (1, N, M+1)
-                torch.cat([row_slack, corner], dim=1).unsqueeze(1) # (1, 1, M+1)
+                torch.cat([shape_matching_scores, col_slack.unsqueeze(2)], dim=2), # (1, N, M) concat (1, N, 1) -> (1, N, M+1)
+                torch.cat([row_slack, corner], dim=1).unsqueeze(1) # (1, M) concat (1,1) -> (1, M+1) ->  (1, 1, M+1)
             ], dim=1) # (1, N+1, M+1) each slack is fill with minus mean value of each row/column.
             matching_scores_drop = shape_matching_scores
         else:
@@ -851,7 +856,7 @@ class EquiAssem(pl.LightningModule):
                     # Also, matching_scores_drop should be ref x src. However, in this model, we use src x trg(ref) style
                     # So, we need to transpose matching_scores_drop to make it ref x src.
                     # matching_scores_drop: (1,N,M) -> transpose(1,2), so (1,M,N)
-                    trg_corr_pts, src_corr_pts, corr_scores, estimated_transform, pred_corr = self.fine_matching(trg_pcd, src_pcd, matching_scores_drop.transpose(1,2), k=128) # Param: ref_points, src_points, so it is reversed
+                    trg_corr_pts, src_corr_pts, corr_scores, estimated_transform, pred_corr = self.fine_matching(trg_pcd, src_pcd, matching_scores_drop.transpose(1,2), k=128, no_exp=self.svd_no_exp) # Param: ref_points, src_points, so it is reversed
 
             # estimated_transform: target_point = R * source_point + t
             out_dict['estimated_rotat'] = estimated_transform[:3, :3] # R
@@ -903,7 +908,35 @@ class EquiAssem(pl.LightningModule):
 
         return out_dict, loss
 
+    
+    def calculate_matching_score(self, src_feats, trg_feats, eps=1e-8):
+        """
+        Calculate matching score between src and trg features
+        When mode is CM, then calculate score like CM
+        When mode is cos, then calculate score like cosine similarity
 
+        Args:
+            src_feats (torch.Tensor): (1, C, N)
+            trg_feats (torch.Tensor): (1, C, M)
+
+        Returns:
+            matching_scores (torch.Tensor): (1, N, M)
+        """
+        if self.matching_score_mode == 'CM':
+            matching_scores = torch.einsum('b c n , b c m -> b n m', src_feats, trg_feats) # (1, N, M)
+            matching_scores = matching_scores / (matching_scores.shape[1] ** 0.5 + eps) # 1e-8 is for avoiding division by zero
+
+        else:
+            # Calculate cosine similarity for all pairs (N, M)
+            # Normalize features along channel dimension (dim=1)
+            src_feats_norm = F.normalize(src_feats, p=2, dim=1)  # (1, C, N)
+            trg_feats_norm = F.normalize(trg_feats, p=2, dim=1)  # (1, C, M)
+            # Compute dot product for all pairs
+            matching_scores = torch.einsum('b c n , b c m -> b n m', src_feats_norm, trg_feats_norm)  # (1, N, M)
+
+        return matching_scores
+    
+    
     @torch.no_grad()
     def evaluate_prediction(self, in_dict, out_dict, gt_corr, mode, multi_part=False):
         """
@@ -1230,6 +1263,7 @@ class EquiAssem(pl.LightningModule):
         success_rate = success_count / total_count
 
         return normal_error, normal_error_hist, success_rate
+    
 
     def _calculate_recall(self, matching_scores_drop, gt_corr):
         """
