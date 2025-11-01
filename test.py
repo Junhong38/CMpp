@@ -91,10 +91,11 @@ def test(args):
                           n_avn=args.n_avn,
                           move_smaller=args.move_smaller,
                           
+                          infer_match_option=args.infer_match_option,
+                          infer_topk=args.infer_topk,
+                          infer_score_threshold_ratio=args.infer_score_threshold_ratio,
                           use_RANSAC=args.use_RANSAC,
-                          RANSAC_match_option=args.RANSAC_match_option,
                           RANSAC_type=args.RANSAC_type,
-                          RANSAC_topk=args.RANSAC_topk,
                           use_predicted_normal=args.use_predicted_normal
                           )
     else:
@@ -197,11 +198,12 @@ if __name__ == '__main__':
     parser.add_argument('--move_smaller', action='store_true', help='If True, always move the smaller point cloud to the origin')
 
 
-    # RANSAC arguments
+    # Inference arguments
+    parser.add_argument('--infer_match_option', type=str, default='topk', choices=['topk', 'mutual_topk', 'soft_topk', 'unidirectional_nn_matching', 'injective_matching', 'bijective_matching'])
+    parser.add_argument('--infer_topk', type=int, default=128)
+    parser.add_argument('--infer_score_threshold_ratio', type=float, default=0.0)
     parser.add_argument('--use_RANSAC', action='store_true', help='If True, use RANSAC for transformation estimation')
-    parser.add_argument('--RANSAC_match_option', type=str, default='topk', choices=['topk', 'mutual_topk', 'soft_topk', 'unidirectional_nn_matching', 'injective_matching', 'bijective_matching'])
     parser.add_argument('--RANSAC_type', type=str, default='default', choices=['default', 'score_dependent'])
-    parser.add_argument('--RANSAC_topk', type=int, default=128)
     parser.add_argument('--use_predicted_normal', action='store_true', help='If True, use predicted normal for inlier counting')
 
 

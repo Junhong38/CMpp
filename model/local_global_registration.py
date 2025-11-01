@@ -173,6 +173,7 @@ class LocalGlobalRegistration(nn.Module):
             match_option (str): 'topk' or 'mutual_topk' or 'soft_topk' or 'unidirectional_nn_matching' or 'injective_matching' or 'bijective_matching'.
             acceptance_radius (float): acceptance radius for LGR.
             num_refinement_steps (int=5): number of refinement steps.
+            score_threshold_ratio (float=0.01): score threshold ratio for filtering correspondences. If 0.0, no filtering is performed.
         """
         super(LocalGlobalRegistration, self).__init__()
         self.k = k
@@ -183,10 +184,9 @@ class LocalGlobalRegistration(nn.Module):
         self.procrustes = WeightedProcrustes(return_transform=True)
 
         if match_option != 'topk':
-            assert self.k > 0, f"k must be greater than 0, but got {self.k}"
+            assert self.k > 0, f"When match_option is not 'topk', k must be greater than 0, but got {self.k}"
         else: # match_option == 'topk'
-            assert self.k != 0, f"k must be not 0, but got {self.k}"
-        
+            assert self.k != 0, f"When match_option is 'topk', k must be not 0, but got {self.k}"
 
         assert 0.0 <= self.score_threshold_ratio <= 1.0, f"score_threshold_ratio must be between 0.0 and 1.0, but got {self.score_threshold_ratio}"
 
@@ -196,7 +196,7 @@ class LocalGlobalRegistration(nn.Module):
         B == 1
 
         Args:
-            score_mat (torch.Tensor): (B, M, N)
+            score_mat (torch.Tensor): (B, N, M)
 
         Returns:
             pred_corr (torch.Tensor): (K, 2)
@@ -231,24 +231,27 @@ class LocalGlobalRegistration(nn.Module):
     
     def filter_correspondences(self, score_mat, pred_corr, corr_scores):
         """Filter correspondences based on score matrix
+        If score_threshold_ratio is 0.0, all correspondences are filtered.
 
         Args:
-            score_mat (torch.Tensor): (B, M, N)
+            score_mat (torch.Tensor): (B, N, M)
             pred_corr (torch.Tensor): (K, 2)
             corr_scores (torch.Tensor): (K, )
 
         Returns:
             filtered_pred_corr (torch.Tensor): (B, K, 2)
         """
-        flattend_score_mat = score_mat.reshape(-1) # (M*N, )
-        num_elements = flattend_score_mat.shape[0] # M*N
-        threshold_index = int(num_elements * self.score_threshold_ratio) # M*N * score_threshold_ratio
-        print(f"threshold_index: {threshold_index}, num_elements: {num_elements}, score_threshold_ratio: {self.score_threshold_ratio}")
+        flattend_score_mat = score_mat.reshape(-1) # (N*M, )
+        num_elements = flattend_score_mat.shape[0] # N*M
+        threshold_index = int(num_elements * self.score_threshold_ratio) # N*M * score_threshold_ratio
 
-        thresdhold_score, _ = torch.topk(flattend_score_mat, k=threshold_index, sorted=True)
-        score_threshold = thresdhold_score[-1]
-
-        filtering_mask = corr_scores >= score_threshold
+        if threshold_index > 0:
+            threshold_scores, _ = torch.topk(flattend_score_mat, k=threshold_index, sorted=True)
+            score_threshold = threshold_scores[-1]
+            filtering_mask = corr_scores >= score_threshold
+        
+        else: # threshold_index == 0, no filtering is performed
+            filtering_mask = torch.ones_like(corr_scores, dtype=torch.bool)
         return filtering_mask
 
     
@@ -260,14 +263,14 @@ class LocalGlobalRegistration(nn.Module):
         return new_corr_scores
 
 
-    def local_to_global_registration(self, src_points ,ref_points, pred_corr, score_mat):
+    def local_to_global_registration(self, src_points, ref_points, pred_corr, score_mat):
         """Local-to-Global Registration
 
         Args:
             src_points (torch.Tensor): (B, N, 3)
             ref_points (torch.Tensor): (B, M, 3)
             pred_corr (torch.Tensor): (K, 2)
-            score_mat (torch.Tensor): (B, M, N)
+            score_mat (torch.Tensor): (B, N, M)
 
         Returns:
             estimated_transform (torch.Tensor): (B, 4, 4)
@@ -276,12 +279,13 @@ class LocalGlobalRegistration(nn.Module):
         ref_corr_points = ref_points.squeeze(0)[pred_corr[:,1]] # (K, 3)
         corr_scores = score_mat[:, pred_corr[:,0], pred_corr[:,1]].squeeze(0) # (K, )
 
-        if self.score_threshold_ratio > 0.0:
-            filtering_mask = self.filter_correspondences(score_mat, pred_corr, corr_scores)
+        # Filter correspondences based on score matrix
+        filtering_mask = self.filter_correspondences(score_mat, pred_corr, corr_scores)
 
-            ref_corr_points = ref_corr_points[filtering_mask] # (K', 3)
-            src_corr_points = src_corr_points[filtering_mask] # (K', 3)
-            corr_scores = corr_scores[filtering_mask] # (K', )
+        # Filter correspondences
+        ref_corr_points = ref_corr_points[filtering_mask] # (K', 3)
+        src_corr_points = src_corr_points[filtering_mask] # (K', 3)
+        corr_scores = corr_scores[filtering_mask] # (K', )
 
         # degenerate: initialize transformation with all correspondences
         estimated_transform = self.procrustes(src_corr_points, ref_corr_points, corr_scores)
@@ -303,7 +307,7 @@ class LocalGlobalRegistration(nn.Module):
         Args:
             src_points (Tensor): (B, N, 3)
             ref_points (Tensor): (B, M, 3)
-            score_mat (Tensor): (B, M, N), log likelihood
+            score_mat (Tensor): (B, N, M), log likelihood
             no_exp (bool): if True, do not exp the score_mat
 
         Returns:

@@ -866,9 +866,6 @@ class EquiAssem(pl.LightningModule):
             out_dict['estimated_rotat'] = estimated_transform[:3, :3] # R
             out_dict['estimated_trans'] = estimated_transform[:3, 3] # t
 
-            print(f"estimated_transform: \n{estimated_transform}")
-            exit("stop")
-
             # Evaluation
             eval_dict = self.evaluate_prediction(in_dict, out_dict, gt_corr, mode)
 
@@ -1300,7 +1297,7 @@ class EquiAssem(pl.LightningModule):
         result_dict = dict()
         for topk_ratio_str, topk_indices in topk_indices_list.items():
             if len(topk_indices) == 0:
-                result_dict[topk_ratio_str] = 0.0
+                result_dict[topk_ratio_str] = torch.tensor(0.0, device=matching_scores_drop.device)
             
             else:
                 # (P', 2) -> (P', 1, 2) == (P,2) -> (1,P,2) -> (P,P,2)

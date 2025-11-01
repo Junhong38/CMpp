@@ -60,3 +60,6 @@ end
 
 
 
+
+rm -rf checkpoint/DEBUG/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python test.py --load checkpoint/DET_T6_F_AVN_NCD_NPM_NODOCC_OG/models/last.ckpt --model CMpp_equiassem --logpath DEBUG --scale full --multiplicity 1 --visualize --use_opt_gram --deterministic --gpus 0 --n_worker 6 --move_smaller --wandb --wandb_project CMpp_test
+
