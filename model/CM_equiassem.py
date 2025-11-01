@@ -22,7 +22,7 @@ from model.backbone.vn_dgcnn import EQCNN_equi
 from model.backbone.vn_layers import VNLinear, VNLeakyReLU, VNLinearLeakyReLU
 from model.CM_loss import CircleLoss, PointMatchingLoss, OrientationLoss
 from model.learnable_sinkhorn import LearnableLogOptimalTransport
-from model.local_global_registration import LocalGlobalRegistration, WeightedProcrustes
+from model.CM_local_global_registration import LocalGlobalRegistration, WeightedProcrustes
 
 from einops import rearrange, repeat
 import torch.nn.functional as F

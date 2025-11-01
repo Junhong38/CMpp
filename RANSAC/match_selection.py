@@ -36,7 +36,7 @@ def unidirectional_nn_matching(corr_matrix, topk=1):
     # return torch.stack([src_idx, tgt_idx], dim=1)
     values, indices = torch.topk(corr_matrix, k=topk, dim=0)  # shape: (topk, M)
 
-    src_idx = indices                          # (topk, M)
+    src_idx = indices # (topk, M)
     tgt_idx = torch.arange(corr_matrix.size(1)).repeat(topk, 1).to(corr_matrix.device)
 
     matches = torch.stack([src_idx, tgt_idx], dim=2)  # (topk, M, 2)
@@ -80,6 +80,7 @@ def injective_matching(corr_matrix):
     
     return matches
 
+
 def bijective_matching(corr_matrix):
     """
     Bijective matching using Hungarian algorithm (scipy)
@@ -93,7 +94,6 @@ def bijective_matching(corr_matrix):
     cost = -corr_np  # maximize similarity → minimize negative
     row_ind, col_ind = linear_sum_assignment(cost)
     return torch.tensor(list(zip(row_ind, col_ind)), device=corr_matrix.device)
-
 
 
 def mutual_topk_matching(corr_matrix, topk=1):

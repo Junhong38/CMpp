@@ -101,10 +101,11 @@ def main(args):
                           n_avn=args.n_avn,
                           move_smaller=args.move_smaller,
                           
+                          infer_match_option='topk', # Fix match option value during training
+                          infer_topk=128, # Fix topk value during training
+                          infer_score_threshold_ratio=0.0, # Block filtering correspondences during training
                           use_RANSAC=False, # RANSAC is not used for training
-                          RANSAC_match_option='topk', # RANSAC is not used for training
                           RANSAC_type='default', # RANSAC is not used for training
-                          RANSAC_topk=128, # RANSAC is not used for training
                           use_predicted_normal=False # RANSAC is not used for training
                           )
     else:
@@ -373,7 +374,7 @@ if __name__ == '__main__':
     if args.gradient_clip_val <= 0.0:
         args.gradient_clip_val = None
     
-    
+
     if args.use_Sinkhorn_infer:
         # We will remove Sinkhorn from training.
         # Only use Sinkhorn for inference.

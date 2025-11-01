@@ -90,10 +90,11 @@ class EquiAssem(pl.LightningModule):
             
             
             # RANSAC arguments
+            infer_match_option='topk',
+            infer_topk=128,
+            infer_score_threshold_ratio=0.0,
             use_RANSAC=False,
-            RANSAC_match_option='topk',
             RANSAC_type='default',
-            RANSAC_topk=128,
             use_predicted_normal=False
             ):
         """Equivariant Assembly Model for 3D Object Assembly
@@ -146,10 +147,11 @@ class EquiAssem(pl.LightningModule):
             move_smaller (bool, optional): Whether to always move the smaller point cloud to the origin. Defaults to False.
 
             # RANSAC arguments
+            infer_match_option (str, optional): 'topk' or 'mutual_topk' or 'soft_topk' or 'unidirectional_topk' or 'injective' or 'bijective'. Defaults to 'topk'.
+            infer_topk (int, optional): Topk value for matching. Defaults to 128.
+            infer_score_threshold_ratio (float, optional): Score threshold ratio for filtering correspondences. Defaults to 0.01.
             use_RANSAC (bool, optional): Whether to use RANSAC for transformation estimation. Defaults to False.
-            RANSAC_match_option (str, optional): 'topk' or 'mutual_topk' or 'soft_topk' or 'unidirectional_topk' or 'injective' or 'bijective'. Defaults to 'topk'.
             RANSAC_type (str, optional): 'default' or 'score_dependent'. Defaults to 'default'.
-            RANSAC_topk (int, optional): 128, -10, -20 for topk, 1, 2, 3 for 'mutual_topk', 'soft_topk', 'unidirectional_topk'. Defaults to 128.
             use_predicted_normal (bool, optional): Whether to use predicted normal for inlier counting. Defaults to False.
         """
         super(EquiAssem, self).__init__()
@@ -203,10 +205,11 @@ class EquiAssem(pl.LightningModule):
 
 
         # RANSAC arguments
+        print(f"infer_match_option: {infer_match_option}")
+        print(f"infer_topk: {infer_topk}")
+        print(f"infer_score_threshold_ratio: {infer_score_threshold_ratio}")
         print(f"use_RANSAC: {use_RANSAC}")
-        print(f"RANSAC_match_option: {RANSAC_match_option}")
         print(f"RANSAC_type: {RANSAC_type}")
-        print(f"RANSAC_topk: {RANSAC_topk}")
         print(f"use_predicted_normal: {use_predicted_normal}")
         print("------------------------------------------------------")
 
@@ -235,11 +238,12 @@ class EquiAssem(pl.LightningModule):
 
         self.move_smaller = move_smaller
 
-        # RANSAC arguments
+        # Inference arguments
+        self.infer_match_option = infer_match_option
+        self.infer_topk = infer_topk
+        self.infer_score_threshold_ratio = infer_score_threshold_ratio
         self.use_RANSAC = use_RANSAC
-        self.RANSAC_match_option = RANSAC_match_option
         self.RANSAC_type = RANSAC_type
-        self.RANSAC_topk = RANSAC_topk
         self.use_predicted_normal = use_predicted_normal
         
         # Output feature dimension of Feature Extractor
@@ -394,15 +398,11 @@ class EquiAssem(pl.LightningModule):
         if not self.use_RANSAC: # If not using RANSAC, use LGR for fine matching
             # LGR
             self.fine_matching = LocalGlobalRegistration(
-                k=3,
+                k=self.infer_topk,
+                match_option=self.infer_match_option,
                 acceptance_radius=0.1,
-                mutual=True,
-                confidence_threshold=0.05,
-                use_dustbin=False,
-                use_global_score=False,
-                correspondence_threshold=3,
-                correspondence_limit=None,
                 num_refinement_steps=5,
+                score_threshold_ratio=self.infer_score_threshold_ratio,
             )
 
     
@@ -855,19 +855,19 @@ class EquiAssem(pl.LightningModule):
                                                   trg_pcd=trg_pcd, 
                                                   src_predicted_frame=src_predicted_frame,
                                                   trg_predicted_frame=trg_predicted_frame,
-                                                  match_option=self.RANSAC_match_option, 
+                                                  match_option=self.infer_match_option, 
                                                   RANSAC_type=self.RANSAC_type, 
-                                                  topk=self.RANSAC_topk)
+                                                  topk=self.infer_topk)
                 else:
                     # fine_matching predict Rt to move points from src_points to ref_points
-                    # Also, matching_scores_drop should be ref x src. However, in this model, we use src x trg(ref) style
-                    # So, we need to transpose matching_scores_drop to make it ref x src.
-                    # matching_scores_drop: (1,N,M) -> transpose(1,2), so (1,M,N)
-                    trg_corr_pts, src_corr_pts, corr_scores, estimated_transform, pred_corr = self.fine_matching(trg_pcd, src_pcd, matching_scores_drop.transpose(1,2), k=128, no_exp=self.svd_no_exp) # Param: ref_points, src_points, so it is reversed
+                    estimated_transform = self.fine_matching(src_pcd,trg_pcd, matching_scores_drop, no_exp=self.svd_no_exp)
 
             # estimated_transform: target_point = R * source_point + t
             out_dict['estimated_rotat'] = estimated_transform[:3, :3] # R
             out_dict['estimated_trans'] = estimated_transform[:3, 3] # t
+
+            print(f"estimated_transform: \n{estimated_transform}")
+            exit("stop")
 
             # Evaluation
             eval_dict = self.evaluate_prediction(in_dict, out_dict, gt_corr, mode)
