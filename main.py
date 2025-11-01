@@ -3,6 +3,10 @@ import pwd
 import argparse
 import torch
 
+# Set matplotlib backend environment variable to avoid X server issues
+# This ensures all processes (including worker processes) use the correct backend
+os.environ['MPLBACKEND'] = 'Agg'
+
 from data.dataset import GADataset
 
 import pytorch_lightning as pl
@@ -30,7 +34,6 @@ def main(args):
     dataloader_trn = GADataset.build_dataloader(args.batch_size, args.n_worker, 'train')
     dataloader_val = GADataset.build_dataloader(args.batch_size, args.n_worker, 'val')
 
-
     # Training total steps
     training_total_steps = len(dataloader_trn) * args.epochs
     print(f"training_total_steps: {training_total_steps}")
@@ -54,7 +57,7 @@ def main(args):
         model = EquiAssem(lr=args.lr,
                           
                           scheduler_mode=args.scheduler_mode,
-                          total_steps=training_total_steps,
+                          training_total_steps=training_total_steps,
 
                           backbone=args.backbone,
                           attention=args.attention,
@@ -81,8 +84,10 @@ def main(args):
                           debug=args.debug,
                           success_criterion_in_degree=args.success_criterion_in_degree,
                           delete_Sinkhorn=args.delete_Sinkhorn,
-                          DS_only_training=args.DS_only_training,
-
+                          use_Sinkhorn_infer=args.use_Sinkhorn_infer,
+                          matching_score_mode=args.matching_score_mode,
+                          svd_no_exp=args.svd_no_exp,
+                          
                           additional_VNLinearLeakyReLU=args.additional_VNLinearLeakyReLU,
                           debugged_circle_loss=args.debugged_circle_loss,
                           debugged_point_matching_loss=args.debugged_point_matching_loss,
@@ -92,18 +97,21 @@ def main(args):
                           delete_occupancy_loss=args.delete_occupancy_loss,
                           use_opt_gram=args.use_opt_gram,
                           
-                          
                           only_one_norm=args.only_one_norm,
                           n_avn=args.n_avn,
                           move_smaller=args.move_smaller,
                           
                           use_RANSAC=False, # RANSAC is not used for training
                           RANSAC_match_option='topk', # RANSAC is not used for training
-                          RANSAC_type='default' # RANSAC is not used for training
+                          RANSAC_type='default', # RANSAC is not used for training
+                          RANSAC_topk=128, # RANSAC is not used for training
+                          use_predicted_normal=False # RANSAC is not used for training
                           )
     else:
         raise NotImplementedError("Model not implemented")
 
+
+    
     # This code is for running on clusters
     SLURM_JOB_ID = os.environ.get('SLURM_JOB_ID')
     print(f"SLURM_JOB_ID: {SLURM_JOB_ID} | if None, it is not running on cluster")
@@ -225,7 +233,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Equivariant Assembly Pytorch Implementation')
 
     # Dataset arguments
-    parser.add_argument('--datapath', type=str, default='../../../../hdd/junhong/data/bbad_v2') 
+    parser.add_argument('--datapath', type=str, default='/home/kimsangki/breaking_bad/volume_constrained') 
     #'../../../../hdd/junhong/data/bbad_v2' and /mnt/nvme2n1p1/kimsangki_datasets/breaking_bad/volume_constrained , /home/kimsangki/breaking_bad/volume_constrained
     parser.add_argument('--data_category', type=str, default='everyday', choices=['everyday', 'artifact', 'synthetic'])
     parser.add_argument('--sub_category', type=str, default='all')
@@ -242,7 +250,7 @@ if __name__ == '__main__':
     parser.add_argument('--epochs', type=int, default=0, help='Number of epochs. If 0, it is automatically set to 200 for everyday dataset and 300 for other datasets.')
     parser.add_argument('--n_worker', type=int, default=4, help='Number of workers. If you use multi-GPU training, the number of workers is multiplied by the number of GPUs.')
     parser.add_argument('--load', type=str, default='')
-    parser.add_argument('--scheduler_mode', type=str, default='cos', choices=['none', 'cos', 'onecycle', 'CM'])
+    parser.add_argument('--scheduler_mode', type=str, default='cos', choices=['none', 'cos', 'onecycle', 'CM', 'CMpp'])
     parser.add_argument('--gradient_clip_val', type=float, default=0.0, help='Gradient clip value')
 
 
@@ -297,8 +305,10 @@ if __name__ == '__main__':
     parser.add_argument('--viz_max_arrow_num', type=int, default=0, help='Maximum number of arrows for visualization. This only works when visualize is True')
     parser.add_argument('--debug', action='store_true')
     parser.add_argument('--success_criterion_in_degree', type=int, default=10, help='Success criterion in degree for normal error')
-    parser.add_argument('--delete_Sinkhorn', action='store_true', help='If True, delete the optimal transport (Sinkhorn).')
-    parser.add_argument('--DS_only_training', action='store_true', help='If True, delete Sinkhorn only on training')
+    parser.add_argument('--delete_Sinkhorn', action='store_true', help='If True, delte the optimal transport (Sinkhorn).')
+    parser.add_argument('--use_Sinkhorn_infer', action='store_true', help='Use Sinkhorn for inference, hence just before registration. So automatically set delete_Sinkhorn to True.')
+    parser.add_argument('--matching_score_mode', type=str, default='CM', choices=['CM', 'cos'])
+    parser.add_argument('--svd_no_exp', action='store_true', help='If True, do not use exp for SVD')
 
         
 
@@ -362,6 +372,12 @@ if __name__ == '__main__':
     # If gradient clip value is 0.0, set it to None
     if args.gradient_clip_val <= 0.0:
         args.gradient_clip_val = None
+    
+    
+    if args.use_Sinkhorn_infer:
+        # We will remove Sinkhorn from training.
+        # Only use Sinkhorn for inference.
+        args.delete_Sinkhorn = True
 
 
     # Assertions
