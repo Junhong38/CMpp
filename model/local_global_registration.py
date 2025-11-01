@@ -283,8 +283,8 @@ class LocalGlobalRegistration(nn.Module):
         filtering_mask = self.filter_correspondences(score_mat, pred_corr, corr_scores)
 
         # Filter correspondences
-        ref_corr_points = ref_corr_points[filtering_mask] # (K', 3)
         src_corr_points = src_corr_points[filtering_mask] # (K', 3)
+        ref_corr_points = ref_corr_points[filtering_mask] # (K', 3)
         corr_scores = corr_scores[filtering_mask] # (K', )
 
         # degenerate: initialize transformation with all correspondences
@@ -316,6 +316,13 @@ class LocalGlobalRegistration(nn.Module):
 
         score_mat = torch.exp(score_mat) if not no_exp else score_mat
         pred_corr = self.sample_correspondences(score_mat)
+
+        """ THIS IS FOR DEBUGGING
+        pred_corr_t = self.sample_correspondences(score_mat.transpose(-2,-1))
+        pred_corr_t = torch.stack([pred_corr_t[:,1], pred_corr_t[:,0]], dim=1)
+        check_is_same = torch.all(pred_corr == pred_corr_t)
+        assert check_is_same, f"pred_corr and pred_corr_t are not the same\n{pred_corr}\n{pred_corr_t}"
+        """
 
         estimated_transform = self.local_to_global_registration(src_points, ref_points, pred_corr, score_mat)
         return estimated_transform
