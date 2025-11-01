@@ -68,6 +68,7 @@ class EquiAssem(pl.LightningModule):
             visualize=False, viz_epoch=30, viz_max_arrow_num=0, ckp_dir=None, debug=False,
             success_criterion_in_degree=10,
             delete_Sinkhorn=False,
+            DS_only_training=False,
 
             # Developing temporarily used experiments arguments
             additional_VNLinearLeakyReLU=False,
@@ -178,6 +179,7 @@ class EquiAssem(pl.LightningModule):
         print(f"debug: {debug}")
         print(f"success_criterion_in_degree: {success_criterion_in_degree}")
         print(f"delete_Sinkhorn: {delete_Sinkhorn}")
+        print(f"DS_only_training: {DS_only_training}")
 
         print(f"additional_VNLinearLeakyReLU: {additional_VNLinearLeakyReLU}")
         print(f"debugged_circle_loss: {debugged_circle_loss}")
@@ -212,6 +214,7 @@ class EquiAssem(pl.LightningModule):
         self.debug = debug
         self.success_criterion_in_degree = success_criterion_in_degree
         self.delete_Sinkhorn = delete_Sinkhorn
+        self.DS_only_training = DS_only_training
 
         self.additional_VNLinearLeakyReLU = additional_VNLinearLeakyReLU
         self.debugged_circle_loss = debugged_circle_loss
@@ -376,7 +379,7 @@ class EquiAssem(pl.LightningModule):
         
 
         # Optimal Transport
-        if not self.delete_Sinkhorn:
+        if not self.delete_Sinkhorn or (self.delete_Sinkhorn and self.DS_only_training):
             self.optimal_transport = LearnableLogOptimalTransport(num_iterations=100)
 
         if not self.use_RANSAC: # If not using RANSAC, use LGR for fine matching
@@ -716,7 +719,7 @@ class EquiAssem(pl.LightningModule):
         else:
             shape_matching_scores = shape_matching_scores / (src_shape_feats.shape[1] ** 0.5 + 1e-8) # 1e-8 is for avoiding division by zero
         
-        if self.delete_Sinkhorn:
+        if self.delete_Sinkhorn and (not self.DS_only_training or (self.DS_only_training and mode == 'train')):
             row_slack = -shape_matching_scores.mean(dim=1)
             col_slack = -shape_matching_scores.mean(dim=2)
             corner = torch.tensor([[0.0]], device=shape_matching_scores.device, dtype=shape_matching_scores.dtype)
@@ -724,7 +727,7 @@ class EquiAssem(pl.LightningModule):
                 torch.cat([shape_matching_scores, col_slack.unsqueeze(2)], dim=2),
                 torch.cat([row_slack, corner], dim=1).unsqueeze(1)
             ], dim=1) # (1, N, M) each slack is fill with minus mean value of each row/column.
-            matching_scores_drop = shape_matching_scores
+            matching_scores_drop = torch.log(shape_matching_scores)
         else:
             matching_scores = self.optimal_transport(shape_matching_scores) # Optimal Transport is in log space, so inside registration, there is exp operation
             matching_scores_drop = matching_scores[:,:-1,:-1]   
@@ -749,8 +752,10 @@ class EquiAssem(pl.LightningModule):
         if self.exp_scale_for_point_matching_loss:
             loss['p_loss'] = 1.0 + self.matching_loss(torch.exp(matching_scores), gt_corr, src_pcd_raw, trg_pcd_raw).float() # Optimal Transport is in log space, so before registration, we need to exp it
         else:
-            loss['p_loss'] = self.matching_loss(matching_scores, gt_corr, src_pcd_raw, trg_pcd_raw).float()
-
+            if self.delete_Sinkhorn and (not self.DS_only_training or (self.DS_only_training and mode == 'train')):
+                loss['p_loss'] = torch.exp(self.matching_loss(matching_scores, gt_corr, src_pcd_raw, trg_pcd_raw).float())
+            else:
+                loss['p_loss'] = self.matching_loss(matching_scores, gt_corr, src_pcd_raw, trg_pcd_raw).float()
 
         if not self.delete_occupancy_loss:
             loss['occ_loss'], _ = self.occupancy_loss(src_pcd_raw, trg_pcd_raw, src_occ_feats.transpose(-2,-1), -trg_occ_feats.transpose(-2,-1), gt_corr)
