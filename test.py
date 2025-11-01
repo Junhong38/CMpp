@@ -74,6 +74,7 @@ def test(args):
                           debug=args.debug, 
                           success_criterion_in_degree=args.success_criterion_in_degree,
                           delete_Sinkhorn=args.delete_Sinkhorn,
+                          use_Sinkhorn_infer=args.use_Sinkhorn_infer,
                           matching_score_mode=args.matching_score_mode,
                           svd_no_exp=args.svd_no_exp,
 
@@ -211,6 +212,7 @@ if __name__ == '__main__':
     parser.add_argument('--debug', action='store_true')
     parser.add_argument('--success_criterion_in_degree', type=int, default=10, help='Success criterion in degree for normal error')
     parser.add_argument('--delete_Sinkhorn', action='store_true', help='If True, delte the optimal transport (Sinkhorn).')
+    parser.add_argument('--use_Sinkhorn_infer', action='store_true', help='Use Sinkhorn for inference, hence just before registration. So automatically set delete_Sinkhorn to True.')
     parser.add_argument('--matching_score_mode', type=str, default='CM', choices=['CM', 'cos'])
     parser.add_argument('--svd_no_exp', action='store_true', help='If True, do not use exp for SVD')
 
@@ -263,6 +265,11 @@ if __name__ == '__main__':
 
     # Assertions
     assert args.batch_size == 1, "Batch size must be 1"
+
+    if args.use_Sinkhorn_infer:
+        # We will remove Sinkhorn from training.
+        # Only use Sinkhorn for inference.
+        args.delete_Sinkhorn = True
 
     
     print("================================================")

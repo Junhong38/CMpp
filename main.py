@@ -373,6 +373,7 @@ if __name__ == '__main__':
     if args.gradient_clip_val <= 0.0:
         args.gradient_clip_val = None
     
+    
     if args.use_Sinkhorn_infer:
         # We will remove Sinkhorn from training.
         # Only use Sinkhorn for inference.
