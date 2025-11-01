@@ -366,7 +366,7 @@ if __name__ == '__main__':
             # Now, we will test the model with normal vector method
             args.attention = 'none'
             args.s_loss_weight = 1.0
-            # args.p_loss_weight = 1.0
+            args.p_loss_weight = 1.0
             args.o_loss_weight = 1.0
     
     
