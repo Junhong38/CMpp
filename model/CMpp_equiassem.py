@@ -464,6 +464,7 @@ class EquiAssem(pl.LightningModule):
         self.validation_step_outputs.append(loss_dict)
         return loss_dict
 
+
     def on_validation_epoch_end(self):    
         # avg_loss among all data
         losses = {
@@ -473,11 +474,6 @@ class EquiAssem(pl.LightningModule):
         avg_loss = {k: (v).sum() / v.size(0) for k, v in losses.items()}
         self.log_dict(avg_loss, sync_dist=True, batch_size=1)
         self.validation_step_outputs.clear()
-
-
-        # [TODO] THIS IS ONLY FOR NAN DEBUGGING
-        if self.current_epoch > 29:
-            exit("stop")
 
 
     def test_step(self, in_dict, batch_idx):
