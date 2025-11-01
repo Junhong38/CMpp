@@ -69,6 +69,7 @@ class EquiAssem(pl.LightningModule):
             visualize=False, viz_epoch=30, viz_max_arrow_num=0, ckp_dir=None, debug=False,
             success_criterion_in_degree=10,
             delete_Sinkhorn=False,
+            use_Sinkhorn_infer=False,
             matching_score_mode='CM',
             svd_no_exp=False,
 
@@ -125,6 +126,7 @@ class EquiAssem(pl.LightningModule):
             debug (bool, optional): Whether to enable debug mode. Defaults to False.
             success_criterion_in_degree (int, optional): Success criterion in degree for normal error. Defaults to 10.
             delete_Sinkhorn (bool, optional): Whether to delete the optimal transport (Sinkhorn). Defaults to False.
+            use_Sinkhorn_infer (bool, optional): Whether to use Sinkhorn for inference, hence just before registration. Defaults to False.
             matching_score_mode (str, optional): 'CM' or 'cos'. Defaults to 'CM'.
             svd_no_exp (bool, optional): Whether to do not use exp for SVD. Defaults to False.
 
@@ -182,6 +184,7 @@ class EquiAssem(pl.LightningModule):
         print(f"debug: {debug}")
         print(f"success_criterion_in_degree: {success_criterion_in_degree}")
         print(f"delete_Sinkhorn: {delete_Sinkhorn}")
+        print(f"use_Sinkhorn_infer: {use_Sinkhorn_infer}")
         print(f"matching_score_mode: {matching_score_mode}")
         print(f"svd_no_exp: {svd_no_exp}")
 
@@ -218,6 +221,7 @@ class EquiAssem(pl.LightningModule):
         self.debug = debug
         self.success_criterion_in_degree = success_criterion_in_degree
         self.delete_Sinkhorn = delete_Sinkhorn
+        self.use_Sinkhorn_infer = use_Sinkhorn_infer
         self.matching_score_mode = matching_score_mode
         self.svd_no_exp = svd_no_exp
 
@@ -384,7 +388,7 @@ class EquiAssem(pl.LightningModule):
         
 
         # Optimal Transport
-        if not self.delete_Sinkhorn:
+        if not (self.delete_Sinkhorn and not self.use_Sinkhorn_infer):
             self.optimal_transport = LearnableLogOptimalTransport(num_iterations=100)
 
         if not self.use_RANSAC: # If not using RANSAC, use LGR for fine matching
@@ -831,6 +835,12 @@ class EquiAssem(pl.LightningModule):
 
         # 9. Evaluation
         if mode in ['val', 'test']:
+            if self.use_Sinkhorn_infer:
+                with torch.no_grad():
+                    matching_scores_drop = self.optimal_transport(matching_scores_drop) # Optimal Transport is in log space, so inside registration, there is exp operation
+                    matching_scores_drop = matching_scores_drop[:,:-1,:-1]
+
+
             # Point cloud registration
             src_predicted_frame = None
             trg_predicted_frame = None
@@ -864,7 +874,7 @@ class EquiAssem(pl.LightningModule):
 
             ## Matching Recall
             with torch.no_grad():
-                eval_dict['m_recall'] = self._calculate_recall(matching_scores_drop, gt_corr)
+                eval_dict.update(self._calculate_recall(matching_scores_drop, gt_corr))
 
             loss.update(eval_dict)
         
@@ -1262,13 +1272,14 @@ class EquiAssem(pl.LightningModule):
         return normal_error, normal_error_hist, success_rate
     
 
-    def _calculate_recall(self, matching_scores_drop, gt_corr):
+    def _calculate_recall(self, matching_scores_drop, gt_corr, topk_ratios=[0.1, 0.2, 0.4, 0.8, 1., 2.]):
         """
         Calculate recall of matching scores
 
         Args:
             matching_scores_drop (torch.Tensor): (1, N, M)
             gt_corr (torch.Tensor): (P, 2)
+            topk_ratios (list, optional): Topk ratios to calculate recall. Defaults to [0.1, 0.2, 0.4, 0.8, 1., 2.].
 
         Returns:
             matching_recall (torch.Tensor): (1)
@@ -1277,17 +1288,28 @@ class EquiAssem(pl.LightningModule):
         gt_corr_size = gt_corr.shape[0] # (P, 2) -> P
         scores_flat = matching_scores_drop.reshape(-1) # (1, N, M) -> (N*M, )
 
-        _, topk_indices_flat = torch.topk(scores_flat, k=gt_corr_size) # indices of topk scores, P
-        topk_rows = topk_indices_flat // _M # indices for rows
-        topk_cols = topk_indices_flat % _M # indices for columns
-        topk_indices = torch.stack([topk_rows, topk_cols], dim=-1) # (P, 2)
+        topk_indices_list = dict()
+        for topk_ratio in topk_ratios:
+            k_size = int(gt_corr_size * topk_ratio)
+            _, topk_indices_flat = torch.topk(scores_flat, k=k_size) # indices of topk scores, P
+            topk_rows = topk_indices_flat // _M # indices for rows
+            topk_cols = topk_indices_flat % _M # indices for columns
+            topk_indices = torch.stack([topk_rows, topk_cols], dim=-1) # (P, 2)
+            topk_indices_list[f"m_recall({str(topk_ratio)})"] = topk_indices
+
+        result_dict = dict()
+        for topk_ratio_str, topk_indices in topk_indices_list.items():
+            if len(topk_indices) == 0:
+                result_dict[topk_ratio_str] = 0.0
+            
+            else:
+                # (P', 2) -> (P', 1, 2) == (P,2) -> (1,P,2) -> (P,P,2)
+                # This reason for implementing this way is sequence of indices is not aligned with gt_corr
+                success_matches = (topk_indices[:, None, :] == gt_corr[None, :, :]).all(dim=-1)
+                matching_recall = success_matches.sum() / gt_corr_size
+                result_dict[topk_ratio_str] = matching_recall
         
-        # (P, 2) -> (P, 1, 2) == (P,2) -> (1,P,2) -> (P,P,2)
-        # This reason for implementing this way is sequence of indices is not aligned with gt_corr
-        success_matches = (topk_indices[:, None, :] == gt_corr[None, :, :]).all(dim=-1)
-        matching_recall = success_matches.sum() / gt_corr_size
-        
-        return matching_recall
+        return result_dict
 
 
 

@@ -33,8 +33,12 @@ rm -rf checkpoint/TEST_DET_T8_S_AVN_NCD_NPM_NODOCC_OG_6_MCOS_DS/ && CUDA_VISIBLE
 end
 
 
-rm -rf checkpoint/DEBUG/ && CUDA_VISIBLE_DEVICES=0 python test.py --load checkpoint/DET_T8_S_AVN_NCD_NPM_NODOCC_OG_4_DS/models/last.ckpt --model CMpp_equiassem --logpath DEBUG --scale small --multiplicity 1 --use_opt_gram --deterministic --delete_Sinkhorn --gpus 0 --n_worker 6 --move_smaller
 
+
+rm -rf checkpoint/DEBUG/ && CUDA_VISIBLE_DEVICES=1 python main.py --model CMpp_equiassem --logpath DEBUG --scale overfitting --multiplicity 1 --epochs 0 --visualize --detach_mode --use_opt_gram --deterministic --gpus 0 --n_worker 4
+
+
+rm -rf checkpoint/DEBUG/ && CUDA_VISIBLE_DEVICES=0 python test.py --load checkpoint/DET_T8_S_AVN_NCD_NPM_NODOCC_OG_4_DS/models/last.ckpt --model CMpp_equiassem --logpath DEBUG --scale small --multiplicity 1 --use_opt_gram --deterministic --delete_Sinkhorn --gpus 0 --n_worker 6 --move_smaller
 rm -rf checkpoint/DEBUG/ && CUDA_VISIBLE_DEVICES=0 python test.py --load checkpoint/DET_T8_S_AVN_NCD_NPM_NODOCC_OG_4/models/last.ckpt --model CMpp_equiassem --logpath DEBUG --scale small --multiplicity 1 --use_opt_gram --deterministic --gpus 0 --n_worker 6 --move_smaller
 
 
