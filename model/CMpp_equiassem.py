@@ -507,9 +507,9 @@ class EquiAssem(pl.LightningModule):
     
 
     def on_train_batch_end(self, outputs, batch, batch_idx):
-        # pass
+        pass
         # If you want to check the gradient and NaN, uncomment the following line
-        self.check_grad_and_nan()
+        # self.check_grad_and_nan()
 
     
     def check_grad_and_nan(self):
@@ -658,11 +658,11 @@ class EquiAssem(pl.LightningModule):
         trg_pcd = in_dict['pcd_t'][1] # (1, M ,3)
         gt_corr = in_dict['gt_correspondence'].squeeze(0) # (1, P, 2) -> (P, 2)
         
-        check_inf_or_nan(src_pcd_raw, 'src_pcd_raw')
-        check_inf_or_nan(trg_pcd_raw, 'trg_pcd_raw')
-        check_inf_or_nan(src_pcd, 'src_pcd')
-        check_inf_or_nan(trg_pcd, 'trg_pcd')
-        check_inf_or_nan(gt_corr, 'gt_corr')
+        # check_inf_or_nan(src_pcd_raw, 'src_pcd_raw')
+        # check_inf_or_nan(trg_pcd_raw, 'trg_pcd_raw')
+        # check_inf_or_nan(src_pcd, 'src_pcd')
+        # check_inf_or_nan(trg_pcd, 'trg_pcd')
+        # check_inf_or_nan(gt_corr, 'gt_corr')
 
 
         # 1. SO(3)-Equivariant Feature Extractor
@@ -670,8 +670,8 @@ class EquiAssem(pl.LightningModule):
         trg_equi_feats_backbone = self.backbone(trg_pcd) # (1, C, 3, M)
 
 
-        check_inf_or_nan(src_equi_feats_backbone, 'src_equi_feats_backbone', log=(self.log if mode=='train' else None))
-        check_inf_or_nan(trg_equi_feats_backbone, 'trg_equi_feats_backbone', log=(self.log if mode=='train' else None))
+        # check_inf_or_nan(src_equi_feats_backbone, 'src_equi_feats_backbone', log=(self.log if mode=='train' else None))
+        # check_inf_or_nan(trg_equi_feats_backbone, 'trg_equi_feats_backbone', log=(self.log if mode=='train' else None))
 
         
         if self.additional_VNLinearLeakyReLU: # 2. Frame Prediction
@@ -692,8 +692,8 @@ class EquiAssem(pl.LightningModule):
             trg_vecs = self.proj(trg_equi_feats_backbone).permute(0, 3, 1, 2) # (1, M, 2, 3)
         
 
-        check_inf_or_nan(src_vecs, 'src_vecs')
-        check_inf_or_nan(trg_vecs, 'trg_vecs')
+        # check_inf_or_nan(src_vecs, 'src_vecs')
+        # check_inf_or_nan(trg_vecs, 'trg_vecs')
 
         
         # 3. Calculate equivariant shape features
@@ -701,8 +701,8 @@ class EquiAssem(pl.LightningModule):
         trg_equi_feats = self.equi_layer(trg_equi_feats_backbone.unsqueeze(-1)).squeeze(-1) # (1, C, 3, M)
 
 
-        check_inf_or_nan(src_equi_feats, 'src_equi_feats', log=(self.log if mode=='train' else None))
-        check_inf_or_nan(trg_equi_feats, 'trg_equi_feats', log=(self.log if mode=='train' else None))
+        # check_inf_or_nan(src_equi_feats, 'src_equi_feats', log=(self.log if mode=='train' else None))
+        # check_inf_or_nan(trg_equi_feats, 'trg_equi_feats', log=(self.log if mode=='train' else None))
 
 
         # 4. Gram Schmidt & Cross-product, this is for making three basis vectors by using two predicted vectors
@@ -710,8 +710,8 @@ class EquiAssem(pl.LightningModule):
         trg_ori = ortho2rotation(trg_vecs, optimum=self.use_opt_gram) # (1, M, 2, 3) -> (1, M, 3, 3)
 
 
-        check_inf_or_nan(src_ori, 'src_ori')
-        check_inf_or_nan(trg_ori, 'trg_ori')
+        # check_inf_or_nan(src_ori, 'src_ori')
+        # check_inf_or_nan(trg_ori, 'trg_ori')
 
         # Save for visualization
         out_dict['src_ori'] = src_ori
@@ -732,8 +732,8 @@ class EquiAssem(pl.LightningModule):
         src_inv_feats = rearrange(src_inv_feats, 'b n c r -> b (c r) n') # (1, N, C, 3) -> (1, C*3, N)
         trg_inv_feats = rearrange(trg_inv_feats, 'b n c r -> b (c r) n') # (1, M, C, 3) -> (1, C*3, M)
 
-        check_inf_or_nan(src_inv_feats, 'src_inv_feats', log=(self.log if mode=='train' else None))
-        check_inf_or_nan(trg_inv_feats, 'trg_inv_feats', log=(self.log if mode=='train' else None))
+        # check_inf_or_nan(src_inv_feats, 'src_inv_feats', log=(self.log if mode=='train' else None))
+        # check_inf_or_nan(trg_inv_feats, 'trg_inv_feats', log=(self.log if mode=='train' else None))
 
 
         # OPTIONAL 5. Chaneel Attention Map
@@ -753,8 +753,8 @@ class EquiAssem(pl.LightningModule):
             trg_shape_feats = trg_shape_feats * shape_attention
         
 
-        check_inf_or_nan(src_shape_feats, 'src_shape_feats', log=(self.log if mode=='train' else None))
-        check_inf_or_nan(trg_shape_feats, 'trg_shape_feats', log=(self.log if mode=='train' else None))
+        # check_inf_or_nan(src_shape_feats, 'src_shape_feats', log=(self.log if mode=='train' else None))
+        # check_inf_or_nan(trg_shape_feats, 'trg_shape_feats', log=(self.log if mode=='train' else None))
 
 
         if not self.delete_occupancy_loss:
@@ -793,7 +793,7 @@ class EquiAssem(pl.LightningModule):
             matching_scores_drop = matching_scores[:,:-1,:-1]   
 
         
-        check_inf_or_nan(matching_scores, 'matching_scores')
+        # check_inf_or_nan(matching_scores, 'matching_scores')
 
 
         if mode in ['train', 'val']: # Do not calculate for test
@@ -831,8 +831,8 @@ class EquiAssem(pl.LightningModule):
 
             
             # Check for Inf or Nan
-            for loss_name, loss_value in loss.items():
-                check_inf_or_nan(loss_value, f'{loss_name}')
+            # for loss_name, loss_value in loss.items():
+            #     check_inf_or_nan(loss_value, f'{loss_name}')
             
 
             out_dict.update(loss)
@@ -1298,7 +1298,7 @@ class EquiAssem(pl.LightningModule):
         Args:
             matching_scores_drop (torch.Tensor): (1, N, M)
             gt_corr (torch.Tensor): (P, 2)
-            topks (list, optional): Recall@1, Recall@2, Recall@3. 
+            topks (list, optional): Recall@1, Recall@5, Recall@10, Recall@20. [TODO] is it hitrate? 
 
         Returns:
             matching_recall (torch.Tensor): (1)

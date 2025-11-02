@@ -68,6 +68,9 @@ rm -rf checkpoint/TEST_DET_CMbyCMpp/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 pyt
 end
 
 
+# CM original
+rm -rf checkpoint/DET_T10_S_CM/ && CUDA_VISIBLE_DEVICES=1 python main.py --model CM_equiassem --logpath DET_T10_S_CM --scale small --multiplicity 1 --epochs 0 --gpus 0 --n_worker 4 --wandb --wandb_project CMpp &
+rm -rf checkpoint/DET_T10_S_CMbyCMpp/ && CUDA_VISIBLE_DEVICES=3 python main.py --model CMpp_equiassem --logpath DET_T10_S_CMbyCMpp --scale small --multiplicity 1 --epochs 0 --gpus 0 --n_worker 4 --wandb --wandb_project CMpp &
 
 
 rm -rf checkpoint/DET_T10_S_NCD_NPM_NODOCC_OG_4/ && CUDA_VISIBLE_DEVICES=0 python main.py --model CMpp_equiassem --logpath DET_T10_S_NCD_NPM_NODOCC_OG_4 --scale small --multiplicity 1 --epochs 0 --n_avn 0 --detach_mode --use_opt_gram --deterministic --gpus 0 --n_worker 4 --wandb --wandb_project CMpp &
