@@ -6,7 +6,7 @@ rm -rf checkpoint/TEST_DET_CM/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python te
 rm -rf checkpoint/TEST_DET_CMbyCMpp/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python test.py --load checkpoint/CM_checkpoint/CM_everyday_pa.ckpt --model CMpp_equiassem --logpath TEST_DET_CMbyCMpp --scale full --multiplicity 1 --deterministic --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --move_smaller --wandb --wandb_project CMpp_test
 end
 
-
+:<<end
 ## SMALL TEST
 rm -rf checkpoint/DET_T9_S_AVNOON_NCD_NPM_NODOCC_OG_4/ && CUDA_VISIBLE_DEVICES=0 python main.py --model CMpp_equiassem --logpath DET_T9_S_AVNOON_NCD_NPM_NODOCC_OG_4 --scale small --multiplicity 1 --epochs 0 --visualize --only_one_norm --detach_mode --use_opt_gram --deterministic --gpus 0 --n_worker 4 --wandb --wandb_project CMpp &
 rm -rf checkpoint/DET_T9_S_AVN_NCD_NPM_NODOCC_OG_4/ && CUDA_VISIBLE_DEVICES=1 python main.py --model CMpp_equiassem --logpath DET_T9_S_AVN_NCD_NPM_NODOCC_OG_4 --scale small --multiplicity 1 --epochs 0 --visualize --detach_mode --use_opt_gram --deterministic --gpus 0 --n_worker 4 --wandb --wandb_project CMpp &
@@ -24,7 +24,7 @@ rm -rf checkpoint/DET_T9_S_AVN_NCD_NPM_NODOCC_OG_4_MCOS/ && CUDA_VISIBLE_DEVICES
 rm -rf checkpoint/DET_T9_S_AVN_NCD_NPM_NODOCC_OG_4_MCOS_DS/ && CUDA_VISIBLE_DEVICES=7 python main.py --model CMpp_equiassem --logpath DET_T9_S_AVN_NCD_NPM_NODOCC_OG_4_MCOS_DS --scale small --multiplicity 1 --epochs 0 --visualize --detach_mode --use_opt_gram --deterministic --gpus 0 --delete_Sinkhorn --matching_score_mode cos --n_worker 4 --wandb --wandb_project CMpp &
 
 
-:<<end
+
 # Delete Sinkhorn, Delete Sinkhorn and remove exp from registration, Delete Sinkhorn and Cosine similarity matching score mode + Use Sinkhorn for inference
 rm -rf checkpoint/DET_T9_S_AVN_NCD_NPM_NODOCC_OG_4_DSUSI/ && CUDA_VISIBLE_DEVICES=0 python main.py --model CMpp_equiassem --logpath DET_T9_S_AVN_NCD_NPM_NODOCC_OG_4_DSUSI --scale small --multiplicity 1 --epochs 0 --visualize --detach_mode --use_opt_gram --deterministic --gpus 0 --use_Sinkhorn_infer --n_worker 4 --wandb --wandb_project CMpp &
 rm -rf checkpoint/DET_T9_S_AVN_NCD_NPM_NODOCC_OG_4_MCOS_DSUSI/ && CUDA_VISIBLE_DEVICES=1 python main.py --model CMpp_equiassem --logpath DET_T9_S_AVN_NCD_NPM_NODOCC_OG_4_MCOS_DSUSI --scale small --multiplicity 1 --epochs 0 --visualize --detach_mode --use_opt_gram --deterministic --gpus 0 --use_Sinkhorn_infer --matching_score_mode cos --n_worker 4 --wandb --wandb_project CMpp &
@@ -65,6 +65,6 @@ end
 
 
 
-
-rm -rf checkpoint/DEBUG/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python test.py --load checkpoint/DET_T6_F_AVN_NCD_NPM_NODOCC_OG/models/last.ckpt --model CMpp_equiassem --logpath DEBUG --scale full --multiplicity 1 --visualize --use_opt_gram --deterministic --gpus 0 --n_worker 6 --move_smaller --wandb --wandb_project CMpp_test
-
+rm -rf checkpoint/TEST_DET_T6_F_AVN_NCD_NPM_NODOCC_OG/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python test.py --load checkpoint/DET_T6_F_AVN_NCD_NPM_NODOCC_OG/models/last.ckpt --model CMpp_equiassem --logpath TEST_DET_T6_F_AVN_NCD_NPM_NODOCC_OG --scale full --multiplicity 1 --visualize --use_opt_gram --deterministic --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --move_smaller --wandb --wandb_project CMpp_test
+rm -rf checkpoint/TEST_DET_CM/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python test.py --load checkpoint/CM_checkpoint/CM_everyday_pa.ckpt --model CM_equiassem --logpath TEST_DET_CM --scale full --multiplicity 1 --deterministic --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --move_smaller --wandb --wandb_project CMpp_test
+rm -rf checkpoint/TEST_DET_CMbyCMpp/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python test.py --load checkpoint/CM_checkpoint/CM_everyday_pa.ckpt --model CMpp_equiassem --logpath TEST_DET_CMbyCMpp --scale full --multiplicity 1 --deterministic --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --move_smaller --wandb --wandb_project CMpp_test

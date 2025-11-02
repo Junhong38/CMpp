@@ -300,10 +300,10 @@ class EquiAssem(pl.LightningModule):
         
         # 10. Evaluation
         if mode in ['val', 'test']:
-            eval_dict = self.evaluate_prediction(in_dict, out_dict, gt_corr)
+            eval_dict = self.evaluate_prediction(in_dict, out_dict, gt_corr)            
             ## Matching Recall
             with torch.no_grad():
-                eval_dict['m_recall'] = self._calculate_recall(matching_scores_drop, gt_corr)
+                eval_dict.update(self._calculate_recall(matching_scores_drop, gt_corr))
 
             loss.update(eval_dict)
 
@@ -605,30 +605,51 @@ class EquiAssem(pl.LightningModule):
         
         return out_dict
     
-    
-    def _calculate_recall(self, matching_scores_drop, gt_corr):
+    def _calculate_recall(self, matching_scores_drop, gt_corr, topks=[1,2,3]):
         """
         Calculate recall of matching scores
 
         Args:
             matching_scores_drop (torch.Tensor): (1, N, M)
             gt_corr (torch.Tensor): (P, 2)
+            topks (list, optional): Recall@1, Recall@2, Recall@3. 
 
         Returns:
             matching_recall (torch.Tensor): (1)
         """
-        _M = matching_scores_drop.shape[2] # (1, N, M) -> M
-        gt_corr_size = gt_corr.shape[0] # (P, 2) -> P
-        scores_flat = matching_scores_drop.reshape(-1) # (1, N, M) -> (N*M, )
+        _, _N, _M = matching_scores_drop.shape # (1, N, M) -> M
 
-        _, topk_indices_flat = torch.topk(scores_flat, k=gt_corr_size) # indices of topk scores, P
-        topk_rows = topk_indices_flat // _M # indices for rows
-        topk_cols = topk_indices_flat % _M # indices for columns
-        topk_indices = torch.stack([topk_rows, topk_cols], dim=-1) # (P, 2)
+        result_dict = dict()
+
+        correspondence_mask = torch.zeros((_N, _M), device=matching_scores_drop.device)
+        correspondence_mask[gt_corr[:,0], gt_corr[:,1]] = True
+        correspondence_mask_src = correspondence_mask.sum(dim=-1) > 0 # (N, M) -> N
+        correspondence_mask_trg = correspondence_mask.sum(dim=-2) > 0 # (N, M) -> M
         
-        # (P, 2) -> (P, 1, 2) == (P,2) -> (1,P,2) -> (P,P,2)
-        # This reason for implementing this way is sequence of indices is not aligned with gt_corr
-        success_matches = (topk_indices[:, None, :] == gt_corr[None, :, :]).all(dim=-1)
-        matching_recall = success_matches.sum() / gt_corr_size
+        for topk in topks:
+            ## Recall and precision from src
+            _, topk_inds_src = torch.topk(matching_scores_drop[:, correspondence_mask_src], k=topk, dim=-1) # (1, N, M) -> (1, gt_N, M) -> (1, gt_N, topk)
+            topk_mask_src = torch.zeros((_N, _M), device=matching_scores_drop.device) # (N, M)
+            test_topk_mask_src = torch.zeros((_N, _M), device=matching_scores_drop.device) # (N, M)
+            for i, _ in enumerate(range(topk_inds_src.shape[-1])): # for i in range(topk)
+                # [all gt_N, ith topk from gt_src]
+                topk_mask_src[torch.nonzero(correspondence_mask_src)[:, 0], topk_inds_src[0, :, i]] = True
+
+            recall_src = (topk_mask_src * correspondence_mask).sum() / correspondence_mask.sum()
+            precision_src = (topk_mask_src * correspondence_mask).sum() / topk_mask_src.sum()
+            
+            ## Recall and precision from trg
+            _, topk_inds_trg = torch.topk(matching_scores_drop[:, :, correspondence_mask_trg], k=topk, dim=-2) # (1, N, M) -> (1, N, gt_M) -> (1, topk, gt_M)
+            topk_mask_trg = torch.zeros((_N, _M), device=matching_scores_drop.device) # (N, M)
+            for i, _ in enumerate(range(topk_inds_trg.shape[-2])): # for i in range(topk)
+                # [ith topk from gt_trg, all gt_N]
+                topk_mask_trg[topk_inds_trg[0, i, :], torch.nonzero(correspondence_mask_trg)[:, 0]] = True
+
+            recall_trg = (topk_mask_trg * correspondence_mask).sum() / correspondence_mask.sum()
+            precision_trg = (topk_mask_trg * correspondence_mask).sum() / topk_mask_trg.sum()
+
+            ## Logging results
+            result_dict[f"m_recall_top{str(topk)}"] = torch.stack([recall_src, recall_trg], dim=0).mean()
+            result_dict[f"m_precision_top{str(topk)}"] = torch.stack([precision_src, precision_trg], dim=0).mean()
         
-        return matching_recall
+        return result_dict
