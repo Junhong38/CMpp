@@ -1287,7 +1287,7 @@ class EquiAssem(pl.LightningModule):
         Args:
             matching_scores_drop (torch.Tensor): (1, N, M)
             gt_corr (torch.Tensor): (P, 2)
-            topk_ratios (list, optional): Topk ratios to calculate recall. Defaults to [0.1, 0.2, 0.4, 0.8, 1., 2.].
+            topks (list, optional): Recall@1, Recall@2, Recall@3. 
 
         Returns:
             matching_recall (torch.Tensor): (1)
@@ -1298,23 +1298,26 @@ class EquiAssem(pl.LightningModule):
 
         correspondence_mask = torch.zeros((_N, _M), device=matching_scores_drop.device)
         correspondence_mask[gt_corr[:,0], gt_corr[:,1]] = True
-        correspondence_mask_src = correspondence_mask.sum(dim=-1) > 0 # N
-        correspondence_mask_trg = correspondence_mask.sum(dim=-2) > 0 # M
+        correspondence_mask_src = correspondence_mask.sum(dim=-1) > 0 # (N, M) -> N
+        correspondence_mask_trg = correspondence_mask.sum(dim=-2) > 0 # (N, M) -> M
         
         for topk in topks:
             ## Recall and precision from src
-            _, topk_inds_src = torch.topk(matching_scores_drop[:, correspondence_mask_src], k=topk, dim=-1)
-            topk_mask_src = torch.zeros((_N, _M), device=matching_scores_drop.device)
-            for i, _ in enumerate(range(topk_inds_src.shape[-1])):
+            _, topk_inds_src = torch.topk(matching_scores_drop[:, correspondence_mask_src], k=topk, dim=-1) # (1, N, M) -> (1, gt_N, M) -> (1, gt_N, topk)
+            topk_mask_src = torch.zeros((_N, _M), device=matching_scores_drop.device) # (N, M)
+            test_topk_mask_src = torch.zeros((_N, _M), device=matching_scores_drop.device) # (N, M)
+            for i, _ in enumerate(range(topk_inds_src.shape[-1])): # for i in range(topk)
+                # [all gt_N, ith topk from gt_src]
                 topk_mask_src[torch.nonzero(correspondence_mask_src)[:, 0], topk_inds_src[0, :, i]] = True
 
             recall_src = (topk_mask_src * correspondence_mask).sum() / correspondence_mask.sum()
             precision_src = (topk_mask_src * correspondence_mask).sum() / topk_mask_src.sum()
             
             ## Recall and precision from trg
-            _, topk_inds_trg = torch.topk(matching_scores_drop[:, :, correspondence_mask_trg], k=topk, dim=-2)
-            topk_mask_trg = torch.zeros((_N, _M), device=matching_scores_drop.device)
-            for i, _ in enumerate(range(topk_inds_trg.shape[-2])):
+            _, topk_inds_trg = torch.topk(matching_scores_drop[:, :, correspondence_mask_trg], k=topk, dim=-2) # (1, N, M) -> (1, N, gt_M) -> (1, topk, gt_M)
+            topk_mask_trg = torch.zeros((_N, _M), device=matching_scores_drop.device) # (N, M)
+            for i, _ in enumerate(range(topk_inds_trg.shape[-2])): # for i in range(topk)
+                # [ith topk from gt_trg, all gt_N]
                 topk_mask_trg[topk_inds_trg[0, i, :], torch.nonzero(correspondence_mask_trg)[:, 0]] = True
 
             recall_trg = (topk_mask_trg * correspondence_mask).sum() / correspondence_mask.sum()
