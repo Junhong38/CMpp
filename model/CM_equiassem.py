@@ -605,7 +605,7 @@ class EquiAssem(pl.LightningModule):
         
         return out_dict
     
-    def _calculate_recall(self, matching_scores_drop, gt_corr, topks=[1,2,3]):
+    def _calculate_recall(self, matching_scores_drop, gt_corr, topks=[1,5,10,20]):
         """
         Calculate recall of matching scores
 
@@ -630,14 +630,14 @@ class EquiAssem(pl.LightningModule):
             ## Recall and precision from src
             _, topk_inds_src = torch.topk(matching_scores_drop[:, correspondence_mask_src], k=topk, dim=-1) # (1, N, M) -> (1, gt_N, M) -> (1, gt_N, topk)
             topk_mask_src = torch.zeros((_N, _M), device=matching_scores_drop.device) # (N, M)
-            test_topk_mask_src = torch.zeros((_N, _M), device=matching_scores_drop.device) # (N, M)
             for i, _ in enumerate(range(topk_inds_src.shape[-1])): # for i in range(topk)
                 # [all gt_N, ith topk from gt_src]
                 topk_mask_src[torch.nonzero(correspondence_mask_src)[:, 0], topk_inds_src[0, :, i]] = True
 
-            recall_src = (topk_mask_src * correspondence_mask).sum() / correspondence_mask.sum()
-            precision_src = (topk_mask_src * correspondence_mask).sum() / topk_mask_src.sum()
-            
+            # (N, M) -> N
+            is_success_src = (topk_mask_src * correspondence_mask).sum(dim=-1) > 0
+            recall_src = is_success_src[correspondence_mask_src].sum() / correspondence_mask_src.sum()
+
             ## Recall and precision from trg
             _, topk_inds_trg = torch.topk(matching_scores_drop[:, :, correspondence_mask_trg], k=topk, dim=-2) # (1, N, M) -> (1, N, gt_M) -> (1, topk, gt_M)
             topk_mask_trg = torch.zeros((_N, _M), device=matching_scores_drop.device) # (N, M)
@@ -645,11 +645,13 @@ class EquiAssem(pl.LightningModule):
                 # [ith topk from gt_trg, all gt_N]
                 topk_mask_trg[topk_inds_trg[0, i, :], torch.nonzero(correspondence_mask_trg)[:, 0]] = True
 
-            recall_trg = (topk_mask_trg * correspondence_mask).sum() / correspondence_mask.sum()
-            precision_trg = (topk_mask_trg * correspondence_mask).sum() / topk_mask_trg.sum()
+            # (N, M) -> M
+            is_success_trg = (topk_mask_trg * correspondence_mask).sum(dim=-2) > 0
+            recall_trg = is_success_trg[correspondence_mask_trg].sum() / correspondence_mask_trg.sum()
+            
+            recall_dot_k = (recall_src + recall_trg) / 2
 
             ## Logging results
-            result_dict[f"m_recall_top{str(topk)}"] = torch.stack([recall_src, recall_trg], dim=0).mean()
-            result_dict[f"m_precision_top{str(topk)}"] = torch.stack([precision_src, precision_trg], dim=0).mean()
+            result_dict[f"recall@{str(topk)}"] = recall_dot_k
         
         return result_dict

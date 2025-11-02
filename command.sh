@@ -71,4 +71,4 @@ rm -rf checkpoint/TEST_DET_CMbyCMpp/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 pyt
 
 
 
-rm -rf checkpoint/DEBUG/ && CUDA_VISIBLE_DEVICES=2 python main.py --model CMpp_equiassem --logpath DEBUG --scale overfitting --multiplicity 1 --epochs 0 --visualize --n_avn 0 --detach_mode --use_opt_gram --deterministic --gpus 0 --n_worker 4
+# rm -rf checkpoint/DEBUG/ && CUDA_VISIBLE_DEVICES=2 python main.py --model CMpp_equiassem --logpath DEBUG --scale overfitting --multiplicity 1 --epochs 0 --visualize --n_avn 0 --detach_mode --use_opt_gram --deterministic --gpus 0 --n_worker 4
