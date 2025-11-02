@@ -17,6 +17,8 @@ def _RANSAC(in_dict, shape_matching_scores, src_pcd, trg_pcd, src_predicted_fram
         shape_matching_scores (torch.Tensor): (1, N, M) shape matching scores
         src_pcd (torch.Tensor): (1, M, 3) source point cloud
         trg_pcd (torch.Tensor): (1, N, 3) target point cloud
+        src_predicted_frame (torch.Tensor, optional): (N, 3, 3) source predicted frame. Defaults to None.
+        trg_predicted_frame (torch.Tensor, optional): (M, 3, 3) target predicted frame. Defaults to None.
         match_option (str, optional): 'topk' or 'mutual_topk' or 'soft_topk'. Defaults to 'topk'.
         RANSAC_type (str, optional): 'default' or 'score_dependent'. Defaults to 'default'.
     """
@@ -83,11 +85,11 @@ def _RANSAC(in_dict, shape_matching_scores, src_pcd, trg_pcd, src_predicted_fram
         ransac_function = ransac_rigid_original
 
     if src_predicted_frame == None:
-        src_normal = in_dict['gt_normals'][0].squeeze(0)
-        trg_normal = in_dict['gt_normals'][1].squeeze(0)
+        src_normal = in_dict['gt_normals'][0].squeeze(0) # (1, N, 3) -> (N, 3)
+        trg_normal = in_dict['gt_normals'][1].squeeze(0) # (1, M, 3) -> (M, 3)
     else:
-        src_normal = src_predicted_frame[:,0,:]
-        trg_normal = trg_predicted_frame[:,0,:]
+        src_normal = src_predicted_frame[:,0,:] # (N, 3, 3) -> (N, 3), select only predicted normal
+        trg_normal = trg_predicted_frame[:,0,:] # (M, 3, 3) -> (M, 3), 
         
     inl_R, inl_t, inliers = ransac_function(src_corr_pts, trg_corr_pts, 
                                             src_pcd.squeeze(0), trg_pcd.squeeze(0),

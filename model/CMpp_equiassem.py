@@ -845,8 +845,8 @@ class EquiAssem(pl.LightningModule):
             src_predicted_frame = None
             trg_predicted_frame = None
             if self.use_predicted_normal:
-                src_predicted_frame = src_ori.squeeze(0)
-                trg_predicted_frame = trg_ori.squeeze(0)
+                src_predicted_frame = src_ori.squeeze(0) # (1, N, 3, 3) -> (N, 3, 3)
+                trg_predicted_frame = trg_ori.squeeze(0) # (1, M, 3, 3) -> (M, 3, 3)
             with torch.no_grad():
                 if self.use_RANSAC:
                     estimated_transform = _RANSAC(in_dict=in_dict, 

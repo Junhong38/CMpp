@@ -86,11 +86,12 @@ def ransac_rigid(
 
         rotated_normals = torch.matmul(src_gt_normal, rotation.T.to(src_gt_normal.dtype))
         cos_sim = torch.matmul(rotated_normals, trg_gt_normal.T)
-        normal_mask = cos_sim < gt_normal_threshold
+        normal_mask = cos_sim < gt_normal_threshold # The reason why cos_sim is lower than 0 can be accepted is that the normal is that normal must be opposite direction
         if normal_mask.shape != inliers.shape:
             raise ValueError("Normal mask shape does not match inlier mask.")
         inliers &= normal_mask
 
+        # [TODO] Why any(dim=1) is used? Only cound inlier based on src points?
         num_inliers = inliers.any(dim=1).sum().item()
         if num_inliers > max_inliers:
             max_inliers = num_inliers
