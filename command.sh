@@ -24,6 +24,7 @@ rm -rf checkpoint/DET_T9_S_AVN_NCD_NPM_NODOCC_OG_4_MCOS/ && CUDA_VISIBLE_DEVICES
 rm -rf checkpoint/DET_T9_S_AVN_NCD_NPM_NODOCC_OG_4_MCOS_DS/ && CUDA_VISIBLE_DEVICES=7 python main.py --model CMpp_equiassem --logpath DET_T9_S_AVN_NCD_NPM_NODOCC_OG_4_MCOS_DS --scale small --multiplicity 1 --epochs 0 --visualize --detach_mode --use_opt_gram --deterministic --gpus 0 --delete_Sinkhorn --matching_score_mode cos --n_worker 4 --wandb --wandb_project CMpp &
 
 
+:<<end
 # Delete Sinkhorn, Delete Sinkhorn and remove exp from registration, Delete Sinkhorn and Cosine similarity matching score mode + Use Sinkhorn for inference
 rm -rf checkpoint/DET_T9_S_AVN_NCD_NPM_NODOCC_OG_4_DSUSI/ && CUDA_VISIBLE_DEVICES=0 python main.py --model CMpp_equiassem --logpath DET_T9_S_AVN_NCD_NPM_NODOCC_OG_4_DSUSI --scale small --multiplicity 1 --epochs 0 --visualize --detach_mode --use_opt_gram --deterministic --gpus 0 --use_Sinkhorn_infer --n_worker 4 --wandb --wandb_project CMpp &
 rm -rf checkpoint/DET_T9_S_AVN_NCD_NPM_NODOCC_OG_4_MCOS_DSUSI/ && CUDA_VISIBLE_DEVICES=1 python main.py --model CMpp_equiassem --logpath DET_T9_S_AVN_NCD_NPM_NODOCC_OG_4_MCOS_DSUSI --scale small --multiplicity 1 --epochs 0 --visualize --detach_mode --use_opt_gram --deterministic --gpus 0 --use_Sinkhorn_infer --matching_score_mode cos --n_worker 4 --wandb --wandb_project CMpp &
@@ -32,7 +33,7 @@ rm -rf checkpoint/DET_T9_S_AVN_NCD_NPM_NODOCC_OG_4_MCOS_DSUSI/ && CUDA_VISIBLE_D
 # CM original
 rm -rf checkpoint/DET_T9_S_CM/ && CUDA_VISIBLE_DEVICES=2 python main.py --model CM_equiassem --logpath DET_T9_S_CM --scale small --multiplicity 1 --epochs 0 --gpus 0 --n_worker 4 --wandb --wandb_project CMpp &
 rm -rf checkpoint/DET_T9_S_CMbyCMpp/ && CUDA_VISIBLE_DEVICES=3 python main.py --model CMpp_equiassem --logpath DET_T9_S_CMbyCMpp --scale small --multiplicity 1 --epochs 0 --gpus 0 --n_worker 4 --wandb --wandb_project CMpp &
-
+end
 
 
 
@@ -55,6 +56,10 @@ end
 rm -rf checkpoint/DEBUG/ && CUDA_VISIBLE_DEVICES=1 python main.py --model CMpp_equiassem --logpath DEBUG --scale overfitting --multiplicity 1 --epochs 0 --visualize --detach_mode --use_opt_gram --deterministic --gpus 0 --n_worker 4
 rm -rf checkpoint/DEBUG/ && CUDA_VISIBLE_DEVICES=0 python test.py --load checkpoint/DET_T8_S_AVN_NCD_NPM_NODOCC_OG_4_DS/models/last.ckpt --model CMpp_equiassem --logpath DEBUG --scale small --multiplicity 1 --use_opt_gram --deterministic --delete_Sinkhorn --gpus 0 --n_worker 6 --move_smaller
 rm -rf checkpoint/DEBUG/ && CUDA_VISIBLE_DEVICES=0 python test.py --load checkpoint/DET_T8_S_AVN_NCD_NPM_NODOCC_OG_4/models/last.ckpt --model CMpp_equiassem --logpath DEBUG --scale small --multiplicity 1 --use_opt_gram --deterministic --gpus 0 --n_worker 6 --move_smaller
+
+
+rm -rf checkpoint/DEBUG/ && CUDA_VISIBLE_DEVICES=0 python test.py --load checkpoint/DET_T6_F_AVN_NCD_NPM_NODOCC_OG/models/last.ckpt --model CMpp_equiassem --logpath DEBUG --scale full --multiplicity 1 --visualize --use_opt_gram --deterministic --gpus 0 --n_worker 6 --move_smaller
+
 end
 
 

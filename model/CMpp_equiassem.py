@@ -977,6 +977,11 @@ class EquiAssem(pl.LightningModule):
             src_pcd, trg_pcd = trg_pcd, src_pcd
             pred_relative_trsfm = pred_relative_trsfm[0].T, -  pred_relative_trsfm[0].T @ pred_relative_trsfm[1]
             grtr_relative_trsfm = grtr_relative_trsfm[0].T, -  grtr_relative_trsfm[0].T @ grtr_relative_trsfm[1]
+            gt_corr = torch.stack([gt_corr[:,1], gt_corr[:,0]], dim=1) # (P,) stack (P,) -> (P,2)
+            is_swap_triggered = True
+       
+        else:
+            is_swap_triggered = False
 
 
         # Assemble using prediction, pseudo-gt, and ground-truth
@@ -1031,8 +1036,14 @@ class EquiAssem(pl.LightningModule):
             gt_src_normals, gt_trg_normals = in_dict['gt_normals'][0][0].float(), in_dict['gt_normals'][1][0].float() # (1,N,3) -> (N,3), (1,M,3) -> (M,3)
             src_mesh_verts, trg_mesh_verts = in_dict['mesh_t'][0][0].float(), in_dict['mesh_t'][1][0].float() # (1,N,3) -> (N,3), (1,M,3) -> (M,3)
             src_mesh_faces, trg_mesh_faces = in_dict['mesh_faces'][0][0].float(), in_dict['mesh_faces'][1][0].float() # (1,F,3) -> (F,3), (1,F,3) -> (F,3)
+            
+            if is_swap_triggered: # To move smaller one, we swap src and trg in the above part
+                output_src_ori, output_trg_ori = output_trg_ori, output_src_ori
+                gt_src_normals, gt_trg_normals = gt_trg_normals, gt_src_normals
+                src_mesh_verts, trg_mesh_verts = trg_mesh_verts, src_mesh_verts
+                src_mesh_faces, trg_mesh_faces = trg_mesh_faces, src_mesh_faces
+            
             mesh_faces_for_viz = [src_mesh_faces, trg_mesh_faces]
-
 
             reshaped_output_src_ori = output_src_ori.reshape(-1,3) # (N,3,3) -> (N*3,3)
             reshaped_output_trg_ori = output_trg_ori.reshape(-1,3) # (M,3,3) -> (M*3,3)
