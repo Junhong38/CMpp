@@ -72,6 +72,8 @@ class EquiAssem(pl.LightningModule):
             use_Sinkhorn_infer=False,
             matching_score_mode='CM',
             svd_no_exp=False,
+            flip_normal=False,
+            use_consistency_loss=0.0,
 
             # Developing temporarily used experiments arguments
             additional_VNLinearLeakyReLU=False,
@@ -83,11 +85,9 @@ class EquiAssem(pl.LightningModule):
             delete_occupancy_loss=False,
             use_opt_gram=False,
 
-
             only_one_norm=False,
             n_avn=5,
             move_smaller=False,
-            
             
             # RANSAC arguments
             infer_match_option='topk',
@@ -189,6 +189,8 @@ class EquiAssem(pl.LightningModule):
         print(f"use_Sinkhorn_infer: {use_Sinkhorn_infer}")
         print(f"matching_score_mode: {matching_score_mode}")
         print(f"svd_no_exp: {svd_no_exp}")
+        print(f"flip_normal: {flip_normal}")
+        print(f"use_consistency_loss: {use_consistency_loss}")
 
         print(f"additional_VNLinearLeakyReLU: {additional_VNLinearLeakyReLU}")
         print(f"debugged_circle_loss: {debugged_circle_loss}")
@@ -227,6 +229,7 @@ class EquiAssem(pl.LightningModule):
         self.use_Sinkhorn_infer = use_Sinkhorn_infer
         self.matching_score_mode = matching_score_mode
         self.svd_no_exp = svd_no_exp
+        self.flip_normal = flip_normal
 
         self.additional_VNLinearLeakyReLU = additional_VNLinearLeakyReLU
         self.debugged_circle_loss = debugged_circle_loss
@@ -270,8 +273,10 @@ class EquiAssem(pl.LightningModule):
         if new_orientation_module:
             print("Using the new module for orientation loss")
             from model.loss import OrientationLoss
+            self.orientation_loss = OrientationLoss(use_consistency_loss=use_consistency_loss)
         else:
             from model.CM_loss import OrientationLoss
+            self.orientation_loss = OrientationLoss()
         
         if delete_occupancy_loss:
             print("Deleting the occupancy loss")
@@ -284,8 +289,7 @@ class EquiAssem(pl.LightningModule):
 
 
         self.matching_loss = PointMatchingLoss()
-        self.orientation_loss = OrientationLoss()
-
+        
 
         # Weights for losses
         self.s_loss_weight = s_loss_weight
@@ -715,7 +719,14 @@ class EquiAssem(pl.LightningModule):
 
 
         # 5. Invariant Features
-        src_inv_feats = torch.matmul(src_equi_feats.permute(0, 3, 1, 2).float(), src_ori.transpose(-2,-1).float()) # (1, N, C, 3) x (1, N, 3, 3) -> (1, N, C, 3)
+        if self.flip_normal: # Flip normal of src frame
+            # (1, N, 3) stack -> (1, N, 3, 3)
+            flipped_src_ori = torch.stack([- src_ori[:, :, 0, :], src_ori[:, :, 1, :], src_ori[:, :, 2, :]], dim=-2)
+            src_inv_feats = torch.matmul(src_equi_feats.permute(0, 3, 1, 2).float(), flipped_src_ori.transpose(-2,-1).float()) # (1, N, C, 3) x (1, N, 3, 3) -> (1, N, C, 3)
+
+        else:
+            src_inv_feats = torch.matmul(src_equi_feats.permute(0, 3, 1, 2).float(), src_ori.transpose(-2,-1).float()) # (1, N, C, 3) x (1, N, 3, 3) -> (1, N, C, 3)
+        
         trg_inv_feats = torch.matmul(trg_equi_feats.permute(0, 3, 1, 2).float(), trg_ori.transpose(-2,-1).float()) # (1, M, C, 3) x (1, M, 3, 3) -> (1, M, C, 3)
 
         src_inv_feats = rearrange(src_inv_feats, 'b n c r -> b (c r) n') # (1, N, C, 3) -> (1, C*3, N)
