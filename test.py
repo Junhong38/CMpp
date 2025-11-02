@@ -77,6 +77,8 @@ def test(args):
                           use_Sinkhorn_infer=args.use_Sinkhorn_infer,
                           matching_score_mode=args.matching_score_mode,
                           svd_no_exp=args.svd_no_exp,
+                          flip_normal=args.flip_normal,
+                          use_consistency_loss=False, # We don't need to use consistency loss for testing
 
                           additional_VNLinearLeakyReLU=args.additional_VNLinearLeakyReLU,
                           debugged_circle_loss=args.debugged_circle_loss,
@@ -217,6 +219,7 @@ if __name__ == '__main__':
     parser.add_argument('--use_Sinkhorn_infer', action='store_true', help='Use Sinkhorn for inference, hence just before registration. So automatically set delete_Sinkhorn to True.')
     parser.add_argument('--matching_score_mode', type=str, default='CM', choices=['CM', 'cos'])
     parser.add_argument('--svd_no_exp', action='store_true', help='If True, do not use exp for SVD')
+    parser.add_argument('--flip_normal', action='store_true', help='If True, flip predicted normal')
 
 
     # DDP argument
