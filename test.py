@@ -108,6 +108,7 @@ def test(args):
     # Wandb logger
     if args.wandb:
         logger = WandbLogger(
+            entity=args.wandb_entity,
             project=args.wandb_project,
             name=args.logpath, # same as logpath
             id=None, 
@@ -228,6 +229,7 @@ if __name__ == '__main__':
 
     # Wandb argument
     parser.add_argument('--wandb', action='store_true')
+    parser.add_argument('--wandb_entity', type=str, default=None)
     parser.add_argument('--wandb_project', type=str, default='default_wandb_project')
 
 
