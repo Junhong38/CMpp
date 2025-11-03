@@ -1321,8 +1321,12 @@ class EquiAssem(pl.LightningModule):
                 topk_mask_src[torch.nonzero(correspondence_mask_src)[:, 0], topk_inds_src[0, :, i]] = True
 
             # (N, M) -> N
-            is_success_src = (topk_mask_src * correspondence_mask).sum(dim=-1) > 0
-            recall_src = is_success_src[correspondence_mask_src].sum() / correspondence_mask_src.sum()
+            intersection_src = (topk_mask_src * correspondence_mask).sum(dim=-1) # Calculate intersection
+            hitrate_src = (intersection_src[correspondence_mask_src] > 0).sum() / correspondence_mask_src.sum() # num of success src / total gt src
+
+            # correspondence_mask[correspondence_mask_src].sum(dim=-1): (N, M) -> (gt_N, M) -> (gt_N,)
+            recall_src = (intersection_src[correspondence_mask_src] / correspondence_mask[correspondence_mask_src].sum(dim=-1)).mean()
+
 
             ## Recall and precision from trg
             _, topk_inds_trg = torch.topk(matching_scores_drop[:, :, correspondence_mask_trg], k=topk, dim=-2) # (1, N, M) -> (1, N, gt_M) -> (1, topk, gt_M)
@@ -1332,12 +1336,17 @@ class EquiAssem(pl.LightningModule):
                 topk_mask_trg[topk_inds_trg[0, i, :], torch.nonzero(correspondence_mask_trg)[:, 0]] = True
 
             # (N, M) -> M
-            is_success_trg = (topk_mask_trg * correspondence_mask).sum(dim=-2) > 0
-            recall_trg = is_success_trg[correspondence_mask_trg].sum() / correspondence_mask_trg.sum()
+            intersection_trg = (topk_mask_trg * correspondence_mask).sum(dim=-2)
+            hitrate_trg = (intersection_trg[correspondence_mask_trg] > 0).sum() / correspondence_mask_trg.sum()
+
+            # correspondence_mask[:, correspondence_mask_trg].sum(dim=-2): (N, M) -> (N, gt_M) -> (gt_M,)
+            recall_trg = (intersection_trg[correspondence_mask_trg] / correspondence_mask[:, correspondence_mask_trg].sum(dim=-2)).mean()
             
+            hitrate_dot_k = (hitrate_src + hitrate_trg) / 2
             recall_dot_k = (recall_src + recall_trg) / 2
 
             ## Logging results
+            result_dict[f"hitrate@{str(topk)}"] = hitrate_dot_k
             result_dict[f"recall@{str(topk)}"] = recall_dot_k
         
         return result_dict

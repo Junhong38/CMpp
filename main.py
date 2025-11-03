@@ -166,6 +166,7 @@ def main(args):
     # Wandb logger
     if args.wandb:
         logger = WandbLogger(
+            entity=args.wandb_entity,
             project=args.wandb_project,
             name=logger_name, # same as logpath
             id=logger_id, # same as SLURM_JOB_ID
@@ -323,6 +324,7 @@ if __name__ == '__main__':
 
     # Wandb argument
     parser.add_argument('--wandb', action='store_true')
+    parser.add_argument('--wandb_entity', type=str, default=None)
     parser.add_argument('--wandb_project', type=str, default='default_wandb_project')
 
 
