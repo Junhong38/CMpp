@@ -2,6 +2,7 @@ import os
 import pwd
 import argparse
 import torch
+import collections
 
 # Set matplotlib backend environment variable to avoid X server issues
 # This ensures all processes (including worker processes) use the correct backend
@@ -214,15 +215,13 @@ def main(args):
         ckp_path = os.path.join(ckp_dir, last_ckp)
     
     elif args.load != '': # Load checkpoint
-        # check if it has trainint states, or just a model weight
         ckp = torch.load(args.load, map_location='cpu')
-        # if it has, then it's a checkpoint compatible with pl
-        if 'state_dict' in ckp.keys():
-            ckp_path = args.load
-        # if it's just a weight, then manually load it to the model
-        else:
-            ckp_path = None
-            model.load_state_dict(ckp)
+        print(f"Loading checkpoint from {ckp.keys()}")
+        ckp_path = None
+        model.load_state_dict(ckp['state_dict'])
+    
+    elif args.resume != '': # Resume training from the checkpoint
+        ckp_path = args.resume
     
     else: # No checkpoint
         ckp_path = None
@@ -253,7 +252,8 @@ if __name__ == '__main__':
     parser.add_argument('--lr', type=float, default=1e-2, help='Learning rate. If you use multi-GPU training, the learning rate is multiplied by the number of GPUs.')
     parser.add_argument('--epochs', type=int, default=0, help='Number of epochs. If 0, it is automatically set to 200 for everyday dataset and 300 for other datasets.')
     parser.add_argument('--n_worker', type=int, default=4, help='Number of workers. If you use multi-GPU training, the number of workers is multiplied by the number of GPUs.')
-    parser.add_argument('--load', type=str, default='')
+    parser.add_argument('--load', type=str, default='', help='Load checkpoint for training')
+    parser.add_argument('--resume', type=str, default='', help='Resume training from the checkpoint')
     parser.add_argument('--scheduler_mode', type=str, default='cos', choices=['none', 'cos', 'onecycle', 'CM', 'CMpp'])
     parser.add_argument('--gradient_clip_val', type=float, default=0.0, help='Gradient clip value')
 
@@ -394,6 +394,9 @@ if __name__ == '__main__':
     print("================================================")
     print(f"args: {args}")
     print("================================================")
+
+
+    assert not ((args.load != '') and (args.resume != '')), "Load and resume cannot be used together"
 
 
     main(args)
