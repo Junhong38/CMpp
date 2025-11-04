@@ -109,3 +109,19 @@ rm -rf checkpoint/NDET_MT1_F_NCD_NPM_NODOCC_OG_FN_6/ && CUDA_VISIBLE_DEVICES=0,1
 # Check deterministic
 # rm -rf checkpoint/DEBUG/ && CUDA_VISIBLE_DEVICES=0 python main.py --model CMpp_equiassem --logpath DEBUG --scale small --multiplicity 1 --epochs 0 --n_avn 0 --detach_mode --use_opt_gram --deterministic --gpus 0 --n_worker 4 --wandb --wandb_entity CMppProject --wandb_project CMpp 
 
+
+
+
+rm -rf checkpoint/NDET_MT1_F_NCD_NPM_NODOCC_OG_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --model CMpp_equiassem --logpath NDET_MT1_F_NCD_NPM_NODOCC_OG_6 --scale full --multiplicity 1 --epochs 0 --n_avn 0 --detach_mode --use_opt_gram --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --wandb --wandb_entity CMppProject --wandb_project CMpp
+
+rm -rf checkpoint/TOP128_NDET_MT1_F_NCD_NPM_NODOCC_OG_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python test.py --load checkpoint/NDET_MT1_F_NCD_NPM_NODOCC_OG_6/models/last.ckpt --model CMpp_equiassem --logpath TOP128_NDET_MT1_F_NCD_NPM_NODOCC_OG_6 --scale full --multiplicity 1 --n_avn 0 --use_opt_gram --n_worker 6 --move_smaller --gpus 0 1 2 3 4 5 6 7 --wandb --wandb_entity CMppProject --wandb_project CMpp_test
+rm -rf checkpoint/TOP128FN_NDET_MT1_F_NCD_NPM_NODOCC_OG_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python test.py --load checkpoint/NDET_MT1_F_NCD_NPM_NODOCC_OG_6/models/last.ckpt --model CMpp_equiassem --logpath TOP128FN_NDET_MT1_F_NCD_NPM_NODOCC_OG_6 --scale full --multiplicity 1 --n_avn 0 --use_opt_gram --flip_normal --n_worker 6 --move_smaller --gpus 0 1 2 3 4 5 6 7 --wandb --wandb_entity CMppProject --wandb_project CMpp_test
+
+
+
+
+rm -rf checkpoint/DEBUG_TEST/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python test.py --load checkpoint/NDET_MT1_F_NCD_NPM_NODOCC_OG_6/models/last.ckpt --model CMpp_equiassem --logpath DEBUG_TEST --scale full --multiplicity 1 --n_avn 0 --use_opt_gram --n_worker 6 --move_smaller --infer_match_option soft_topk --infer_topk 5 --infer_score_threshold_ratio 0.01 --gpus 0 1 2 3 4 5 6 7 --wandb --wandb_entity CMppProject --wandb_project CMpp_test
+
+rm -rf checkpoint/TEST_DET_T6_F_AVN_NCD_NPM_NODOCC_OG/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python test.py --load checkpoint/DET_T6_F_AVN_NCD_NPM_NODOCC_OG/models/last.ckpt --model CMpp_equiassem --logpath TEST_DET_T6_F_AVN_NCD_NPM_NODOCC_OG --scale full --multiplicity 1 --visualize --use_opt_gram --deterministic --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --move_smaller --wandb --wandb_project CMpp_test
+rm -rf checkpoint/TEST_CM/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python test.py --load checkpoint/CM_checkpoint/CM_everyday_pa.ckpt --model CM_equiassem --logpath TEST_CM --scale full --multiplicity 1 --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --move_smaller --wandb --wandb_entity CMppProject --wandb_project CMpp_test
+rm -rf checkpoint/TEST_CMbyCMpp/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python test.py --load checkpoint/CM_checkpoint/CM_everyday_pa.ckpt --model CMpp_equiassem --logpath TEST_CMbyCMpp --scale full --multiplicity 1 --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --move_smaller --wandb --wandb_entity CMppProject --wandb_project CMpp_test

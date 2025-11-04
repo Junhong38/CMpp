@@ -190,6 +190,14 @@ class LocalGlobalRegistration(nn.Module):
 
         assert 0.0 <= self.score_threshold_ratio <= 1.0, f"score_threshold_ratio must be between 0.0 and 1.0, but got {self.score_threshold_ratio}"
 
+        print("-----------------------[LocalGlobalRegistration]-------------------------------")
+        print(f"k: {k}")
+        print(f"match_option: {match_option}")
+        print(f"acceptance_radius: {acceptance_radius}")
+        print(f"num_refinement_steps: {num_refinement_steps}")
+        print(f"score_threshold_ratio: {score_threshold_ratio}")
+        print("-------------------------------------------------------------------------------")
+
 
     def sample_correspondences(self, score_mat):
         """Sample correspondences from score matrix
