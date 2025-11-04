@@ -74,6 +74,7 @@ class EquiAssem(pl.LightningModule):
             svd_no_exp=False,
             flip_normal=False,
             use_consistency_loss=0.0,
+            only_train_normal=False,
 
             # Developing temporarily used experiments arguments
             additional_VNLinearLeakyReLU=False,
@@ -130,6 +131,9 @@ class EquiAssem(pl.LightningModule):
             use_Sinkhorn_infer (bool, optional): Whether to use Sinkhorn for inference, hence just before registration. Defaults to False.
             matching_score_mode (str, optional): 'CM' or 'cos'. Defaults to 'CM'.
             svd_no_exp (bool, optional): Whether to do not use exp for SVD. Defaults to False.
+            flip_normal (bool, optional): Whether to flip the normal vector. Defaults to False.
+            use_consistency_loss (float, optional): Weight for consistency loss. Defaults to 0.0.
+            only_train_normal (bool, optional): Whether to only train the normal vector, it will be used for stage 1 training. Defaults to False.
 
             # Developing temporarily used experiments arguments
             additional_VNLinearLeakyReLU (bool, optional): Whether to use additional VNLinearLeakyReLU layers for the equivariant shape feature. Defaults to False.
@@ -191,6 +195,7 @@ class EquiAssem(pl.LightningModule):
         print(f"svd_no_exp: {svd_no_exp}")
         print(f"flip_normal: {flip_normal}")
         print(f"use_consistency_loss: {use_consistency_loss}")
+        print(f"only_train_normal: {only_train_normal}")
 
         print(f"additional_VNLinearLeakyReLU: {additional_VNLinearLeakyReLU}")
         print(f"debugged_circle_loss: {debugged_circle_loss}")
@@ -230,6 +235,7 @@ class EquiAssem(pl.LightningModule):
         self.matching_score_mode = matching_score_mode
         self.svd_no_exp = svd_no_exp
         self.flip_normal = flip_normal
+        self.only_train_normal = only_train_normal
 
         self.additional_VNLinearLeakyReLU = additional_VNLinearLeakyReLU
         self.debugged_circle_loss = debugged_circle_loss
@@ -718,6 +724,22 @@ class EquiAssem(pl.LightningModule):
         out_dict['trg_ori'] = trg_ori
 
 
+        if self.only_train_normal:
+            print("Only train the normal vector")
+            # Only train the normal vector
+            loss['o_loss'] = self.orientation_loss(src_ori, trg_ori, gt_corr, in_dict['gt_normals'])
+            loss['loss'] = loss['o_loss']
+
+            # Compute Normal Error
+            with torch.no_grad():
+                # (d) Compute Normal Error
+                loss['n_error'], _, loss['n_suc_rate'] = self._normal_error(in_dict, out_dict, success_criterion_in_degree=self.success_criterion_in_degree)
+            
+            if mode == 'train':
+                self.log_for_training(loss=loss, pos_neg_distribution=None, mode=mode)
+            return out_dict, loss
+
+
         # 5. Invariant Features
         if self.flip_normal: # Flip normal of src frame
             # (1, N, 3) stack -> (1, N, 3, 3)
@@ -907,21 +929,26 @@ class EquiAssem(pl.LightningModule):
 
         # in training we log for every step
         if mode == 'train':
-            log_dict = {f'{mode}/{k}': v.item() for k, v in loss.items()}
-            log_pos_neg_distribution = {f'{mode}-dist/{k}': v for k, v in pos_neg_distribution.items()}
-            log_dict.update(log_pos_neg_distribution)
-
-            training_loss = log_dict.pop(f'{mode}/loss')
-            current_lr = self.trainer.optimizers[0].param_groups[0]['lr']
-
-            self.log_dict(log_dict, prog_bar=False, logger=True, sync_dist=True, rank_zero_only=True, on_step=True, on_epoch=True, batch_size=1)
-            self.log(f'{mode}/loss', training_loss, prog_bar=True, logger=True, sync_dist=True, rank_zero_only=True, on_step=True, on_epoch=True, batch_size=1)
-            self.log('current_lr', current_lr, prog_bar=True, logger=True, sync_dist=True, rank_zero_only=True, on_step=True, on_epoch=False, batch_size=1)
-        
+            self.log_for_training(loss=loss, pos_neg_distribution=pos_neg_distribution, mode=mode)
         else:
             torch.cuda.empty_cache()
 
         return out_dict, loss
+
+    
+    def log_for_training(self, loss, pos_neg_distribution, mode):
+        log_dict = {f'{mode}/{k}': v.item() for k, v in loss.items()}
+        
+        if pos_neg_distribution is not None:
+            log_pos_neg_distribution = {f'{mode}-dist/{k}': v for k, v in pos_neg_distribution.items()}
+            log_dict.update(log_pos_neg_distribution)
+
+        training_loss = log_dict.pop(f'{mode}/loss')
+        current_lr = self.trainer.optimizers[0].param_groups[0]['lr']
+
+        self.log_dict(log_dict, prog_bar=False, logger=True, sync_dist=True, rank_zero_only=True, on_step=True, on_epoch=True, batch_size=1)
+        self.log(f'{mode}/loss', training_loss, prog_bar=True, logger=True, sync_dist=True, rank_zero_only=True, on_step=True, on_epoch=True, batch_size=1)
+        self.log('current_lr', current_lr, prog_bar=True, logger=True, sync_dist=True, rank_zero_only=True, on_step=True, on_epoch=False, batch_size=1)
 
     
     def calculate_matching_score(self, src_feats, trg_feats, eps=1e-8):

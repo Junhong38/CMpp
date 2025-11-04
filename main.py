@@ -90,6 +90,7 @@ def main(args):
                           svd_no_exp=args.svd_no_exp,
                           flip_normal=args.flip_normal,
                           use_consistency_loss=args.use_consistency_loss,
+                          only_train_normal=args.only_train_normal,
                           
                           additional_VNLinearLeakyReLU=args.additional_VNLinearLeakyReLU,
                           debugged_circle_loss=args.debugged_circle_loss,
@@ -153,15 +154,22 @@ def main(args):
     checkpoint_callback_Oloss = ModelCheckpoint(dirpath=ckp_dir, filename='model-Oloss-{epoch:03d}', monitor='val/o_loss', save_top_k=1, mode='min')
     latest_checkpoint_callback = ModelCheckpoint(dirpath=ckp_dir, filename='model-latest', save_last=True)
     
-    callbacks = [
-        LearningRateMonitor('epoch'),
-        checkpoint_callback_crd,
-        checkpoint_callback_cd,
-        checkpoint_callback_rrmse,
-        checkpoint_callback_trmse,
-        checkpoint_callback_Oloss,
-        latest_checkpoint_callback,
-    ]
+    
+    if not args.only_train_normal: # Normal training
+        callbacks = [
+            LearningRateMonitor('epoch'),
+            checkpoint_callback_crd,
+            checkpoint_callback_cd,
+            checkpoint_callback_rrmse,
+            checkpoint_callback_trmse,
+            checkpoint_callback_Oloss,
+            latest_checkpoint_callback,
+        ]
+    else: # Only train the normal vector
+        callbacks = [
+            LearningRateMonitor('epoch'),
+            latest_checkpoint_callback,
+        ]
 
 
     # Wandb logger
@@ -315,6 +323,7 @@ if __name__ == '__main__':
     parser.add_argument('--svd_no_exp', action='store_true', help='If True, do not use exp for SVD')
     parser.add_argument('--flip_normal', action='store_true', help='If True, flip predicted normal')
     parser.add_argument('--use_consistency_loss', action='store_true', help='Use consistency loss related to frame for training')
+    parser.add_argument('--only_train_normal', action='store_true', help='Only train the normal vector, it will be used for stage 1 training')
 
         
 
@@ -345,7 +354,7 @@ if __name__ == '__main__':
     # Set number of workers automatically
     if len(args.gpus) > 1: # Multi-GPU training
         from pytorch_lightning.strategies import DDPStrategy
-        args.parallel_strategy = DDPStrategy(find_unused_parameters=False)
+        args.parallel_strategy = DDPStrategy(find_unused_parameters=args.only_train_normal)
         args.lr = len(args.gpus) * args.lr # Learning rate is multiplied by the number of GPUs
     
     else: # Single-GPU training
