@@ -2,7 +2,6 @@ import os
 import pwd
 import argparse
 import torch
-import collections
 
 # Set matplotlib backend environment variable to avoid X server issues
 # This ensures all processes (including worker processes) use the correct backend
