@@ -306,9 +306,7 @@ class OrientationLoss(nn.Module):
         Returns:
             torch.Tensor: (1, ), orientation loss
         """
-        if len(correspondence) == 0:
-            return torch.tensor(0.).to(src_ori.device)
-
+        
         src_normal_basis = src_ori[:, :, 0, :] # (1, N, 3)
         trg_normal_basis = trg_ori[:, :, 0, :] # (1, M, 3)
 
@@ -317,7 +315,7 @@ class OrientationLoss(nn.Module):
 
         final_loss = (src_normal_basis_loss + trg_normal_basis_loss) / 2
 
-        if self.use_consistency_loss: # Make frame from src and trg be consistent with each other
+        if self.use_consistency_loss and (len(correspondence) > 0): # Make frame from src and trg be consistent with each other
             src_from_mating_surface = src_ori[:, correspondence[:,0], :, :] # (1, P, 3, 3)
             trg_from_mating_surface = trg_ori[:, correspondence[:,1], :, :] # (1, P, 3, 3)
 
