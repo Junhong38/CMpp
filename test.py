@@ -80,6 +80,7 @@ def test(args):
                           flip_normal=args.flip_normal,
                           use_consistency_loss=False, # We don't need to use consistency loss for testing
                           only_train_normal=False, # We don't need to use only train normal for testing
+                          freeze_normal_param=False, # We don't need to use freeze normal param for testing
 
                           additional_VNLinearLeakyReLU=args.additional_VNLinearLeakyReLU,
                           debugged_circle_loss=args.debugged_circle_loss,
