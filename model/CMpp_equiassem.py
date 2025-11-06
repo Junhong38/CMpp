@@ -75,6 +75,7 @@ class EquiAssem(pl.LightningModule):
             flip_normal=False,
             use_consistency_loss=0.0,
             only_train_normal=False,
+            freeze_normal_param=False,
 
             # Developing temporarily used experiments arguments
             additional_VNLinearLeakyReLU=False,
@@ -134,6 +135,7 @@ class EquiAssem(pl.LightningModule):
             flip_normal (bool, optional): Whether to flip the normal vector. Defaults to False.
             use_consistency_loss (float, optional): Weight for consistency loss. Defaults to 0.0.
             only_train_normal (bool, optional): Whether to only train the normal vector, it will be used for stage 1 training. Defaults to False.
+            freeze_normal_param (bool, optional): Whether to freeze the normal parameter. Defaults to False.
 
             # Developing temporarily used experiments arguments
             additional_VNLinearLeakyReLU (bool, optional): Whether to use additional VNLinearLeakyReLU layers for the equivariant shape feature. Defaults to False.
@@ -196,7 +198,8 @@ class EquiAssem(pl.LightningModule):
         print(f"flip_normal: {flip_normal}")
         print(f"use_consistency_loss: {use_consistency_loss}")
         print(f"only_train_normal: {only_train_normal}")
-
+        print(f"freeze_normal_param: {freeze_normal_param}")
+        
         print(f"additional_VNLinearLeakyReLU: {additional_VNLinearLeakyReLU}")
         print(f"debugged_circle_loss: {debugged_circle_loss}")
         print(f"debugged_point_matching_loss: {debugged_point_matching_loss}")
@@ -236,7 +239,8 @@ class EquiAssem(pl.LightningModule):
         self.svd_no_exp = svd_no_exp
         self.flip_normal = flip_normal
         self.only_train_normal = only_train_normal
-
+        self.freeze_normal_param = freeze_normal_param
+        
         self.additional_VNLinearLeakyReLU = additional_VNLinearLeakyReLU
         self.debugged_circle_loss = debugged_circle_loss
         self.debugged_point_matching_loss = debugged_point_matching_loss
@@ -414,6 +418,14 @@ class EquiAssem(pl.LightningModule):
                 num_refinement_steps=5,
                 score_threshold_ratio=self.infer_score_threshold_ratio,
             )
+
+        if self.freeze_normal_param:
+            print("Freezing parameters of backbone and proj")
+            for param in self.backbone.parameters():
+                param.requires_grad = False
+            
+            for param in self.proj.parameters():
+                param.requires_grad = False
 
     
     def configure_optimizers(self):

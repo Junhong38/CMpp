@@ -90,7 +90,8 @@ def main(args):
                           flip_normal=args.flip_normal,
                           use_consistency_loss=args.use_consistency_loss,
                           only_train_normal=args.only_train_normal,
-                          
+                          freeze_normal_param=args.freeze_normal_param,
+
                           additional_VNLinearLeakyReLU=args.additional_VNLinearLeakyReLU,
                           debugged_circle_loss=args.debugged_circle_loss,
                           debugged_point_matching_loss=args.debugged_point_matching_loss,
@@ -323,6 +324,7 @@ if __name__ == '__main__':
     parser.add_argument('--flip_normal', action='store_true', help='If True, flip predicted normal')
     parser.add_argument('--use_consistency_loss', action='store_true', help='Use consistency loss related to frame for training')
     parser.add_argument('--only_train_normal', action='store_true', help='Only train the normal vector, it will be used for stage 1 training')
+    parser.add_argument('--freeze_normal_param', action='store_true', help='Freeze backbone and proj parameters')
 
         
 
