@@ -87,6 +87,9 @@ class EquiAssem(pl.LightningModule):
             delete_occupancy_loss=False,
             use_opt_gram=False,
 
+            additional_VNLLReLU_for_frame=False,
+            n_afl=2,
+
             only_one_norm=False,
             n_avn=5,
             move_smaller=False,
@@ -147,6 +150,8 @@ class EquiAssem(pl.LightningModule):
             delete_occupancy_loss (bool, optional): Whether to delete the occupancy loss. Defaults to False.
             use_opt_gram (bool, optional): Whether to use the optimum Gram Schmidt Orthogonalization. Defaults to False.
 
+            additional_VNLLReLU_for_frame (bool, optional): Whether to use additional VNLinearLeakyReLU layers for the reference frame prediction. Defaults to False.
+            n_afl (int, optional): Number of Additional Frame Layers for the reference frame prediction. Defaults to 2.
 
             only_one_norm (bool, optional): Whether to use only one Normalization layer for the equivariant shape feature. Defaults to False.
             n_avn (int, optional): Number of AVN layers for the equivariant shape feature. Defaults to 5.
@@ -209,6 +214,9 @@ class EquiAssem(pl.LightningModule):
         print(f"delete_occupancy_loss: {delete_occupancy_loss}")
         print(f"use_opt_gram: {use_opt_gram}")
 
+        print(f"additional_VNLLReLU_for_frame: {additional_VNLLReLU_for_frame}")
+        print(f"n_afl: {n_afl}")
+
         print(f"only_one_norm: {only_one_norm}")
         print(f"n_avn: {n_avn}")
         print(f"move_smaller: {move_smaller}")
@@ -248,6 +256,7 @@ class EquiAssem(pl.LightningModule):
         self.new_orientation_module = new_orientation_module
         self.delete_occupancy_loss = delete_occupancy_loss
         self.use_opt_gram = use_opt_gram
+        self.additional_VNLLReLU_for_frame = additional_VNLLReLU_for_frame
 
         self.move_smaller = move_smaller
 
@@ -362,6 +371,13 @@ class EquiAssem(pl.LightningModule):
             # Layer for Equivariant feature
             self.equi_layer = nn.Identity()
 
+        if self.additional_VNLLReLU_for_frame:
+            if n_afl > 0:
+                self.frame_layer = nn.Sequential(*([VNLinearLeakyReLU(self.feat_dim//3, self.feat_dim//3, no_norm=False)] + [VNLinearLeakyReLU(self.feat_dim//3, self.feat_dim//3, no_norm=only_one_norm) for _ in range(n_avn-1)]))
+            else:
+                self.frame_layer = nn.Identity()
+        else:
+            self.frame_layer = nn.Identity()
 
         # Channel Attention
         if attention == 'channel':
@@ -531,7 +547,7 @@ class EquiAssem(pl.LightningModule):
 
     
     def check_grad_and_nan(self):
-        total_modules = [self.backbone, self.proj, self.equi_layer, self.shape_mlp]
+        total_modules = [self.backbone, self.proj, self.equi_layer, self.frame_layer, self.shape_mlp]
 
         if self.attention == 'channel':
             total_modules.append(self.c_attn)
@@ -691,23 +707,25 @@ class EquiAssem(pl.LightningModule):
         # check_inf_or_nan(src_equi_feats_backbone, 'src_equi_feats_backbone', log=(self.log if mode=='train' else None))
         # check_inf_or_nan(trg_equi_feats_backbone, 'trg_equi_feats_backbone', log=(self.log if mode=='train' else None))
 
+        src_equi_frame_feats = self.frame_layer(src_equi_feats_backbone.unsqueeze(-1)).squeeze(-1)
+        trg_equi_frame_feats = self.frame_layer(trg_equi_feats_backbone.unsqueeze(-1)).squeeze(-1)
         
         if self.additional_VNLinearLeakyReLU: # 2. Frame Prediction
             # 2-1. Merge global information by averaging
             # (1, C, 3, N) -> (1, C, 3, 1) -> (1, C, 3, N)
-            src_equi_feats_backbone_mean = src_equi_feats_backbone.mean(dim=-1, keepdim=True).expand(src_equi_feats_backbone.size())
+            src_equi_frame_feats_mean = src_equi_frame_feats.mean(dim=-1, keepdim=True).expand(src_equi_frame_feats.size())
             # (1, C, 3, M) -> (1, C, 3, 1) -> (1, C, 3, M)
-            trg_equi_feats_backbone_mean = trg_equi_feats_backbone.mean(dim=-1, keepdim=True).expand(trg_equi_feats_backbone.size())
+            trg_equi_frame_feats_mean = trg_equi_frame_feats.mean(dim=-1, keepdim=True).expand(trg_equi_frame_feats.size())
 
             # 2-2. Basis Vector Projection, those vectors will be used as frame basis vectors
             # (1, C, 3, N) concat (1, C, 3, N) ->  (1, 2C, 3, N) -> (1, 2C, 3, N, 1) -> (1, 2, 3, N, 1) -> (1, 2, 3, N) -> (1, N, 2, 3)
-            src_vecs = self.proj(torch.cat((src_equi_feats_backbone, src_equi_feats_backbone_mean), 1).unsqueeze(-1)).squeeze(-1).permute(0, 3, 1, 2) 
+            src_vecs = self.proj(torch.cat((src_equi_frame_feats, src_equi_frame_feats_mean), 1).unsqueeze(-1)).squeeze(-1).permute(0, 3, 1, 2) 
             # (1, C, 3, M) concat (1, C, 3, M) ->  (1, 2C, 3, M) -> (1, 2C, 3, M, 1) -> (1, 2, 3, M, 1) -> (1, 2, 3, M) -> (1, M, 2, 3)
-            trg_vecs = self.proj(torch.cat((trg_equi_feats_backbone, trg_equi_feats_backbone_mean), 1).unsqueeze(-1)).squeeze(-1).permute(0, 3, 1, 2) 
+            trg_vecs = self.proj(torch.cat((trg_equi_frame_feats, trg_equi_frame_feats_mean), 1).unsqueeze(-1)).squeeze(-1).permute(0, 3, 1, 2) 
 
         else: # 2. Basis Vector Projection 
-            src_vecs = self.proj(src_equi_feats_backbone).permute(0, 3, 1, 2) # (1, N, 2, 3)
-            trg_vecs = self.proj(trg_equi_feats_backbone).permute(0, 3, 1, 2) # (1, M, 2, 3)
+            src_vecs = self.proj(src_equi_frame_feats).permute(0, 3, 1, 2) # (1, N, 2, 3)
+            trg_vecs = self.proj(trg_equi_frame_feats).permute(0, 3, 1, 2) # (1, M, 2, 3)
         
 
         # check_inf_or_nan(src_vecs, 'src_vecs')
