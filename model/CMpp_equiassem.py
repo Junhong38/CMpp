@@ -153,6 +153,9 @@ class EquiAssem(pl.LightningModule):
             additional_VNLLReLU_for_frame (bool, optional): Whether to use additional VNLinearLeakyReLU layers for the reference frame prediction. Defaults to False.
             n_afl (int, optional): Number of Additional Frame Layers for the reference frame prediction. Defaults to 2.
 
+            additional_VNLLReLU_for_frame (bool, optional): Whether to use additional VNLinearLeakyReLU layers for the reference frame prediction. Defaults to False.
+            n_afl (int, optional): Number of Additional Frame Layers for the reference frame prediction. Defaults to 2.
+
             only_one_norm (bool, optional): Whether to use only one Normalization layer for the equivariant shape feature. Defaults to False.
             n_avn (int, optional): Number of AVN layers for the equivariant shape feature. Defaults to 5.
             move_smaller (bool, optional): Whether to always move the smaller point cloud to the origin. Defaults to False.
@@ -256,6 +259,8 @@ class EquiAssem(pl.LightningModule):
         self.new_orientation_module = new_orientation_module
         self.delete_occupancy_loss = delete_occupancy_loss
         self.use_opt_gram = use_opt_gram
+        self.additional_VNLLReLU_for_frame = additional_VNLLReLU_for_frame
+
         self.additional_VNLLReLU_for_frame = additional_VNLLReLU_for_frame
 
         self.move_smaller = move_smaller

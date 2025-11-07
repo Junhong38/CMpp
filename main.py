@@ -104,6 +104,9 @@ def main(args):
                           additional_VNLLReLU_for_frame=args.additional_VNLLReLU_for_frame,
                           n_afl=args.n_afl,
                           
+                          additional_VNLLReLU_for_frame=args.additional_VNLLReLU_for_frame,
+                          n_afl=args.n_afl,
+                          
                           only_one_norm=args.only_one_norm,
                           n_avn=args.n_avn,
                           move_smaller=args.move_smaller,
@@ -247,7 +250,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Equivariant Assembly Pytorch Implementation')
 
     # Dataset arguments
-    parser.add_argument('--datapath', type=str, default='../data/temp_breaking_bad/breaking_bad/volume_constrained') 
+    parser.add_argument('--datapath', type=str, default='../../../../../hdd/junhong/temp_data/breaking_bad/volume_constrained') 
     #'../../../../hdd/junhong/data/bbad_v2' and /mnt/nvme2n1p1/kimsangki_datasets/breaking_bad/volume_constrained , /home/kimsangki/breaking_bad/volume_constrained 
     # ../data/temp_breaking_bad/breaking_bad/volume_constrained , ../../../../../hdd/junhong/temp_data/breaking_bad/volume_constrained
     parser.add_argument('--data_category', type=str, default='everyday', choices=['everyday', 'artifact', 'synthetic'])
