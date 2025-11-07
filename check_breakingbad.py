@@ -243,6 +243,7 @@ def check_data_instances(all_instances, CM_data_dict, save_dir):
 
     watertight_objs = []
     not_watertight_objs = []
+    num_of_frac = set()
 
     for ith, gt_path in tqdm(enumerate(all_instances), total=len(all_instances)):
         cm_path = sorted_CM_data_list[ith]
@@ -256,6 +257,8 @@ def check_data_instances(all_instances, CM_data_dict, save_dir):
         # Check if the number of fragments is correct
         gt_n_frac = len(all_objs)
         assert gt_n_frac == cm_n_frac, f"gt_n_frac and cm_n_frac are not the same,\nFrom [gt_path: {gt_path}] gt_n_frac: {gt_n_frac} != cm_n_frac: {cm_n_frac}"
+        num_of_frac.add(gt_n_frac)
+        continue
 
         if gt_n_frac != 2:
             continue
@@ -270,6 +273,8 @@ def check_data_instances(all_instances, CM_data_dict, save_dir):
                 not_watertight_objs.append(check_result)
             else:
                 watertight_objs.append(check_result)
+    
+    print(f"num_of_frac: {num_of_frac}")
 
     return not_watertight_objs, watertight_objs
 
@@ -324,4 +329,7 @@ if __name__ == '__main__':
 """
 rm -rf check_results_everyday/ && python check_breakingbad.py --save_dir check_results_everyday
 rm -rf check_results_artifact/ && python check_breakingbad.py --data_category artifact --save_dir check_results_artifact
+
+rm -rf debug/ && python check_breakingbad.py --data_category everyday --save_dir debug
+rm -rf debug/ && python check_breakingbad.py --data_category artifact --save_dir debug
 """
