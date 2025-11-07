@@ -101,6 +101,9 @@ def main(args):
                           delete_occupancy_loss=args.delete_occupancy_loss,
                           use_opt_gram=args.use_opt_gram,
                           
+                          additional_VNLLReLU_for_frame=args.additional_VNLLReLU_for_frame,
+                          n_afl=args.n_afl,
+                          
                           only_one_norm=args.only_one_norm,
                           n_avn=args.n_avn,
                           move_smaller=args.move_smaller,
@@ -289,6 +292,9 @@ if __name__ == '__main__':
     parser.add_argument('--new_orientation_module', action='store_true', help='If True, use New module for orientation')
     parser.add_argument('--delete_occupancy_loss', action='store_true', help='If True, delete the Occupancy Loss')
     parser.add_argument('--use_opt_gram', action='store_true', help='If True, use Optimum Gram Schmidt Orthogonalization')
+
+    parser.add_argument('--additional_VNLLReLU_for_frame', action='store_true', help='If True, use VNLinearLeakyReLU layers for the reference frame prediction')
+    parser.add_argument('--n_afl', type=int, default=2, help='Number of Additional Frame Layers for the reference frame prediction')
 
     parser.add_argument('--only_one_norm', action='store_true', help='If True, use only one Normalization layer for the equivariant shape feature')
     parser.add_argument('--n_avn', type=int, default=5, help='Number of AVN layers for the equivariant shape feature')
