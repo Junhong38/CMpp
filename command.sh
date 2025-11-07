@@ -95,16 +95,12 @@ end
 
 
 :<<end
-# kim
 rm -rf checkpoint/NDET_MT1_F_NCD_NPM_NODOCC_OG_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --model CMpp_equiassem --logpath NDET_MT1_F_NCD_NPM_NODOCC_OG_6 --scale full --multiplicity 1 --epochs 0 --n_avn 0 --detach_mode --use_opt_gram --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --wandb --wandb_entity CMppProject --wandb_project CMpp
 rm -rf checkpoint/NDET_MT1_F_NCD_NPM_NODOCC_OG_FN_UC_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --model CMpp_equiassem --logpath NDET_MT1_F_NCD_NPM_NODOCC_OG_FN_UC_6 --scale full --multiplicity 1 --epochs 0 --n_avn 0 --detach_mode --use_opt_gram --flip_normal --use_consistency_loss --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --wandb --wandb_entity CMppProject --wandb_project CMpp
 
 
-
-# lee
 rm -rf checkpoint/NDET_MT1_F_AVN_NCD_NPM_NODOCC_OG_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --model CMpp_equiassem --logpath NDET_MT1_F_AVN_NCD_NPM_NODOCC_OG_6 --scale full --multiplicity 1 --epochs 0 --detach_mode --use_opt_gram --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --wandb --wandb_entity CMppProject --wandb_project CMpp
 rm -rf checkpoint/NDET_MT1_F_NCD_NPM_NODOCC_OG_FN_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --model CMpp_equiassem --logpath NDET_MT1_F_NCD_NPM_NODOCC_OG_FN_6 --scale full --multiplicity 1 --epochs 0 --n_avn 0 --detach_mode --use_opt_gram --flip_normal --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --wandb --wandb_entity CMppProject --wandb_project CMpp
-
 
 # Check deterministic
 # rm -rf checkpoint/DEBUG/ && CUDA_VISIBLE_DEVICES=0 python main.py --model CMpp_equiassem --logpath DEBUG --scale small --multiplicity 1 --epochs 0 --n_avn 0 --detach_mode --use_opt_gram --deterministic --gpus 0 --n_worker 4 --wandb --wandb_entity CMppProject --wandb_project CMpp 
@@ -167,16 +163,7 @@ rm -rf checkpoint/G8ND_S_AVN0_OG_S2_onecycle_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,
 
 
 rm -rf checkpoint/G8ND_S_AVN0_OG_S2_FNUC_cos_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --load checkpoint/G8ND_S_AVN0_OG_S1_cos_6/models/last.ckpt --model CMpp_equiassem --logpath G8ND_S_AVN0_OG_S2_FNUC_cos_6 --scale small --multiplicity 1 --epochs 0 --n_avn 0 --detach_mode --use_opt_gram --flip_normal --use_consistency_loss --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --wandb --wandb_project CMpp
-end
 
-
-
-rm -rf checkpoint/G8ND_F_AVN0_OG_S1_cos_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --model CMpp_equiassem --logpath G8ND_F_AVN0_OG_S1_cos_6 --scale full --multiplicity 1 --epochs 0 --n_avn 0 --detach_mode --use_opt_gram --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --only_train_normal --wandb --wandb_entity CMppProject --wandb_project CMpp
-
-# rm -rf checkpoint/G8ND_F_AVN0_OG_S2_cos_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --load checkpoint/G8ND_F_AVN0_OG_S1_cos_6/models/last.ckpt --model CMpp_equiassem --logpath G8ND_F_AVN0_OG_S2_cos_6 --scale full --multiplicity 1 --epochs 0 --n_avn 0 --detach_mode --use_opt_gram --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --wandb --wandb_entity CMppProject --wandb_project CMpp
-# rm -rf checkpoint/G8ND_F_AVN0_OG_S2_FN_cos_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --load checkpoint/G8ND_F_AVN0_OG_S1_cos_6/models/last.ckpt --model CMpp_equiassem --logpath G8ND_F_AVN0_OG_S2_FN_cos_6 --scale full --multiplicity 1 --epochs 0 --n_avn 0 --detach_mode --use_opt_gram --flip_normal --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --wandb --wandb_entity CMppProject --wandb_project CMpp
-# rm -rf checkpoint/G8ND_F_AVN0_OG_S2_UC_cos_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --load checkpoint/G8ND_F_AVN0_OG_S1_cos_6/models/last.ckpt --model CMpp_equiassem --logpath G8ND_F_AVN0_OG_S2_UC_cos_6 --scale full --multiplicity 1 --epochs 0 --n_avn 0 --detach_mode --use_opt_gram --use_consistency_loss --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --wandb --wandb_entity CMppProject --wandb_project CMpp
-# rm -rf checkpoint/G8ND_F_AVN0_OG_S2_FNUC_cos_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --load checkpoint/G8ND_F_AVN0_OG_S1_cos_6/models/last.ckpt --model CMpp_equiassem --logpath G8ND_F_AVN0_OG_S2_FNUC_cos_6 --scale full --multiplicity 1 --epochs 0 --n_avn 0 --detach_mode --use_opt_gram --flip_normal --use_consistency_loss --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --wandb --wandb_entity CMppProject --wandb_project CMpp
 
 
 
@@ -193,6 +180,25 @@ rm -rf checkpoint/G8ND_S_AVN0_OG_S1UC_cos_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5
 rm -rf checkpoint/G8ND_FREEZE_S_AVN0_OG_UCS2_FN_cos_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --load checkpoint/G8ND_S_AVN0_OG_S1UC_cos_6/models/last.ckpt --model CMpp_equiassem --logpath G8ND_FREEZE_S_AVN0_OG_UCS2_FN_cos_6 --scale small --multiplicity 1 --epochs 0 --n_avn 0 --detach_mode --use_opt_gram --flip_normal --freeze_normal_param --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --wandb --wandb_project CMpp
 
 rm -rf checkpoint/G8ND_S_AVN0_OG_UCS2_FNUC_cos_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --load checkpoint/G8ND_S_AVN0_OG_S1UC_cos_6/models/last.ckpt --model CMpp_equiassem --logpath G8ND_S_AVN0_OG_UCS2_FNUC_cos_6 --scale small --multiplicity 1 --epochs 0 --n_avn 0 --detach_mode --use_opt_gram --flip_normal --use_consistency_loss --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --wandb --wandb_project CMpp
+end
+
+
+
+
+
+# Stage 1
+# rm -rf checkpoint/G8ND_F_AVN0_OG_S1_cos_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --model CMpp_equiassem --logpath G8ND_F_AVN0_OG_S1_cos_6 --scale full --multiplicity 1 --epochs 0 --n_avn 0 --detach_mode --use_opt_gram --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --only_train_normal --wandb --wandb_entity CMppProject --wandb_project CMpp
+
+
+# Stage 2
+
+# KIM
+# rm -rf checkpoint/G8ND_F_AVN0_OG_S2_cos_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --load checkpoint/G8ND_F_AVN0_OG_S1_cos_6/models/last.ckpt --model CMpp_equiassem --logpath G8ND_F_AVN0_OG_S2_cos_6 --scale full --multiplicity 1 --epochs 0 --n_avn 0 --detach_mode --use_opt_gram --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --wandb --wandb_entity CMppProject --wandb_project CMpp
+# rm -rf checkpoint/G8ND_F_AVN0_OG_S2_FN_cos_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --load checkpoint/G8ND_F_AVN0_OG_S1_cos_6/models/last.ckpt --model CMpp_equiassem --logpath G8ND_F_AVN0_OG_S2_FN_cos_6 --scale full --multiplicity 1 --epochs 0 --n_avn 0 --detach_mode --use_opt_gram --flip_normal --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --wandb --wandb_entity CMppProject --wandb_project CMpp
+
+# LEE
+# rm -rf checkpoint/G8ND_F_AVN0_OG_S2_UC_cos_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --load checkpoint/G8ND_F_AVN0_OG_S1_cos_6/models/last.ckpt --model CMpp_equiassem --logpath G8ND_F_AVN0_OG_S2_UC_cos_6 --scale full --multiplicity 1 --epochs 0 --n_avn 0 --detach_mode --use_opt_gram --use_consistency_loss --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --wandb --wandb_entity CMppProject --wandb_project CMpp
+# rm -rf checkpoint/G8ND_F_AVN0_OG_S2_FNUC_cos_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --load checkpoint/G8ND_F_AVN0_OG_S1_cos_6/models/last.ckpt --model CMpp_equiassem --logpath G8ND_F_AVN0_OG_S2_FNUC_cos_6 --scale full --multiplicity 1 --epochs 0 --n_avn 0 --detach_mode --use_opt_gram --flip_normal --use_consistency_loss --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --wandb --wandb_entity CMppProject --wandb_project CMpp
 
 
 
