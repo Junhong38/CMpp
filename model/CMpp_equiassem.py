@@ -754,7 +754,7 @@ class EquiAssem(pl.LightningModule):
         # 5. Invariant Features
         if self.flip_normal: # Flip normal of src frame
             # (1, N, 3) stack -> (1, N, 3, 3)
-            flipped_src_ori = torch.stack([- src_ori[:, :, 0, :], src_ori[:, :, 1, :], src_ori[:, :, 2, :]], dim=-2)
+            flipped_src_ori = torch.stack([- src_ori[:, :, 0, :], src_ori[:, :, 1, :], - src_ori[:, :, 2, :]], dim=-2)
             src_inv_feats = torch.matmul(src_equi_feats.permute(0, 3, 1, 2).float(), flipped_src_ori.transpose(-2,-1).float()) # (1, N, C, 3) x (1, N, 3, 3) -> (1, N, C, 3)
 
         else:
