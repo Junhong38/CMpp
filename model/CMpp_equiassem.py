@@ -76,6 +76,7 @@ class EquiAssem(pl.LightningModule):
             use_consistency_loss=0.0,
             only_train_normal=False,
             freeze_normal_param=False,
+            double_backbone=False,
 
             # Developing temporarily used experiments arguments
             additional_VNLinearLeakyReLU=False,
@@ -136,6 +137,7 @@ class EquiAssem(pl.LightningModule):
             use_consistency_loss (float, optional): Weight for consistency loss. Defaults to 0.0.
             only_train_normal (bool, optional): Whether to only train the normal vector, it will be used for stage 1 training. Defaults to False.
             freeze_normal_param (bool, optional): Whether to freeze the normal parameter. Defaults to False.
+            double_backbone (bool, optional): Whether to use double backbone. Defaults to False.
 
             # Developing temporarily used experiments arguments
             additional_VNLinearLeakyReLU (bool, optional): Whether to use additional VNLinearLeakyReLU layers for the equivariant shape feature. Defaults to False.
@@ -199,6 +201,7 @@ class EquiAssem(pl.LightningModule):
         print(f"use_consistency_loss: {use_consistency_loss}")
         print(f"only_train_normal: {only_train_normal}")
         print(f"freeze_normal_param: {freeze_normal_param}")
+        print(f"double_backbone: {double_backbone}")
         
         print(f"additional_VNLinearLeakyReLU: {additional_VNLinearLeakyReLU}")
         print(f"debugged_circle_loss: {debugged_circle_loss}")
@@ -240,6 +243,7 @@ class EquiAssem(pl.LightningModule):
         self.flip_normal = flip_normal
         self.only_train_normal = only_train_normal
         self.freeze_normal_param = freeze_normal_param
+        self.double_backbone = double_backbone
         
         self.additional_VNLinearLeakyReLU = additional_VNLinearLeakyReLU
         self.debugged_circle_loss = debugged_circle_loss
@@ -339,8 +343,16 @@ class EquiAssem(pl.LightningModule):
         # VN BACKBONE
         if backbone == 'vn_unet':
             self.backbone = EQCNN_equi_unet(feat_dim=self.feat_dim, pooling="mean", k=n_knn)
+            
+            if self.double_backbone:
+                self.frame_backbone = EQCNN_equi_unet(feat_dim=self.feat_dim, pooling="mean", k=n_knn)
+        
         elif backbone == 'vn_dgcnn':
             self.backbone = EQCNN_equi(feat_dim=self.feat_dim, pooling="mean", k=n_knn)
+            
+            if self.double_backbone:
+                self.frame_backbone = EQCNN_equi(feat_dim=self.feat_dim, pooling="mean", k=n_knn)
+        
         else:
             raise NotImplementedError("DGCNN backbone not implemented")
 
@@ -691,23 +703,31 @@ class EquiAssem(pl.LightningModule):
         # check_inf_or_nan(src_equi_feats_backbone, 'src_equi_feats_backbone', log=(self.log if mode=='train' else None))
         # check_inf_or_nan(trg_equi_feats_backbone, 'trg_equi_feats_backbone', log=(self.log if mode=='train' else None))
 
+        if self.double_backbone:
+            src_equi_feats_frame_backbone = self.frame_backbone(src_pcd) # (1, C, 3, N)
+            trg_equi_feats_frame_backbone = self.frame_backbone(trg_pcd) # (1, C, 3, M)
+        
+        else: 
+            src_equi_feats_frame_backbone = src_equi_feats_backbone
+            trg_equi_feats_frame_backbone = trg_equi_feats_backbone
+        
         
         if self.additional_VNLinearLeakyReLU: # 2. Frame Prediction
             # 2-1. Merge global information by averaging
             # (1, C, 3, N) -> (1, C, 3, 1) -> (1, C, 3, N)
-            src_equi_feats_backbone_mean = src_equi_feats_backbone.mean(dim=-1, keepdim=True).expand(src_equi_feats_backbone.size())
+            src_equi_feats_frame_backbone_mean = src_equi_feats_frame_backbone.mean(dim=-1, keepdim=True).expand(src_equi_feats_frame_backbone.size())
             # (1, C, 3, M) -> (1, C, 3, 1) -> (1, C, 3, M)
-            trg_equi_feats_backbone_mean = trg_equi_feats_backbone.mean(dim=-1, keepdim=True).expand(trg_equi_feats_backbone.size())
+            trg_equi_feats_frame_backbone_mean = trg_equi_feats_frame_backbone.mean(dim=-1, keepdim=True).expand(trg_equi_feats_frame_backbone.size())
 
             # 2-2. Basis Vector Projection, those vectors will be used as frame basis vectors
             # (1, C, 3, N) concat (1, C, 3, N) ->  (1, 2C, 3, N) -> (1, 2C, 3, N, 1) -> (1, 2, 3, N, 1) -> (1, 2, 3, N) -> (1, N, 2, 3)
-            src_vecs = self.proj(torch.cat((src_equi_feats_backbone, src_equi_feats_backbone_mean), 1).unsqueeze(-1)).squeeze(-1).permute(0, 3, 1, 2) 
+            src_vecs = self.proj(torch.cat((src_equi_feats_frame_backbone, src_equi_feats_frame_backbone_mean), 1).unsqueeze(-1)).squeeze(-1).permute(0, 3, 1, 2) 
             # (1, C, 3, M) concat (1, C, 3, M) ->  (1, 2C, 3, M) -> (1, 2C, 3, M, 1) -> (1, 2, 3, M, 1) -> (1, 2, 3, M) -> (1, M, 2, 3)
-            trg_vecs = self.proj(torch.cat((trg_equi_feats_backbone, trg_equi_feats_backbone_mean), 1).unsqueeze(-1)).squeeze(-1).permute(0, 3, 1, 2) 
+            trg_vecs = self.proj(torch.cat((trg_equi_feats_frame_backbone, trg_equi_feats_frame_backbone_mean), 1).unsqueeze(-1)).squeeze(-1).permute(0, 3, 1, 2) 
 
         else: # 2. Basis Vector Projection 
-            src_vecs = self.proj(src_equi_feats_backbone).permute(0, 3, 1, 2) # (1, N, 2, 3)
-            trg_vecs = self.proj(trg_equi_feats_backbone).permute(0, 3, 1, 2) # (1, M, 2, 3)
+            src_vecs = self.proj(src_equi_feats_frame_backbone).permute(0, 3, 1, 2) # (1, N, 2, 3)
+            trg_vecs = self.proj(trg_equi_feats_frame_backbone).permute(0, 3, 1, 2) # (1, M, 2, 3)
         
 
         # check_inf_or_nan(src_vecs, 'src_vecs')
@@ -754,7 +774,7 @@ class EquiAssem(pl.LightningModule):
         # 5. Invariant Features
         if self.flip_normal: # Flip normal of src frame
             # (1, N, 3) stack -> (1, N, 3, 3)
-            flipped_src_ori = torch.stack([- src_ori[:, :, 0, :], src_ori[:, :, 1, :], src_ori[:, :, 2, :]], dim=-2)
+            flipped_src_ori = torch.stack([- src_ori[:, :, 0, :], src_ori[:, :, 2, :], src_ori[:, :, 1, :]], dim=-2)
             src_inv_feats = torch.matmul(src_equi_feats.permute(0, 3, 1, 2).float(), flipped_src_ori.transpose(-2,-1).float()) # (1, N, C, 3) x (1, N, 3, 3) -> (1, N, C, 3)
 
         else:

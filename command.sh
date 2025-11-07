@@ -243,3 +243,7 @@ rm -rf checkpoint/DEBUG_OVERFIT_FLIP2/ && CUDA_VISIBLE_DEVICES=0 python main.py 
 
 rm -rf checkpoint/DEBUG_OVERFIT_FLIP_AVN/ && CUDA_VISIBLE_DEVICES=0 python main.py --model CMpp_equiassem --logpath DEBUG_OVERFIT_FLIP_AVN --scale overfitting --multiplicity 100 --visualize --epochs 0 --detach_mode --use_opt_gram --flip_normal --gpus 0 --n_worker 6 --wandb --wandb_project CMpp
 
+
+
+rm -rf checkpoint/DEBUG/ && CUDA_VISIBLE_DEVICES=0 python main.py --model CMpp_equiassem --logpath DEBUG --scale small --multiplicity 1 --epochs 0 --n_avn 0 --detach_mode --use_opt_gram --double_backbone --gpus 0 --n_worker 6 
+
