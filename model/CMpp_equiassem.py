@@ -79,7 +79,7 @@ class EquiAssem(pl.LightningModule):
             debug (bool, optional): Whether to enable debug mode. Defaults to False.
             success_criterion_in_degree (int, optional): Success criterion in degree for normal error. Defaults to 10.
             flip_normal (bool, optional): Whether to flip the normal vector. Defaults to False.
-            use_consistency_loss (float, optional): Weight for consistency loss. Defaults to 0.0.
+            use_consistency_loss (bool, optional): Weight for consistency loss. Defaults to 0.0.
             only_train_normal (bool, optional): Whether to only train the normal vector, it will be used for stage 1 training. Defaults to False.
             occ_mode (bool, optional): Whether to use occupancy mode. Defaults to False.
 
@@ -478,8 +478,7 @@ class EquiAssem(pl.LightningModule):
         src_inv_feats, trg_inv_feats = self.make_inv_feats(src_ori, trg_ori, src_equi_feats, trg_equi_feats, src_flip=True)
         if self.flip_normal:
             symmetric_src_inv_feats, symmetric_trg_inv_feats = self.make_inv_feats(src_ori, trg_ori, src_equi_feats, trg_equi_feats, src_flip=False)
-
-
+        
         # 6. SHAPE DESCRIPTOR 
         src_final_feats = self.final_mlp(src_inv_feats) # (1, C*3, N) -> (1, D, N)
         trg_final_feats = self.final_mlp(trg_inv_feats) # # (1, C*3, M) -> (1, D, N)
@@ -557,7 +556,7 @@ class EquiAssem(pl.LightningModule):
                                                   topk=self.infer_topk)
                 else:
                     # fine_matching predict Rt to move points from src_points to ref_points
-                    estimated_transform = self.fine_matching(src_pcd,trg_pcd, matching_scores_drop)
+                    estimated_transform = self.fine_matching(src_pcd, trg_pcd, matching_scores_drop)
 
             # estimated_transform: target_point = R * source_point + t
             out_dict['estimated_rotat'] = estimated_transform[:3, :3] # R
@@ -601,6 +600,19 @@ class EquiAssem(pl.LightningModule):
 
     
     def make_inv_feats(self, src_ori, trg_ori, src_equi_feats, trg_equi_feats, src_flip=True):
+        """Make invariant features
+
+        Args:
+            src_ori (torch.Tensor): (1, N, 3, 3)
+            trg_ori (torch.Tensor): (1, M, 3, 3)
+            src_equi_feats (torch.Tensor): (1, C, 3, N)
+            trg_equi_feats (torch.Tensor): (1, C, 3, M)
+            src_flip (bool, optional): Whether to flip the normal vector of src. Defaults to True.
+
+        Returns:
+            src_inv_feats (torch.Tensor): (1, C*3, N)
+            trg_inv_feats (torch.Tensor): (1, C*3, M)
+        """
         # 5. Invariant Features
 
         if src_flip:

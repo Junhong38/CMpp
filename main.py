@@ -19,7 +19,6 @@ from pytorch_lightning import seed_everything
 def main(args):
     seed_everything(42, workers=True)
 
-
     # Create checkpoint directory
     cfg_name = args.logpath
     ckp_dir = os.path.join('checkpoint', cfg_name, 'models')
@@ -28,12 +27,10 @@ def main(args):
     # Print checkpoint directory
     print(f"checkpoint directory (ckp_dir): {ckp_dir}")
 
-
     # Dataset initialization
     GADataset.initialize(args.datapath, args.data_category, args.sub_category, args.min_part, args.max_part, args.n_pts, args.scale, args.multiplicity, CMorigin_mode=(args.model == 'CM_equiassem'))
     dataloader_trn = GADataset.build_dataloader(args.batch_size, args.n_worker, 'train')
     dataloader_val = GADataset.build_dataloader(args.batch_size, args.n_worker, 'val')
-
 
     # Model initialization
     # [TODO] MODEL IS CHANGED
@@ -90,8 +87,7 @@ def main(args):
                           )
     else:
         raise NotImplementedError("Model not implemented")
-
-
+    
     
     # This code is for running on clusters
     SLURM_JOB_ID = os.environ.get('SLURM_JOB_ID')
@@ -263,9 +259,9 @@ if __name__ == '__main__':
     parser.add_argument('--move_smaller', action='store_true', help='If True, always move the smaller point cloud to the origin')
 
     # Weights for losses
-    parser.add_argument('--s_loss_weight', type=float, default=1.0, help='Weight for shape loss, in the future, we will change this into 1.0')
-    parser.add_argument('--p_loss_weight', type=float, default=1.0, help='Weight for point loss, in the future, we will change this into 1.0')
-    parser.add_argument('--o_loss_weight', type=float, default=1.0, help='Weight for orientation loss, in the future, we will change this into 1.0')
+    parser.add_argument('--s_loss_weight', type=float, default=1.0, help='Weight for shape loss')
+    parser.add_argument('--p_loss_weight', type=float, default=1.0, help='Weight for point loss')
+    parser.add_argument('--o_loss_weight', type=float, default=1.0, help='Weight for orientation loss')
 
 
     # Margin arguments which are used in circle loss
@@ -321,7 +317,6 @@ if __name__ == '__main__':
     # If gradient clip value is 0.0, set it to None
     if args.gradient_clip_val <= 0.0:
         args.gradient_clip_val = None
-
     
     if args.occ_mode: # Enforce flip normal
         args.flip_normal = True
