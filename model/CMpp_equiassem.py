@@ -77,6 +77,7 @@ class EquiAssem(pl.LightningModule):
             only_train_normal=False,
             freeze_normal_param=False,
             double_backbone=False,
+            symmetric_flip=False,
 
             # Developing temporarily used experiments arguments
             additional_VNLinearLeakyReLU=False,
@@ -265,7 +266,7 @@ class EquiAssem(pl.LightningModule):
         self.use_opt_gram = use_opt_gram
         self.additional_VNLLReLU_for_frame = additional_VNLLReLU_for_frame
 
-        self.additional_VNLLReLU_for_frame = additional_VNLLReLU_for_frame
+        self.symmetric_flip = symmetric_flip
 
         self.move_smaller = move_smaller
 
@@ -789,15 +790,24 @@ class EquiAssem(pl.LightningModule):
         if self.flip_normal: # Flip normal of src frame
             # (1, N, 3) stack -> (1, N, 3, 3)
             flipped_src_ori = torch.stack([- src_ori[:, :, 0, :], src_ori[:, :, 2, :], src_ori[:, :, 1, :]], dim=-2)
-            src_inv_feats = torch.matmul(src_equi_feats.permute(0, 3, 1, 2).float(), flipped_src_ori.transpose(-2,-1).float()) # (1, N, C, 3) x (1, N, 3, 3) -> (1, N, C, 3)
+            src_flipped_inv_feats = torch.matmul(src_equi_feats.permute(0, 3, 1, 2).float(), flipped_src_ori.transpose(-2,-1).float()) # (1, N, C, 3) x (1, N, 3, 3) -> (1, N, C, 3)
+            if self.symmetric_flip:
+                flipped_trg_ori = torch.stack([- trg_ori[:, :, 0, :], trg_ori[:, :, 2, :], trg_ori[:, :, 1, :]], dim=-2)
+                trg_flipped_inv_feats = torch.matmul(trg_equi_feats.permute(0, 3, 1, 2).float(), flipped_trg_ori.transpose(-2,-1).float()) # (1, N, C, 3) x (1, N, 3, 3) -> (1, N, C, 3)
 
         else:
             src_inv_feats = torch.matmul(src_equi_feats.permute(0, 3, 1, 2).float(), src_ori.transpose(-2,-1).float()) # (1, N, C, 3) x (1, N, 3, 3) -> (1, N, C, 3)
+            trg_inv_feats = torch.matmul(trg_equi_feats.permute(0, 3, 1, 2).float(), trg_ori.transpose(-2,-1).float()) # (1, N, C, 3) x (1, N, 3, 3) -> (1, N, C, 3)
         
         trg_inv_feats = torch.matmul(trg_equi_feats.permute(0, 3, 1, 2).float(), trg_ori.transpose(-2,-1).float()) # (1, M, C, 3) x (1, M, 3, 3) -> (1, M, C, 3)
+        if self.symmetric_flip:
+            src_inv_feats = torch.matmul(src_equi_feats.permute(0, 3, 1, 2).float(), src_ori.transpose(-2,-1).float()) # (1, M, C, 3) x (1, M, 3, 3) -> (1, M, C, 3)
 
-        src_inv_feats = rearrange(src_inv_feats, 'b n c r -> b (c r) n') # (1, N, C, 3) -> (1, C*3, N)
         trg_inv_feats = rearrange(trg_inv_feats, 'b n c r -> b (c r) n') # (1, M, C, 3) -> (1, C*3, M)
+        src_flipped_inv_feats = rearrange(src_flipped_inv_feats, 'b n c r -> b (c r) n') # (1, N, C, 3) -> (1, C*3, N)
+        if self.symmetric_flip:
+            src_inv_feats = rearrange(src_inv_feats, 'b n c r -> b (c r) n') # (1, N, C, 3) -> (1, C*3, N)
+            trg_flipped_inv_feats = rearrange(trg_flipped_inv_feats, 'b n c r -> b (c r) n') # (1, M, C, 3) -> (1, C*3, M)
 
         # check_inf_or_nan(src_inv_feats, 'src_inv_feats', log=(self.log if mode=='train' else None))
         # check_inf_or_nan(trg_inv_feats, 'trg_inv_feats', log=(self.log if mode=='train' else None))
@@ -811,13 +821,17 @@ class EquiAssem(pl.LightningModule):
         
 
         # 6. SHAPE DESCRIPTOR 
-        src_shape_feats = self.shape_mlp(src_inv_feats) # (1, C*3, N) -> (1, D, N)
+        src_shape_flipped_feats = self.shape_mlp(src_flipped_inv_feats) # (1, C*3, N) -> (1, D, N)
         if self.attention == 'channel': # (1, D, N) * channel attention
             src_shape_feats = src_shape_feats * shape_attention
         
         trg_shape_feats = self.shape_mlp(trg_inv_feats) # # (1, C*3, M) -> (1, D, N)
         if self.attention == 'channel': # (1, D, M) * channel attention
             trg_shape_feats = trg_shape_feats * shape_attention
+
+        if self.symmetric_flip:
+            src_shape_feats = self.shape_mlp(src_inv_feats)
+            trg_shape_flipped_feats = self.shape_mlp(trg_flipped_inv_feats)
         
 
         # check_inf_or_nan(src_shape_feats, 'src_shape_feats', log=(self.log if mode=='train' else None))
@@ -837,12 +851,14 @@ class EquiAssem(pl.LightningModule):
 
         # 7. Optimal Transport
         if not self.delete_occupancy_loss: # Only negative occupancy loss is used
-            shape_matching_scores = self.calculate_matching_score(src_shape_feats, trg_shape_feats, eps=0.0)
+            shape_matching_scores = self.calculate_matching_score(src_shape_flipped_feats, trg_shape_feats, eps=0.0)
             occ_matching_scores = - self.calculate_matching_score(src_occ_feats, trg_occ_feats, eps=0.0)
             shape_matching_scores = shape_matching_scores + occ_matching_scores # Combine shape and occupancy scores
             
         else:
-            shape_matching_scores = self.calculate_matching_score(src_shape_feats, trg_shape_feats, eps=1e-8)
+            shape_matching_scores = self.calculate_matching_score(src_shape_flipped_feats, trg_shape_feats, eps=1e-8)
+            if self.symmetric_flip:
+                sym_shape_matching_scores = self.calculate_matching_score(src_shape_feats, trg_shape_flipped_feats, eps=1e-8)
         
         
 
@@ -856,8 +872,14 @@ class EquiAssem(pl.LightningModule):
             ], dim=1) # (1, N+1, M+1) each slack is fill with minus mean value of each row/column.
             matching_scores_drop = shape_matching_scores
         else:
-            matching_scores = self.optimal_transport(shape_matching_scores) # Optimal Transport is in log space, so inside registration, there is exp operation
-            matching_scores_drop = matching_scores[:,:-1,:-1]   
+            matching_scores_Sinkhorn = self.optimal_transport(shape_matching_scores) # Optimal Transport is in log space, so inside registration, there is exp operation
+            matching_scores_drop = matching_scores_Sinkhorn[:,:-1,:-1]
+            if self.symmetric_flip:
+                sym_matching_scores_Sinkhorn = self.optimal_transport(sym_shape_matching_scores)
+                breakpoint()
+                matching_scores = (matching_scores_Sinkhorn + sym_matching_scores_Sinkhorn) / 2
+            else:
+                matching_scores = matching_scores_Sinkhorn
 
         
         # check_inf_or_nan(matching_scores, 'matching_scores')
@@ -874,9 +896,15 @@ class EquiAssem(pl.LightningModule):
 
             # Shape loss
             if self.debugged_circle_loss:
-                loss['s_loss'], pos_neg_distribution = self.shape_loss(src_pcd_raw, trg_pcd_raw, src_shape_feats.transpose(-2,-1), trg_shape_feats.transpose(-2,-1), gt_corr)
+                if self.symmetric_flip:
+                    s_loss, pos_neg_distribution = self.shape_loss(src_pcd_raw, trg_pcd_raw, src_shape_flipped_feats.transpose(-2,-1), trg_shape_feats.transpose(-2,-1), gt_corr)
+                    sym_s_loss, _ = self.shape_loss(src_pcd_raw, trg_pcd_raw, src_shape_feats.transpose(-2,-1), trg_shape_flipped_feats.transpose(-2,-1), gt_corr)
+                    loss['s_loss'] = (s_loss + sym_s_loss) / 2
+                    breakpoint()
+                else:
+                    loss['s_loss'], pos_neg_distribution = self.shape_loss(src_pcd_raw, trg_pcd_raw, src_shape_flipped_feats.transpose(-2,-1), trg_shape_feats.transpose(-2,-1), gt_corr)
             else:
-                loss['s_loss'], pos_neg_distribution = self.shape_loss(src_pcd_raw, trg_pcd_raw, src_shape_feats.transpose(-2,-1), trg_shape_feats.transpose(-2,-1), gt_corr)
+                loss['s_loss'], pos_neg_distribution = self.shape_loss(src_pcd_raw, trg_pcd_raw, src_shape_flipped_feats.transpose(-2,-1), trg_shape_feats.transpose(-2,-1), gt_corr)
 
             
             # Point matching loss

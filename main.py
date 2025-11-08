@@ -92,6 +92,7 @@ def main(args):
                           only_train_normal=args.only_train_normal,
                           freeze_normal_param=args.freeze_normal_param,
                           double_backbone=args.double_backbone,
+                          symmetric_flip=args.symmetric_flip,
                           
 
                           additional_VNLinearLeakyReLU=args.additional_VNLinearLeakyReLU,
@@ -249,7 +250,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Equivariant Assembly Pytorch Implementation')
 
     # Dataset arguments
-    parser.add_argument('--datapath', type=str, default='../data/temp_breaking_bad/breaking_bad/volume_constrained') 
+    parser.add_argument('--datapath', type=str, default='../../../../../hdd/junhong/temp_data/breaking_bad/volume_constrained') 
     #'../../../../hdd/junhong/data/bbad_v2' and /mnt/nvme2n1p1/kimsangki_datasets/breaking_bad/volume_constrained , /home/kimsangki/breaking_bad/volume_constrained 
     # ../data/temp_breaking_bad/breaking_bad/volume_constrained , ../../../../../hdd/junhong/temp_data/breaking_bad/volume_constrained
     parser.add_argument('--data_category', type=str, default='everyday', choices=['everyday', 'artifact', 'synthetic'])
@@ -335,6 +336,7 @@ if __name__ == '__main__':
     parser.add_argument('--only_train_normal', action='store_true', help='Only train the normal vector, it will be used for stage 1 training')
     parser.add_argument('--freeze_normal_param', action='store_true', help='Freeze backbone and proj parameters')
     parser.add_argument('--double_backbone', action='store_true', help='Freeze backbone and proj parameters')
+    parser.add_argument('--symmetric_flip', action='store_true', help='If True, normal flipping is applied in both side on training')
 
 
         
