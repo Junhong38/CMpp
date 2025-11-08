@@ -242,7 +242,7 @@ rm -rf checkpoint/DEBUG_OVERFIT_FLIP2/ && CUDA_VISIBLE_DEVICES=0 python main.py 
 
 
 rm -rf checkpoint/DEBUG_OVERFIT_FLIP_AVN/ && CUDA_VISIBLE_DEVICES=0 python main.py --model CMpp_equiassem --logpath DEBUG_OVERFIT_FLIP_AVN --scale overfitting --multiplicity 100 --visualize --epochs 0 --detach_mode --use_opt_gram --flip_normal --gpus 0 --n_worker 6 --wandb --wandb_project CMpp
-end
+
 
 
 rm -rf checkpoint/G8ND_S_AVN0_OG_6_DB_FN/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --model CMpp_equiassem --logpath G8ND_S_AVN0_OG_6_DB_FN --scale small --multiplicity 1 --epochs 0 --n_avn 0 --detach_mode --use_opt_gram --double_backbone --flip_normal --gpus 0 1 2 3 4 5 6 7 --n_worker 6 
@@ -264,9 +264,9 @@ rm -rf checkpoint/G8ND_S_AVN0_OG_FNOCC_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,
 rm -rf checkpoint/G8ND_S_AVN0_OG_6_V3/ && CUDA_VISIBLE_DEVICES=0 python main.py --model CMpp_equiassem --logpath G8ND_S_AVN0_OG_6_V3 --scale small --multiplicity 1 --epochs 0 --n_avn 0 --gpus 0 --n_worker 6
 rm -rf checkpoint/G8ND_S_AVN0_OG_FN_6_V3/ && CUDA_VISIBLE_DEVICES=0 python main.py --model CMpp_equiassem --logpath G8ND_S_AVN0_OG_6_V3 --scale small --multiplicity 1 --epochs 0 --n_avn 0 --flip_normal --gpus 0 --n_worker 6
 rm -rf checkpoint/G8ND_S_AVN0_OG_FNOCC_6/ && CUDA_VISIBLE_DEVICES=0 python main.py --model CMpp_equiassem --logpath G8ND_S_AVN0_OG_FNOCC_6 --scale small --multiplicity 1 --epochs 0 --n_avn 0 --occ_mode --gpus 0 --n_worker 6
-
+end
 
 
 rm -rf checkpoint/G8ND_S_AVN0_OG_6_V3/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --model CMpp_equiassem --logpath G8ND_S_AVN0_OG_6_V3 --scale small --multiplicity 1 --epochs 0 --n_avn 0 --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --wandb --wandb_project CMpp
-rm -rf checkpoint/G8ND_S_AVN0_OG_FN_6_V3/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --model CMpp_equiassem --logpath G8ND_S_AVN0_OG_6_V3 --scale small --multiplicity 1 --epochs 0 --n_avn 0 --flip_normal --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --wandb --wandb_project CMpp
-rm -rf checkpoint/G8ND_S_AVN0_OG_FNOCC_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --model CMpp_equiassem --logpath G8ND_S_AVN0_OG_FNOCC_6 --scale small --multiplicity 1 --epochs 0 --n_avn 0 --occ_mode --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --wandb --wandb_project CMpp
+rm -rf checkpoint/G8ND_S_AVN0_OG_FN_6_V3/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --model CMpp_equiassem --logpath G8ND_S_AVN0_OG_FN_6_V3 --scale small --multiplicity 1 --epochs 0 --n_avn 0 --flip_normal --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --wandb --wandb_project CMpp
+rm -rf checkpoint/G8ND_S_AVN0_OG_FNOCC_6_V3/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --model CMpp_equiassem --logpath G8ND_S_AVN0_OG_FNOCC_6_V3 --scale small --multiplicity 1 --epochs 0 --n_avn 0 --occ_mode --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --wandb --wandb_project CMpp
