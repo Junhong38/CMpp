@@ -45,27 +45,19 @@ def test(args):
     elif args.model == 'CMpp_equiassem': # Import developing mode model
         from model.CMpp_equiassem import EquiAssem
         model = EquiAssem(lr=0, # We don't need to use learning rate for testing
-                          
                           scheduler_mode=None,
-                          training_total_steps=0, # We don't need to use training total steps for testing
-
                           backbone=args.backbone,
-                          attention=args.attention,
 
                           # Circle loss arguments
-                          pos_margin=0, # We don't need to use circle loss for testing  
-                          neg_margin=0, # We don't need to use circle loss for testing
-                          log_scale=1, # We don't need to use circle loss for testing
-                          detach_mode=False, # We don't need to use circle loss for testing
-                          same_opt=False, # We don't need to use circle loss for testing
-                          only_corr=False, # We don't need to use circle loss for testing
-                          max_points=0, # We don't need to use circle loss for testing
-                          no_balance=False, # We don't need to use circle loss for testing
-                          div_mode='none', # We don't need to use circle loss for testing
+                          pos_margin=0, # We don't need to use this parameter for testing  
+                          neg_margin=0, # We don't need to use this parameter for testing  
+                          log_scale=1, # We don't need to use this parameter for testing
+                          same_opt=False, # We don't need to use this parameter for testing
+                          no_balance=False, # We don't need to use this parameter for testing
 
-                          s_loss_weight=0.0, # We don't need to use circle loss for testing
-                          p_loss_weight=0.0, # We don't need to use circle loss for testing
-                          o_loss_weight=0.0, # We don't need to use circle loss for testing
+                          s_loss_weight=0.0, # We don't need to use this parameter for testing
+                          p_loss_weight=0.0, # We don't need to use this parameter for testing
+                          o_loss_weight=0.0, # We don't need to use this parameter for testing
 
                           visualize=args.visualize,
                           viz_epoch=args.viz_epoch,
@@ -73,26 +65,12 @@ def test(args):
                           ckp_dir=ckp_dir,
                           debug=args.debug, 
                           success_criterion_in_degree=args.success_criterion_in_degree,
-                          delete_Sinkhorn=args.delete_Sinkhorn,
-                          use_Sinkhorn_infer=args.use_Sinkhorn_infer,
-                          matching_score_mode=args.matching_score_mode,
-                          svd_no_exp=args.svd_no_exp,
-                          flip_normal=args.flip_normal,
-                          use_consistency_loss=False, # We don't need to use consistency loss for testing
-                          only_train_normal=False, # We don't need to use only train normal for testing
-                          freeze_normal_param=False, # We don't need to use freeze normal param for testing
-
-                          additional_VNLinearLeakyReLU=args.additional_VNLinearLeakyReLU,
-                          debugged_circle_loss=args.debugged_circle_loss,
-                          debugged_point_matching_loss=args.debugged_point_matching_loss,
-                          exp_scale_for_point_matching_loss=args.exp_scale_for_point_matching_loss,
-                          n_knn=args.n_knn,
-                          new_orientation_module=args.new_orientation_module,
-                          delete_occupancy_loss=args.delete_occupancy_loss,
-                          use_opt_gram=args.use_opt_gram,
+                          only_train_normal=False, # We don't need to use this parameter for testing  
                           
+                          n_knn=args.n_knn,
                           only_one_norm=args.only_one_norm,
                           n_avn=args.n_avn,
+                          more_mlps=args.more_mlps,
                           move_smaller=args.move_smaller,
                           
                           infer_match_option=args.infer_match_option,
@@ -189,17 +167,10 @@ if __name__ == '__main__':
 
     
     # Developing temporarily used experiments arguments
-    parser.add_argument('--additional_VNLinearLeakyReLU', action='store_true', help='If True, use VNLinearLeakyReLU layers for the equivariant shape feature')
-    parser.add_argument('--debugged_circle_loss', action='store_true', help='If True, use Debugged version of Circle Loss')
-    parser.add_argument('--debugged_point_matching_loss', action='store_true', help='If True, use Debugged version of Point Matching Loss')
-    parser.add_argument('--exp_scale_for_point_matching_loss', action='store_true', help='If True, make the matching score to exp-scaled value before computing point matching loss')
     parser.add_argument('--n_knn', type=int, default=20, help='Number of nearest neighbors for KNN')
-    parser.add_argument('--new_orientation_module', action='store_true', help='If True, use New module for orientation')
-    parser.add_argument('--delete_occupancy_loss', action='store_true', help='If True, delete the Occupancy Loss')
-    parser.add_argument('--use_opt_gram', action='store_true', help='If True, use Optimum Gram Schmidt Orthogonalization')
-
     parser.add_argument('--only_one_norm', action='store_true', help='If True, use only one Normalization layer for the equivariant shape feature')
     parser.add_argument('--n_avn', type=int, default=5, help='Number of AVN layers for the equivariant shape feature')
+    parser.add_argument('--more_mlps', type=int, default=5, help='Instantiate more MLP layers for the invariant shape feature')
     parser.add_argument('--move_smaller', action='store_true', help='If True, always move the smaller point cloud to the origin')
 
 
@@ -218,11 +189,6 @@ if __name__ == '__main__':
     parser.add_argument('--viz_max_arrow_num', type=int, default=0, help='Maximum number of arrows for visualization. This only works when visualize is True')
     parser.add_argument('--debug', action='store_true')
     parser.add_argument('--success_criterion_in_degree', type=int, default=10, help='Success criterion in degree for normal error')
-    parser.add_argument('--delete_Sinkhorn', action='store_true', help='If True, delte the optimal transport (Sinkhorn).')
-    parser.add_argument('--use_Sinkhorn_infer', action='store_true', help='Use Sinkhorn for inference, hence just before registration. So automatically set delete_Sinkhorn to True.')
-    parser.add_argument('--matching_score_mode', type=str, default='CM', choices=['CM', 'cos'])
-    parser.add_argument('--svd_no_exp', action='store_true', help='If True, do not use exp for SVD')
-    parser.add_argument('--flip_normal', action='store_true', help='If True, flip predicted normal')
 
 
     # DDP argument
@@ -250,36 +216,8 @@ if __name__ == '__main__':
     else: # Single-GPU training
         args.parallel_strategy = 'auto'
 
-
-    # Setting developing experiments arguments automatically
-    if args.model == 'CMpp_equiassem': # If the model is CMpp_equiassem
-        arg_order = [
-            "additional_VNLinearLeakyReLU",
-            "debugged_circle_loss",
-            "debugged_point_matching_loss",
-            "new_orientation_module", # Use delete_occupancy_loss for automatically setting this to True
-            "delete_occupancy_loss",
-            "use_opt_gram",
-        ]
-
-        for i, name in enumerate(arg_order):
-            if getattr(args, name):
-                for prev_name in arg_order[:i]:
-                    setattr(args, prev_name, True)
-        
-        if args.delete_occupancy_loss:
-            # Now, we will test the model with normal vector method
-            args.attention = 'none'
-    
-
     # Assertions
     assert args.batch_size == 1, "Batch size must be 1"
-
-    if args.use_Sinkhorn_infer:
-        # We will remove Sinkhorn from training.
-        # Only use Sinkhorn for inference.
-        args.delete_Sinkhorn = True
-
     
     print("================================================")
     print(f"args: {args}")
