@@ -460,13 +460,7 @@ class EquiAssem(pl.LightningModule):
         # 4. Gram Schmidt & Cross-product, this is for making three basis vectors by using two predicted vectors
         src_ori = ortho2rotation(src_vecs, optimum=True) # (1, N, 2, 3) -> (1, N, 3, 3)
         trg_ori = ortho2rotation(trg_vecs, optimum=True) # (1, M, 2, 3) -> (1, M, 3, 3)
-
-
-        print(f"src_equi_feats_backbone: \n{src_equi_feats_backbone}")
-        print(f"src_equi_feats: \n{src_equi_feats}")
-        print(f"src_ori: \n{src_ori}")
-        exit("stop")
-
+        
 
         # Save for visualization
         out_dict['src_ori'] = src_ori
