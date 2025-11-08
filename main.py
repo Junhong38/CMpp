@@ -317,9 +317,6 @@ if __name__ == '__main__':
     # If gradient clip value is 0.0, set it to None
     if args.gradient_clip_val <= 0.0:
         args.gradient_clip_val = None
-    
-    if args.occ_mode: # Enforce flip normal
-        args.flip_normal = True
 
     # Assertions
     assert args.batch_size == 1, "Batch size must be 1"
