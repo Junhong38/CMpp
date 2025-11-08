@@ -259,4 +259,4 @@ rm -rf checkpoint/G8ND_FIX1_S_AVN0_OG_6_SEV23_V2/ && CUDA_VISIBLE_DEVICES=0,1,2,
 
 
 rm -rf checkpoint/G8ND_S_AVN0_OG_FNOCC_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --model CMpp_equiassem --logpath G8ND_S_AVN0_OG_FNOCC_6 --scale small --multiplicity 1 --epochs 0 --n_avn 0 --flip_normal --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --wandb --wandb_project CMpp
-rm -rf checkpoint/G8ND_S_AVN0_OG_FNOCC_6/ && CUDA_VISIBLE_DEVICES=0 python main.py --model CMpp_equiassem --logpath G8ND_S_AVN0_OG_FNOCC_6 --scale small --multiplicity 1 --epochs 0 --n_avn 0 --flip_normal --gpus 0 --n_worker 6
+rm -rf checkpoint/G8ND_S_AVN0_OG_FNOCC_6/ && CUDA_VISIBLE_DEVICES=0 python main.py --model CMpp_equiassem --logpath G8ND_S_AVN0_OG_FNOCC_6 --scale small --multiplicity 1 --epochs 0 --n_avn 0 --flip_normal --occ_mode --gpus 0 --n_worker 6
