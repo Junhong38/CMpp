@@ -183,8 +183,8 @@ def execute_commands_on_gpus(commands, num_gpus=None):
 # commands_list = commands_list[::-1]
 
 commands_list = [
-    "rm -rf checkpoint/NF_CL_BASE/ && python main.py --model CMpp_equiassem --logpath NF_CL_BASE --scale small --multiplicity 1 --epochs 0 --n_avn 0 --detach_mode --use_opt_gram --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --flip_normal --use_consistency_loss --wandb --wandb_entity triplepoint --wandb_project CMpp_new_normal",
-    "rm -rf checkpoint/NF_CL_add_2_shape_layers/ && python main.py --model CMpp_equiassem --logpath NF_CL_add_2_shape_layers --scale small --multiplicity 1 --epochs 0 --n_avn 2 --detach_mode --use_opt_gram --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --flip_normal --use_consistency_loss --wandb --wandb_entity triplepoint --wandb_project CMpp_new_normal",
+    "rm -rf checkpoint/NF_CL_add_frame_layers/ && python main.py --model CMpp_equiassem --logpath NF_CL_add_frame_layers --scale small --multiplicity 1 --epochs 0 --n_avn 0 --detach_mode --use_opt_gram --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --flip_normal --use_consistency_loss --additional_VNLLReLU_for_frame --n_afl 2 --wandb --wandb_entity triplepoint --wandb_project CMpp_new_normal",
+    "rm -rf checkpoint/NF_CL_add_frame_and_2shape_layers/ && python main.py --model CMpp_equiassem --logpath NF_CL_add_frame_and_2shape_layers --scale small --multiplicity 1 --epochs 0 --n_avn 2 --detach_mode --use_opt_gram --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --flip_normal --use_consistency_loss --additional_VNLLReLU_for_frame --n_afl 2 --wandb --wandb_entity triplepoint --wandb_project CMpp_new_normal",
 
 ]
 

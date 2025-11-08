@@ -91,6 +91,8 @@ def main(args):
                           use_consistency_loss=args.use_consistency_loss,
                           only_train_normal=args.only_train_normal,
                           freeze_normal_param=args.freeze_normal_param,
+                          double_backbone=args.double_backbone,
+                          
 
                           additional_VNLinearLeakyReLU=args.additional_VNLinearLeakyReLU,
                           debugged_circle_loss=args.debugged_circle_loss,
@@ -100,7 +102,7 @@ def main(args):
                           new_orientation_module=args.new_orientation_module,
                           delete_occupancy_loss=args.delete_occupancy_loss,
                           use_opt_gram=args.use_opt_gram,
-                          
+
                           additional_VNLLReLU_for_frame=args.additional_VNLLReLU_for_frame,
                           n_afl=args.n_afl,
                           
@@ -247,7 +249,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Equivariant Assembly Pytorch Implementation')
 
     # Dataset arguments
-    parser.add_argument('--datapath', type=str, default='../../../../../hdd/junhong/temp_data/breaking_bad/volume_constrained') 
+    parser.add_argument('--datapath', type=str, default='../data/temp_breaking_bad/breaking_bad/volume_constrained') 
     #'../../../../hdd/junhong/data/bbad_v2' and /mnt/nvme2n1p1/kimsangki_datasets/breaking_bad/volume_constrained , /home/kimsangki/breaking_bad/volume_constrained 
     # ../data/temp_breaking_bad/breaking_bad/volume_constrained , ../../../../../hdd/junhong/temp_data/breaking_bad/volume_constrained
     parser.add_argument('--data_category', type=str, default='everyday', choices=['everyday', 'artifact', 'synthetic'])
@@ -332,6 +334,8 @@ if __name__ == '__main__':
     parser.add_argument('--use_consistency_loss', action='store_true', help='Use consistency loss related to frame for training')
     parser.add_argument('--only_train_normal', action='store_true', help='Only train the normal vector, it will be used for stage 1 training')
     parser.add_argument('--freeze_normal_param', action='store_true', help='Freeze backbone and proj parameters')
+    parser.add_argument('--double_backbone', action='store_true', help='Freeze backbone and proj parameters')
+
 
         
 
