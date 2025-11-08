@@ -200,23 +200,23 @@ class EquiAssem(pl.LightningModule):
             self.equi_layer = nn.Identity()
 
         if more_mlps:
-            self.shape_mlp = nn.Sequential(nn.Conv1d((self.feat_dim//3) * 3, self.feat_dim, kernel_size=1, bias=False),
-                                           nn.InstanceNorm1d(self.feat_dim),
+            self.shape_mlp = nn.Sequential(nn.Conv1d((self.feat_dim//3) * 3, self.feat_dim//2, kernel_size=1, bias=False),
+                                           nn.InstanceNorm1d(self.feat_dim//2),
                                            nn.LeakyReLU(negative_slope=0.2),
-                                           nn.Conv1d(self.feat_dim, self.feat_dim, kernel_size=1, bias=False),
-                                           nn.InstanceNorm1d(self.feat_dim),
+                                           nn.Conv1d(self.feat_dim//2, self.feat_dim//2, kernel_size=1, bias=False),
+                                           nn.InstanceNorm1d(self.feat_dim//2),
                                            nn.LeakyReLU(negative_slope=0.2),
-                                           nn.Conv1d(self.feat_dim, self.feat_dim, kernel_size=1, bias=False),
-                                           nn.InstanceNorm1d(self.feat_dim),
+                                           nn.Conv1d(self.feat_dim//2, self.feat_dim//2, kernel_size=1, bias=False),
+                                           nn.InstanceNorm1d(self.feat_dim//2),
                                            nn.LeakyReLU(negative_slope=0.2),
-                                           nn.Conv1d(self.feat_dim, self.feat_dim, kernel_size=1, bias=False),
-                                           nn.InstanceNorm1d(self.feat_dim),
+                                           nn.Conv1d(self.feat_dim//2, self.feat_dim//2, kernel_size=1, bias=False),
+                                           nn.InstanceNorm1d(self.feat_dim//2),
                                            nn.LeakyReLU(negative_slope=0.2),
-                                           nn.Conv1d(self.feat_dim, self.feat_dim, kernel_size=1, bias=False),
-                                           nn.InstanceNorm1d(self.feat_dim),
+                                           nn.Conv1d(self.feat_dim//2, self.feat_dim//2, kernel_size=1, bias=False),
+                                           nn.InstanceNorm1d(self.feat_dim//2),
                                            nn.LeakyReLU(negative_slope=0.2),
-                                           nn.Conv1d(self.feat_dim, self.feat_dim, kernel_size=1, bias=False),
-                                           nn.InstanceNorm1d(self.feat_dim),
+                                           nn.Conv1d(self.feat_dim//2, self.feat_dim//2, kernel_size=1, bias=False),
+                                           nn.InstanceNorm1d(self.feat_dim//2),
                                            nn.LeakyReLU(negative_slope=0.2),
                                            )
         else:
@@ -453,8 +453,6 @@ class EquiAssem(pl.LightningModule):
         # 3. Calculate equivariant shape features
         src_equi_feats = self.equi_layer(src_equi_feats_backbone.unsqueeze(-1)).squeeze(-1) # (1, C, 3, N)
         trg_equi_feats = self.equi_layer(trg_equi_feats_backbone.unsqueeze(-1)).squeeze(-1) # (1, C, 3, M)
-
-
 
 
         # 4. Gram Schmidt & Cross-product, this is for making three basis vectors by using two predicted vectors

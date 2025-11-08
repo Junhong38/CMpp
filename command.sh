@@ -277,13 +277,15 @@ rm -rf checkpoint/G8ND_S_AVN0_OG_OCC_6_V3/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6
 
 rm -rf checkpoint/G8ND_S_AVN0_OG_6_V4/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --model CMpp_equiassem --logpath G8ND_S_AVN0_OG_6_V4 --scale small --multiplicity 1 --epochs 0 --n_avn 0 --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --wandb --wandb_project CMpp
 rm -rf checkpoint/G8ND_S_AVN0_OG_6_V4/ && CUDA_VISIBLE_DEVICES=0 python main.py --model CMpp_equiassem --logpath G8ND_S_AVN0_OG_6_V4 --scale small --multiplicity 1 --epochs 0 --n_avn 0 --gpus 0 --n_worker 6
+
+
 end
 
-rm -rf checkpoint/G8ND_S_AVN0_6_V4/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --model CMpp_equiassem --logpath G8ND_S_AVN0_6_V4 --scale small --multiplicity 1 --epochs 0 --n_avn 0 --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --wandb --wandb_project CMpp
-rm -rf checkpoint/G8ND_F_AVN0_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --model CMpp_equiassem --logpath G8ND_F_AVN0_6 --scale full --multiplicity 1 --epochs 0 --n_avn 0 --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --wandb --wandb_entity CMppProject  --wandb_project CMpp
+rm -rf checkpoint/G8ND_S_AVN0_6_REFACTOR/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --model CMpp_equiassem --logpath G8ND_S_AVN0_6_REFACTOR --scale small --multiplicity 1 --epochs 0 --n_avn 0 --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --wandb --wandb_project CMpp
+rm -rf checkpoint/G8ND_S_AVN3_6_moreMLP/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --model CMpp_equiassem --logpath G8ND_S_AVN3_6_moreMLP --scale small --multiplicity 1 --epochs 0 --n_avn 3 --more_mlps --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --wandb --wandb_project CMpp
 
-
-rm -rf checkpoint/G8ND_S_AVN0_6_V4/ && CUDA_VISIBLE_DEVICES=0 python main.py --model CMpp_equiassem --logpath G8ND_S_AVN0_6_V4 --scale small --multiplicity 1 --epochs 0 --n_avn 0 --gpus 0 --n_worker 6
+rm -rf checkpoint/G8ND_F_AVN0_mMLP_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --model CMpp_equiassem --logpath G8ND_F_AVN0_mMLP_6 --scale full --multiplicity 1 --epochs 0 --n_avn 0 --more_mlps --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --wandb --wandb_entity CMppProject  --wandb_project CMpp
+rm -rf checkpoint/G8ND_F_AVN3_mMLP_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --model CMpp_equiassem --logpath G8ND_F_AVN3_mMLP_6 --scale full --multiplicity 1 --epochs 0 --n_avn 3 --more_mlps --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --wandb --wandb_entity CMppProject  --wandb_project CMpp
 
 
 
