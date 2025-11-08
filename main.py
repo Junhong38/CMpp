@@ -35,7 +35,6 @@ def main(args):
     dataloader_val = GADataset.build_dataloader(args.batch_size, args.n_worker, 'val')
 
 
-
     # Model initialization
     # [TODO] MODEL IS CHANGED
     if args.model == 'CM_equiassem':

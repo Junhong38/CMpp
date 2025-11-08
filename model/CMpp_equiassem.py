@@ -447,8 +447,8 @@ class EquiAssem(pl.LightningModule):
 
 
         # 4. Gram Schmidt & Cross-product, this is for making three basis vectors by using two predicted vectors
-        src_ori = ortho2rotation(src_vecs, optimum=self.use_opt_gram) # (1, N, 2, 3) -> (1, N, 3, 3)
-        trg_ori = ortho2rotation(trg_vecs, optimum=self.use_opt_gram) # (1, M, 2, 3) -> (1, M, 3, 3)
+        src_ori = ortho2rotation(src_vecs, optimum=True) # (1, N, 2, 3) -> (1, N, 3, 3)
+        trg_ori = ortho2rotation(trg_vecs, optimum=True) # (1, M, 2, 3) -> (1, M, 3, 3)
 
 
         # Save for visualization
@@ -609,18 +609,8 @@ class EquiAssem(pl.LightningModule):
         Returns:
             matching_scores (torch.Tensor): (1, N, M)
         """
-        if self.matching_score_mode == 'CM':
-            matching_scores = torch.einsum('b c n , b c m -> b n m', src_feats, trg_feats) # (1, N, M)
-            matching_scores = matching_scores / (src_feats.shape[1] ** 0.5 + eps) # 1e-8 is for avoiding division by zero
-
-        else:
-            # Calculate cosine similarity for all pairs (N, M)
-            # Normalize features along channel dimension (dim=1)
-            src_feats_norm = F.normalize(src_feats, p=2, dim=1)  # (1, C, N)
-            trg_feats_norm = F.normalize(trg_feats, p=2, dim=1)  # (1, C, M)
-            # Compute dot product for all pairs
-            matching_scores = torch.einsum('b c n , b c m -> b n m', src_feats_norm, trg_feats_norm)  # (1, N, M)
-
+        matching_scores = torch.einsum('b c n , b c m -> b n m', src_feats, trg_feats) # (1, N, M)
+        matching_scores = matching_scores / (src_feats.shape[1] ** 0.5 + eps) # 1e-8 is for avoiding division by zero
         return matching_scores
     
     
