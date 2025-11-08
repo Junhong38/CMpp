@@ -70,6 +70,7 @@ class EquiAssem(pl.LightningModule):
             s_loss_weight (float, optional): Weight for shape loss. Defaults to 1.0.
             p_loss_weight (float, optional): Weight for point loss. Defaults to 1.0.
             o_loss_weight (float, optional): Weight for orientation loss. Defaults to 1.0.
+            
             visualize (bool, optional): Whether to save visualization results. Defaults to False.
             viz_epoch (int, optional): Epoch for mesh visualization. Defaults to 30.
             viz_max_arrow_num (int, optional): Maximum number of arrows for visualization. Defaults to 0.
@@ -120,6 +121,7 @@ class EquiAssem(pl.LightningModule):
 
         print(f"only_one_norm: {only_one_norm}")
         print(f"n_avn: {n_avn}")
+        print(f"more_mlps: {more_mlps}")
         print(f"move_smaller: {move_smaller}")
 
 
@@ -154,7 +156,6 @@ class EquiAssem(pl.LightningModule):
         
         # Output feature dimension of Feature Extractor
         self.feat_dim = 1024
-
         
         # Objectives
         self.circle_loss = CircleLoss(log_scale=log_scale, pos_optimal=pos_margin, neg_optimal=neg_margin, same_opt=same_opt, no_balance=no_balance)
@@ -466,7 +467,7 @@ class EquiAssem(pl.LightningModule):
 
         if self.only_train_normal:
             # Only train the normal vector
-            loss['o_loss'] = self.orientation_loss(src_ori, trg_ori, gt_corr, in_dict['gt_normals'])
+            loss['o_loss'] = self.orientation_loss(src_ori, trg_ori, in_dict['gt_normals'])
             loss['loss'] = loss['o_loss']
 
             # Compute Normal Error
@@ -489,23 +490,23 @@ class EquiAssem(pl.LightningModule):
 
         # 6. SHAPE DESCRIPTOR 
         src_shape_feats = self.shape_mlp(src_inv_feats) # (1, C*3, N) -> (1, D, N)
-        trg_shape_feats = self.shape_mlp(trg_inv_feats) # # (1, C*3, M) -> (1, D, N)
+        trg_shape_feats = self.shape_mlp(trg_inv_feats) # (1, C*3, M) -> (1, D, N)
 
 
         # 7. Optimal Transport
-        feat_matching_scores = self.calculate_matching_score(src_shape_feats, trg_shape_feats, eps=1e-8)
+        shape_matching_scores = self.calculate_matching_score(src_shape_feats, trg_shape_feats, eps=1e-8)
 
 
         # 8. Calculate Matching Scores
-        matching_scores = self.optimal_transport(feat_matching_scores) # Optimal Transport is in log space, so inside registration, there is exp operation
+        matching_scores = self.optimal_transport(shape_matching_scores) # Optimal Transport is in log space, so inside registration, there is exp operation
         matching_scores_drop = matching_scores[:,:-1,:-1]   
 
 
         if mode in ['train', 'val']: # Do not calculate for test
             # 8. Calculate Loss
             loss['s_loss'], pos_neg_distribution = self.circle_loss(src_pcd_raw, trg_pcd_raw, src_shape_feats.transpose(-2,-1), trg_shape_feats.transpose(-2,-1), gt_corr)
-            loss['p_loss'] = self.matching_loss(matching_scores, gt_corr, src_pcd_raw, trg_pcd_raw).float()
-            loss['o_loss'] = self.orientation_loss(src_ori, trg_ori, gt_corr, in_dict['gt_normals'])
+            loss['p_loss'] = self.matching_loss(matching_scores, src_pcd_raw, trg_pcd_raw).float()
+            loss['o_loss'] = self.orientation_loss(src_ori, trg_ori, in_dict['gt_normals'])
             loss['loss'] = self.o_loss_weight * loss['o_loss'] + self.s_loss_weight * loss['s_loss'] + self.p_loss_weight * loss['p_loss']
             out_dict.update(loss)
 
@@ -528,7 +529,7 @@ class EquiAssem(pl.LightningModule):
             with torch.no_grad():
                 if self.use_RANSAC:
                     estimated_transform = _RANSAC(in_dict=in_dict, 
-                                                  shape_matching_scores=feat_matching_scores, 
+                                                  shape_matching_scores=shape_matching_scores, 
                                                   src_pcd=src_pcd, 
                                                   trg_pcd=trg_pcd, 
                                                   src_predicted_frame=src_predicted_frame,

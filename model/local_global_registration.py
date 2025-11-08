@@ -237,13 +237,12 @@ class LocalGlobalRegistration(nn.Module):
         return sampled_correspondences
 
     
-    def filter_correspondences(self, score_mat, pred_corr, corr_scores):
+    def filter_correspondences(self, score_mat, corr_scores):
         """Filter correspondences based on score matrix
         If score_threshold_ratio is 0.0, all correspondences are filtered.
 
         Args:
             score_mat (torch.Tensor): (B, N, M)
-            pred_corr (torch.Tensor): (K, 2)
             corr_scores (torch.Tensor): (K, )
 
         Returns:
@@ -288,7 +287,7 @@ class LocalGlobalRegistration(nn.Module):
         corr_scores = score_mat[:, pred_corr[:,0], pred_corr[:,1]].squeeze(0) # (K, )
 
         # Filter correspondences based on score matrix
-        filtering_mask = self.filter_correspondences(score_mat, pred_corr, corr_scores)
+        filtering_mask = self.filter_correspondences(score_mat, corr_scores)
 
         # Filter correspondences
         src_corr_points = src_corr_points[filtering_mask] # (K', 3)

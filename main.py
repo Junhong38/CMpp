@@ -293,6 +293,7 @@ if __name__ == '__main__':
     # Deterministic argument
     parser.add_argument('--deterministic', action='store_true')
 
+    
     args = parser.parse_args()
 
     if args.epochs <= 0: # If epochs is not set, set number of epochs automatically

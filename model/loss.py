@@ -186,11 +186,10 @@ class PointMatchingLoss(nn.Module):
         super(PointMatchingLoss, self).__init__()
         self.positive_radius = 0.018
 
-    def forward(self, matching_scores, correlations, src_pcd, trg_pcd):
+    def forward(self, matching_scores, src_pcd, trg_pcd):
         """
         Args:
             matching_scores (torch.Tensor): (1, N, M)
-            correlations (torch.Tensor): (P, 2)
             src_pcd (torch.Tensor): (N, 3)
             trg_pcd (torch.Tensor): (M, 3)
 
@@ -223,12 +222,11 @@ class OrientationLoss(nn.Module):
         super(OrientationLoss, self).__init__()
         self.loss_fn = nn.SmoothL1Loss(beta=1.0, reduction='mean')
     
-    def forward(self, src_ori, trg_ori, correspondence, gt_normals):
+    def forward(self, src_ori, trg_ori, gt_normals):
         """
         Args:
             src_ori (torch.Tensor): (1, N, 3, 3), first basis should be aligned with gt_normals[0]
             trg_ori (torch.Tensor): (1, M, 3, 3), first basis should be aligned with gt_normals[1]
-            correspondence (torch.Tensor): (P, 2)
             gt_normals (list): length is 2, only for two pieces
                 - gt_normals[0]: (1, N, 3)
                 - gt_normals[1]: (1, M, 3)
