@@ -308,7 +308,7 @@ class LocalGlobalRegistration(nn.Module):
         return estimated_transform
 
     
-    def forward(self, src_points, ref_points, score_mat, no_exp=False):
+    def forward(self, src_points, ref_points, score_mat):
         r"""Point Matching Module forward propagation with Local-to-Global registration.
         Only assume that batch size is 1.
 
@@ -322,7 +322,7 @@ class LocalGlobalRegistration(nn.Module):
             estimated_transform: torch.Tensor (4, 4)
         """
 
-        score_mat = torch.exp(score_mat) if not no_exp else score_mat
+        score_mat = torch.exp(score_mat)
         pred_corr = self.sample_correspondences(score_mat)
 
         """ THIS IS FOR DEBUGGING

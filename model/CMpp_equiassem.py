@@ -14,7 +14,7 @@ from einops import rearrange
 
 from model.backbone.vn_dgcnn import EQCNN_equi_unet, EQCNN_equi
 from model.backbone.vn_layers import VNLinear, VNLinearLeakyReLU
-from model.loss import PointMatchingLoss, OrientationLoss
+from model.loss import CircleLoss, PointMatchingLoss, OrientationLoss
 from model.learnable_sinkhorn import LearnableLogOptimalTransport
 from model.local_global_registration import LocalGlobalRegistration
 
@@ -28,66 +28,21 @@ from pytorch3d.ops import iterative_closest_point
 
 
 
-class ChannelAttentionModule(nn.Module):
-    """ this function is used to achieve the channel attention module in CBAM paper"""
-    def __init__(self, in_dim=1024, out_dim=1024, ratio=4):
-        super(ChannelAttentionModule, self).__init__()
-
-        self.mlp = nn.Sequential(
-            nn.Conv1d(in_channels=in_dim, out_channels=out_dim // ratio, kernel_size=1, bias=False),
-            nn.LeakyReLU(negative_slope=0.2),
-            nn.Conv1d(in_channels= out_dim // ratio, out_channels=out_dim, kernel_size=1, bias=False),
-        )
-
-        self.sigmoid = nn.Sigmoid()
-
-    def forward(self, x):
-        
-        out1 = torch.mean(x, dim=-1, keepdim=True)  # 1, c, 1
-        out1 = self.mlp(out1) # 1, c, 1
-
-        # Because of nn.AdaptiveMaxPool1d, deterministic option is not supported
-        out2 = nn.AdaptiveMaxPool1d(1)(x) # 1, c, 1
-        out2 = self.mlp(out2) # 1, c, 1
-        
-        out = F.normalize(out1+out2, p=2, dim=1)
-        attention = self.sigmoid(out)
-        
-        return attention
-
-
-
 class EquiAssem(pl.LightningModule):
     def __init__(
             self, 
             lr, 
             scheduler_mode='cos',
-            training_total_steps=0,
-            backbone='vn_unet', attention='channel', 
-            pos_margin=0.1, neg_margin=1.4, log_scale=24, detach_mode=False, same_opt=False, only_corr=False, max_points=0, no_balance=False, div_mode='none',
+            backbone='vn_unet', 
+            pos_margin=0.1, neg_margin=1.4, log_scale=24, same_opt=False, no_balance=False,
             s_loss_weight=1.0, p_loss_weight=1.0, o_loss_weight=1.0,
             visualize=False, viz_epoch=30, viz_max_arrow_num=0, ckp_dir=None, debug=False,
             success_criterion_in_degree=10,
-            delete_Sinkhorn=False,
-            use_Sinkhorn_infer=False,
-            matching_score_mode='CM',
-            svd_no_exp=False,
             flip_normal=False,
-            use_consistency_loss=0.0,
+            use_consistency_loss=False,
             only_train_normal=False,
-            freeze_normal_param=False,
-            double_backbone=False,
 
-            # Developing temporarily used experiments arguments
-            additional_VNLinearLeakyReLU=False,
-            debugged_circle_loss=False,
-            debugged_point_matching_loss=False,
-            exp_scale_for_point_matching_loss=False,
             n_knn=20,
-            new_orientation_module=False,
-            delete_occupancy_loss=False,
-            use_opt_gram=False,
-
             only_one_norm=False,
             n_avn=5,
             move_smaller=False,
@@ -104,21 +59,15 @@ class EquiAssem(pl.LightningModule):
 
         Args:
             lr (float): Learning rate for optimizer.
-            scheduler_mode (str, optional): Scheduler type ('cos' or 'onecycle'). Defaults to 'cos'.
-            training_total_steps (int, optional): Total number of training steps. Defaults to 0.
+            scheduler_mode (str, optional): Scheduler type ('cos', 'onecycle', 'NONE). Defaults to 'cos'.
             backbone (str, optional): Backbone network architecture. Defaults to 'vn_unet'.
-            attention (str, optional): Attention mechanism type ('channel' or 'none'). Defaults to 'channel'.
             
             # Circle loss arguments
             pos_margin (float, optional): Margin for positive samples in loss computation. Defaults to 0.1.
             neg_margin (float, optional): Margin for negative samples in loss computation. Defaults to 1.4.
             log_scale (int, optional): Log scaling factor for loss computation. Defaults to 24.
-            detach_mode (bool, optional): Whether to use the detach mode for circle loss computation. Defaults to False.
-            same_opt (bool, optional): Whether to use the same optimal value for positive and negative samples in loss computation. Defaults to False.
-            only_corr (bool, optional): Whether to use only correspondence for circle loss computation. Defaults to False.
-            max_points (int, optional): Maximum number of points for circle loss computation. Defaults to 0.
-            no_balance (bool, optional): Whether to use positive and negative balance for circle loss computation. Defaults to False.
-            div_mode (str, optional): Division mode for circle loss computation. Defaults to 'none'.
+            same_opt (bool, optional): Whether to use the same optimal value as margin in loss computation. Defaults to False.
+            no_balance (bool, optional): Whether to not use positive and negative balance for circle loss computation. Defaults to False.
             
             s_loss_weight (float, optional): Weight for shape loss. Defaults to 1.0.
             p_loss_weight (float, optional): Weight for point loss. Defaults to 1.0.
@@ -129,26 +78,11 @@ class EquiAssem(pl.LightningModule):
             ckp_dir (str, optional): Checkpoint directory. Defaults to None.
             debug (bool, optional): Whether to enable debug mode. Defaults to False.
             success_criterion_in_degree (int, optional): Success criterion in degree for normal error. Defaults to 10.
-            delete_Sinkhorn (bool, optional): Whether to delete the optimal transport (Sinkhorn). Defaults to False.
-            use_Sinkhorn_infer (bool, optional): Whether to use Sinkhorn for inference, hence just before registration. Defaults to False.
-            matching_score_mode (str, optional): 'CM' or 'cos'. Defaults to 'CM'.
-            svd_no_exp (bool, optional): Whether to do not use exp for SVD. Defaults to False.
             flip_normal (bool, optional): Whether to flip the normal vector. Defaults to False.
             use_consistency_loss (float, optional): Weight for consistency loss. Defaults to 0.0.
             only_train_normal (bool, optional): Whether to only train the normal vector, it will be used for stage 1 training. Defaults to False.
-            freeze_normal_param (bool, optional): Whether to freeze the normal parameter. Defaults to False.
-            double_backbone (bool, optional): Whether to use double backbone. Defaults to False.
 
-            # Developing temporarily used experiments arguments
-            additional_VNLinearLeakyReLU (bool, optional): Whether to use additional VNLinearLeakyReLU layers for the equivariant shape feature. Defaults to False.
-            debugged_circle_loss (bool, optional): Whether to use the debugged version of Circle Loss. Defaults to False.
-            debugged_point_matching_loss (bool, optional): Whether to use the debugged version of Point Matching Loss. Defaults to False.
-            exp_scale_for_point_matching_loss (bool, optional): Whether to make the matching score to exp-scaled value before computing point matching loss. Defaults to False.
             n_knn (int, optional): Number of nearest neighbors for KNN. Defaults to 20.
-            new_orientation_module (bool, optional): Whether to use the new module for orientation loss. Defaults to False.
-            delete_occupancy_loss (bool, optional): Whether to delete the occupancy loss. Defaults to False.
-            use_opt_gram (bool, optional): Whether to use the optimum Gram Schmidt Orthogonalization. Defaults to False.
-
 
             only_one_norm (bool, optional): Whether to use only one Normalization layer for the equivariant shape feature. Defaults to False.
             n_avn (int, optional): Number of AVN layers for the equivariant shape feature. Defaults to 5.
@@ -169,19 +103,9 @@ class EquiAssem(pl.LightningModule):
         print("------------------------------------------------------")
         print(f"lr: {lr}")
         print(f"scheduler_mode: {scheduler_mode}")
-        print(f"training_total_steps: {training_total_steps}")
         print(f"backbone: {backbone}")
-        print(f"attention: {attention}")
         
-        print(f"pos_margin: {pos_margin}")
-        print(f"neg_margin: {neg_margin}")
-        print(f"log_scale: {log_scale}")
-        print(f"detach_mode: {detach_mode}")
-        print(f"same_opt: {same_opt}")
-        print(f"only_corr: {only_corr}")
-        print(f"max_points: {max_points}")
-        print(f"no_balance: {no_balance}")
-        print(f"div_mode: {div_mode}")
+        # Circle loss parameters will be printed in CircleLoss initialization
 
         print(f"s_loss_weight: {s_loss_weight}")
         print(f"p_loss_weight: {p_loss_weight}")
@@ -193,24 +117,11 @@ class EquiAssem(pl.LightningModule):
         print(f"ckp_dir: {ckp_dir}")
         print(f"debug: {debug}")
         print(f"success_criterion_in_degree: {success_criterion_in_degree}")
-        print(f"delete_Sinkhorn: {delete_Sinkhorn}")
-        print(f"use_Sinkhorn_infer: {use_Sinkhorn_infer}")
-        print(f"matching_score_mode: {matching_score_mode}")
-        print(f"svd_no_exp: {svd_no_exp}")
         print(f"flip_normal: {flip_normal}")
         print(f"use_consistency_loss: {use_consistency_loss}")
         print(f"only_train_normal: {only_train_normal}")
-        print(f"freeze_normal_param: {freeze_normal_param}")
-        print(f"double_backbone: {double_backbone}")
-        
-        print(f"additional_VNLinearLeakyReLU: {additional_VNLinearLeakyReLU}")
-        print(f"debugged_circle_loss: {debugged_circle_loss}")
-        print(f"debugged_point_matching_loss: {debugged_point_matching_loss}")
-        print(f"exp_scale_for_point_matching_loss: {exp_scale_for_point_matching_loss}")
+
         print(f"n_knn: {n_knn}")
-        print(f"new_orientation_module: {new_orientation_module}")
-        print(f"delete_occupancy_loss: {delete_occupancy_loss}")
-        print(f"use_opt_gram: {use_opt_gram}")
 
         print(f"only_one_norm: {only_one_norm}")
         print(f"n_avn: {n_avn}")
@@ -228,31 +139,14 @@ class EquiAssem(pl.LightningModule):
 
         self.lr = lr
         self.scheduler_mode = scheduler_mode
-        self.training_total_steps = training_total_steps
-        self.attention = attention
         self.visualize = visualize
         self.viz_epoch = viz_epoch
         self.viz_max_arrow_num = viz_max_arrow_num
         self.ckp_dir = ckp_dir
         self.debug = debug
         self.success_criterion_in_degree = success_criterion_in_degree
-        self.delete_Sinkhorn = delete_Sinkhorn
-        self.use_Sinkhorn_infer = use_Sinkhorn_infer
-        self.matching_score_mode = matching_score_mode
-        self.svd_no_exp = svd_no_exp
         self.flip_normal = flip_normal
         self.only_train_normal = only_train_normal
-        self.freeze_normal_param = freeze_normal_param
-        self.double_backbone = double_backbone
-        
-        self.additional_VNLinearLeakyReLU = additional_VNLinearLeakyReLU
-        self.debugged_circle_loss = debugged_circle_loss
-        self.debugged_point_matching_loss = debugged_point_matching_loss
-        self.exp_scale_for_point_matching_loss = exp_scale_for_point_matching_loss
-        self.new_orientation_module = new_orientation_module
-        self.delete_occupancy_loss = delete_occupancy_loss
-        self.use_opt_gram = use_opt_gram
-
         self.move_smaller = move_smaller
 
         # Inference arguments
@@ -268,40 +162,9 @@ class EquiAssem(pl.LightningModule):
 
         
         # Objectives
-        if debugged_circle_loss:
-            print("Using the debugged version of Circle Loss")
-            from model.loss import CircleLoss
-            self.shape_loss = CircleLoss(log_scale=log_scale, pos_optimal=pos_margin, neg_optimal=neg_margin, detach_mode=detach_mode, 
-                                         same_opt=same_opt, only_corr=only_corr, max_points=max_points, no_balance=no_balance, div_mode=div_mode)
-
-        else:
-            from model.CM_loss import CircleLoss
-            self.shape_loss = CircleLoss(log_scale=log_scale, pos_optimal=pos_margin, neg_optimal=neg_margin)
-
-        if debugged_point_matching_loss:
-            print("Using the debugged version of Point Matching Loss")
-            from model.loss import PointMatchingLoss
-        else:
-            from model.CM_loss import PointMatchingLoss
-
-        if new_orientation_module:
-            print("Using the new module for orientation loss")
-            from model.loss import OrientationLoss
-            self.orientation_loss = OrientationLoss(use_consistency_loss=use_consistency_loss)
-        else:
-            from model.CM_loss import OrientationLoss
-            self.orientation_loss = OrientationLoss()
-        
-        if delete_occupancy_loss:
-            print("Deleting the occupancy loss")
-        else:
-            if debugged_circle_loss:
-                self.occupancy_loss = CircleLoss(log_scale=log_scale, pos_optimal=pos_margin, neg_optimal=neg_margin, detach_mode=detach_mode, 
-                                                 same_opt=same_opt, only_corr=only_corr, max_points=max_points, no_balance=no_balance, div_mode=div_mode)
-            else:
-                self.occupancy_loss = CircleLoss(log_scale=log_scale, pos_optimal=pos_margin, neg_optimal=neg_margin)
-
-
+        self.shape_loss = CircleLoss(log_scale=log_scale, pos_optimal=pos_margin, neg_optimal=neg_margin, same_opt=same_opt, no_balance=no_balance)
+        # self.occupancy_loss = CircleLoss(log_scale=log_scale, pos_optimal=pos_margin, neg_optimal=neg_margin, same_opt=same_opt, no_balance=no_balance)
+        self.orientation_loss = OrientationLoss(use_consistency_loss=use_consistency_loss)
         self.matching_loss = PointMatchingLoss()
         
 
@@ -309,27 +172,12 @@ class EquiAssem(pl.LightningModule):
         self.s_loss_weight = s_loss_weight
         self.p_loss_weight = p_loss_weight
         self.o_loss_weight = o_loss_weight
-        self.occ_loss_weight = s_loss_weight if not delete_occupancy_loss else 0
-        
-        """
-        For reproducibility, we use the following weights
-        self.s_loss_weight = 0.5 
-        self.p_loss_weight = 1.0
-        self.o_loss_weight = 0.1
-        self.occ_loss_weight = 0.5
-
-        However, for CMpp_equiassem, we use the following weights
-        self.s_loss_weight = 1.0
-        self.p_loss_weight = 1.0
-        self.o_loss_weight = 1.0
-        """
 
         print("------------------------------------------------------")
         print("Weight for losses")
         print(f"s_loss_weight: {self.s_loss_weight}")
         print(f"p_loss_weight: {self.p_loss_weight}")
         print(f"o_loss_weight: {self.o_loss_weight}")
-        print(f"occ_loss_weight: {self.occ_loss_weight}")
         print("------------------------------------------------------")
 
 
@@ -343,83 +191,38 @@ class EquiAssem(pl.LightningModule):
         # VN BACKBONE
         if backbone == 'vn_unet':
             self.backbone = EQCNN_equi_unet(feat_dim=self.feat_dim, pooling="mean", k=n_knn)
-            
-            if self.double_backbone:
-                self.frame_backbone = EQCNN_equi_unet(feat_dim=self.feat_dim, pooling="mean", k=n_knn)
         
         elif backbone == 'vn_dgcnn':
             self.backbone = EQCNN_equi(feat_dim=self.feat_dim, pooling="mean", k=n_knn)
-            
-            if self.double_backbone:
-                self.frame_backbone = EQCNN_equi(feat_dim=self.feat_dim, pooling="mean", k=n_knn)
-        
+
         else:
             raise NotImplementedError("DGCNN backbone not implemented")
 
  
-        if self.additional_VNLinearLeakyReLU:
-            print("Using additional VNLinearLeakyReLU layers for the equivariant shape feature")
-            # Layer for predicting frame vectors
-            self.proj = VNLinear(2 * (self.feat_dim//3), 2)
+        # Layer for predicting frame vectors
+        self.proj = VNLinear(2 * (self.feat_dim//3), 2)
 
-            # Layer for Equivariant feature
-            if n_avn > 0:
-                self.equi_layer = nn.Sequential(*([VNLinearLeakyReLU(self.feat_dim//3, self.feat_dim//3, no_norm=False)] + [VNLinearLeakyReLU(self.feat_dim//3, self.feat_dim//3, no_norm=only_one_norm) for _ in range(n_avn-1)]))
-            else:
-                self.equi_layer = nn.Identity()
-            
+        # Layer for Equivariant feature
+        if n_avn > 0:
+            self.equi_layer = nn.Sequential(*([VNLinearLeakyReLU(self.feat_dim//3, self.feat_dim//3, no_norm=False)] + [VNLinearLeakyReLU(self.feat_dim//3, self.feat_dim//3, no_norm=only_one_norm) for _ in range(n_avn-1)]))
         else:
-            # Layer for predicting frame vectors
-            self.proj = VNLinear(self.feat_dim//3, 2)
-            # Layer for Equivariant feature
             self.equi_layer = nn.Identity()
 
 
-        # Channel Attention
-        if attention == 'channel':
-            self.c_attn = ChannelAttentionModule((self.feat_dim//3) * 3, self.feat_dim, ratio=4)
-        
-
-        # Module for invariant Shape Descriptor
-        if not delete_occupancy_loss:
-            # Shape Descriptor
-            self.shape_mlp = nn.Sequential(nn.Conv1d(1023, 512, kernel_size=1, bias=False),
-                                           nn.InstanceNorm1d(512),
-                                           nn.LeakyReLU(negative_slope=0.2),
-                                           nn.Conv1d(512, 512, kernel_size=1, bias=False),
-                                           nn.InstanceNorm1d(512),
-                                           nn.LeakyReLU(negative_slope=0.2),
-                                           nn.Conv1d(512, 512, kernel_size=1, bias=False),
-                                           nn.InstanceNorm1d(512),
-                                           nn.LeakyReLU(negative_slope=0.2),
+        self.shape_mlp = nn.Sequential(nn.Conv1d((self.feat_dim//3) * 3, self.feat_dim, kernel_size=1, bias=False),
+                                        nn.InstanceNorm1d(self.feat_dim),
+                                        nn.LeakyReLU(negative_slope=0.2),
+                                        nn.Conv1d(self.feat_dim, self.feat_dim, kernel_size=1, bias=False),
+                                        nn.InstanceNorm1d(self.feat_dim),
+                                        nn.LeakyReLU(negative_slope=0.2),
+                                        nn.Conv1d(self.feat_dim, self.feat_dim, kernel_size=1, bias=False),
+                                        nn.InstanceNorm1d(self.feat_dim),
+                                        nn.LeakyReLU(negative_slope=0.2),
                                         )
-            # Occupancy Descriptor
-            self.occ_mlp = nn.Sequential(nn.Conv1d(1023, 512, kernel_size=1, bias=False),
-                                         nn.InstanceNorm1d(512),
-                                         nn.LeakyReLU(negative_slope=0.2),
-                                         nn.Conv1d(512, 512, kernel_size=1, bias=False),
-                                         nn.InstanceNorm1d(512),
-                                         nn.LeakyReLU(negative_slope=0.2),
-                                         nn.Conv1d(512, 512, kernel_size=1, bias=False),
-                                         nn.InstanceNorm1d(512),
-                                         nn.Tanh()
-                                         )
-        else:
-            self.shape_mlp = nn.Sequential(nn.Conv1d((self.feat_dim//3) * 3, self.feat_dim, kernel_size=1, bias=False),
-                                           nn.InstanceNorm1d(self.feat_dim),
-                                           nn.LeakyReLU(negative_slope=0.2),
-                                           nn.Conv1d(self.feat_dim, self.feat_dim, kernel_size=1, bias=False),
-                                           nn.InstanceNorm1d(self.feat_dim),
-                                           nn.LeakyReLU(negative_slope=0.2),
-                                           nn.Conv1d(self.feat_dim, self.feat_dim, kernel_size=1, bias=False),
-                                           nn.InstanceNorm1d(self.feat_dim),
-                                           nn.LeakyReLU(negative_slope=0.2),
-                                           )
         
 
         # Optimal Transport
-        if not (self.delete_Sinkhorn and not self.use_Sinkhorn_infer):
-            self.optimal_transport = LearnableLogOptimalTransport(num_iterations=100)
+        self.optimal_transport = LearnableLogOptimalTransport(num_iterations=100)
 
         if not self.use_RANSAC: # If not using RANSAC, use LGR for fine matching
             # LGR
@@ -431,15 +234,7 @@ class EquiAssem(pl.LightningModule):
                 score_threshold_ratio=self.infer_score_threshold_ratio,
             )
 
-        if self.freeze_normal_param:
-            print("Freezing parameters of backbone and proj")
-            for param in self.backbone.parameters():
-                param.requires_grad = False
-            
-            for param in self.proj.parameters():
-                param.requires_grad = False
 
-    
     def configure_optimizers(self):
         """Build optimizer and lr scheduler."""
         # Lightning 2.x: Support this funcionality
@@ -447,19 +242,11 @@ class EquiAssem(pl.LightningModule):
         steps_per_epoch = self.trainer.num_training_batches
         max_epochs = self.trainer.max_epochs
 
-        print(f"total_steps: {total_steps}")
-        print(f"steps_per_epoch: {steps_per_epoch}")
-        print(f"max_epochs: {max_epochs}")
-
         assert total_steps > 0, "Total steps must be greater than 0"
 
         optimizer = optim.AdamW(self.parameters(), lr=self.lr, weight_decay=0.)
         
-        if self.scheduler_mode in ['cos', 'CMpp']:
-            if self.scheduler_mode == 'CMpp':
-                assert self.training_total_steps > 0, "Training total steps must be greater than 0"
-                total_steps = self.training_total_steps
-            # T_max should be the total number of training steps, not a fixed value
+        if self.scheduler_mode == 'cos':
             scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=total_steps, eta_min=1e-3)
             
         elif self.scheduler_mode == 'onecycle':
@@ -467,13 +254,8 @@ class EquiAssem(pl.LightningModule):
                                                       pct_start=0.05, anneal_strategy="cos", div_factor=10.0,
                                                       final_div_factor=1000.0)
         
-        elif self.scheduler_mode == 'CM': # Just for debugging purpose
-            scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=16919, eta_min=1e-3) # 16919, 6671
-            return {'optimizer': optimizer, 'lr_scheduler': scheduler}
-        
         else:
             scheduler = None
-        
 
         if scheduler is not None:
             return {
@@ -534,55 +316,6 @@ class EquiAssem(pl.LightningModule):
         self.test_results = avg_loss
         self.log_dict(avg_loss, logger=True, sync_dist=True, batch_size=1,)
         self.test_step_outputs.clear()
-    
-
-    def on_train_batch_end(self, outputs, batch, batch_idx):
-        pass
-        # If you want to check the gradient and NaN, uncomment the following line
-        # self.check_grad_and_nan()
-
-    
-    def check_grad_and_nan(self):
-        total_modules = [self.backbone, self.proj, self.equi_layer, self.shape_mlp]
-
-        if self.attention == 'channel':
-            total_modules.append(self.c_attn)
-        
-        if not self.delete_occupancy_loss:
-            total_modules.append(self.occ_mlp)
-        
-        total_grad_abs_sum = 0.0
-        total_grad_abs_max = 0.0
-        total_grad_count = 0
-        nan_param_dict = {}
-        
-        for module in total_modules:
-            for name, param in module.named_parameters():
-                if param.requires_grad and param.grad is not None:
-                    total_grad_abs_sum += torch.abs(param.grad).sum().item()
-                    total_grad_count += param.grad.shape.numel()
-                    current_grad_abs_max = torch.abs(param.grad).max().item()
-                    if current_grad_abs_max > total_grad_abs_max:
-                        total_grad_abs_max = current_grad_abs_max
-                    
-                    # Check whether gradient is inf or NaN
-                    check_inf_or_nan(param.grad, f'{name}.grad')
-                
-                # Check whether parameter is NaN
-                if torch.isnan(param).any():
-                    nan_param_dict[name] = param
-
-        if total_grad_count > 0:
-            total_grad_abs_mean = total_grad_abs_sum / total_grad_count
-            self.log('train-grad/abs_mean', total_grad_abs_mean, prog_bar=True, logger=True, sync_dist=True, rank_zero_only=True, on_step=True, on_epoch=False, batch_size=1)
-            self.log('train-grad/abs_max', total_grad_abs_max, prog_bar=True, logger=True, sync_dist=True, rank_zero_only=True, on_step=True, on_epoch=False, batch_size=1)
-        else:
-            assert False, "total_grad_count is 0"
-
-        if len(nan_param_dict) > 0:
-            for key, value in nan_param_dict.items():
-                print(f"NaN parameter found - key: {key}, value: {value}")
-            assert False, "NaN parameters found"
     
     
     # @torch.no_grad()
@@ -688,50 +421,24 @@ class EquiAssem(pl.LightningModule):
         trg_pcd = in_dict['pcd_t'][1] # (1, M ,3)
         gt_corr = in_dict['gt_correspondence'].squeeze(0) # (1, P, 2) -> (P, 2)
         
-        # check_inf_or_nan(src_pcd_raw, 'src_pcd_raw')
-        # check_inf_or_nan(trg_pcd_raw, 'trg_pcd_raw')
-        # check_inf_or_nan(src_pcd, 'src_pcd')
-        # check_inf_or_nan(trg_pcd, 'trg_pcd')
-        # check_inf_or_nan(gt_corr, 'gt_corr')
-
 
         # 1. SO(3)-Equivariant Feature Extractor
         src_equi_feats_backbone = self.backbone(src_pcd) # (1, C, 3, N)
         trg_equi_feats_backbone = self.backbone(trg_pcd) # (1, C, 3, M)
-
-
-        # check_inf_or_nan(src_equi_feats_backbone, 'src_equi_feats_backbone', log=(self.log if mode=='train' else None))
-        # check_inf_or_nan(trg_equi_feats_backbone, 'trg_equi_feats_backbone', log=(self.log if mode=='train' else None))
-
-        if self.double_backbone:
-            src_equi_feats_frame_backbone = self.frame_backbone(src_pcd) # (1, C, 3, N)
-            trg_equi_feats_frame_backbone = self.frame_backbone(trg_pcd) # (1, C, 3, M)
-        
-        else: 
-            src_equi_feats_frame_backbone = src_equi_feats_backbone
-            trg_equi_feats_frame_backbone = trg_equi_feats_backbone
         
         
-        if self.additional_VNLinearLeakyReLU: # 2. Frame Prediction
-            # 2-1. Merge global information by averaging
-            # (1, C, 3, N) -> (1, C, 3, 1) -> (1, C, 3, N)
-            src_equi_feats_frame_backbone_mean = src_equi_feats_frame_backbone.mean(dim=-1, keepdim=True).expand(src_equi_feats_frame_backbone.size())
-            # (1, C, 3, M) -> (1, C, 3, 1) -> (1, C, 3, M)
-            trg_equi_feats_frame_backbone_mean = trg_equi_feats_frame_backbone.mean(dim=-1, keepdim=True).expand(trg_equi_feats_frame_backbone.size())
+        # 2. Frame Prediction
+        # 2-1. Merge global information by averaging
+        # (1, C, 3, N) -> (1, C, 3, 1) -> (1, C, 3, N)
+        src_equi_feats_backbone_mean = src_equi_feats_backbone.mean(dim=-1, keepdim=True).expand(src_equi_feats_backbone.size())
+        # (1, C, 3, M) -> (1, C, 3, 1) -> (1, C, 3, M)
+        trg_equi_feats_backbone_mean = trg_equi_feats_backbone.mean(dim=-1, keepdim=True).expand(trg_equi_feats_backbone.size())
 
-            # 2-2. Basis Vector Projection, those vectors will be used as frame basis vectors
-            # (1, C, 3, N) concat (1, C, 3, N) ->  (1, 2C, 3, N) -> (1, 2C, 3, N, 1) -> (1, 2, 3, N, 1) -> (1, 2, 3, N) -> (1, N, 2, 3)
-            src_vecs = self.proj(torch.cat((src_equi_feats_frame_backbone, src_equi_feats_frame_backbone_mean), 1).unsqueeze(-1)).squeeze(-1).permute(0, 3, 1, 2) 
-            # (1, C, 3, M) concat (1, C, 3, M) ->  (1, 2C, 3, M) -> (1, 2C, 3, M, 1) -> (1, 2, 3, M, 1) -> (1, 2, 3, M) -> (1, M, 2, 3)
-            trg_vecs = self.proj(torch.cat((trg_equi_feats_frame_backbone, trg_equi_feats_frame_backbone_mean), 1).unsqueeze(-1)).squeeze(-1).permute(0, 3, 1, 2) 
-
-        else: # 2. Basis Vector Projection 
-            src_vecs = self.proj(src_equi_feats_frame_backbone).permute(0, 3, 1, 2) # (1, N, 2, 3)
-            trg_vecs = self.proj(trg_equi_feats_frame_backbone).permute(0, 3, 1, 2) # (1, M, 2, 3)
-        
-
-        # check_inf_or_nan(src_vecs, 'src_vecs')
-        # check_inf_or_nan(trg_vecs, 'trg_vecs')
+        # 2-2. Basis Vector Projection, those vectors will be used as frame basis vectors
+        # (1, C, 3, N) concat (1, C, 3, N) ->  (1, 2C, 3, N) -> (1, 2C, 3, N, 1) -> (1, 2, 3, N, 1) -> (1, 2, 3, N) -> (1, N, 2, 3)
+        src_vecs = self.proj(torch.cat((src_equi_feats_backbone, src_equi_feats_backbone_mean), 1).unsqueeze(-1)).squeeze(-1).permute(0, 3, 1, 2) 
+        # (1, C, 3, M) concat (1, C, 3, M) ->  (1, 2C, 3, M) -> (1, 2C, 3, M, 1) -> (1, 2, 3, M, 1) -> (1, 2, 3, M) -> (1, M, 2, 3)
+        trg_vecs = self.proj(torch.cat((trg_equi_feats_backbone, trg_equi_feats_backbone_mean), 1).unsqueeze(-1)).squeeze(-1).permute(0, 3, 1, 2) 
 
         
         # 3. Calculate equivariant shape features
@@ -739,17 +446,10 @@ class EquiAssem(pl.LightningModule):
         trg_equi_feats = self.equi_layer(trg_equi_feats_backbone.unsqueeze(-1)).squeeze(-1) # (1, C, 3, M)
 
 
-        # check_inf_or_nan(src_equi_feats, 'src_equi_feats', log=(self.log if mode=='train' else None))
-        # check_inf_or_nan(trg_equi_feats, 'trg_equi_feats', log=(self.log if mode=='train' else None))
-
-
         # 4. Gram Schmidt & Cross-product, this is for making three basis vectors by using two predicted vectors
         src_ori = ortho2rotation(src_vecs, optimum=self.use_opt_gram) # (1, N, 2, 3) -> (1, N, 3, 3)
         trg_ori = ortho2rotation(trg_vecs, optimum=self.use_opt_gram) # (1, M, 2, 3) -> (1, M, 3, 3)
 
-
-        # check_inf_or_nan(src_ori, 'src_ori')
-        # check_inf_or_nan(trg_ori, 'trg_ori')
 
         # Save for visualization
         out_dict['src_ori'] = src_ori
@@ -784,133 +484,47 @@ class EquiAssem(pl.LightningModule):
 
         src_inv_feats = rearrange(src_inv_feats, 'b n c r -> b (c r) n') # (1, N, C, 3) -> (1, C*3, N)
         trg_inv_feats = rearrange(trg_inv_feats, 'b n c r -> b (c r) n') # (1, M, C, 3) -> (1, C*3, M)
-
-        # check_inf_or_nan(src_inv_feats, 'src_inv_feats', log=(self.log if mode=='train' else None))
-        # check_inf_or_nan(trg_inv_feats, 'trg_inv_feats', log=(self.log if mode=='train' else None))
-
-
-        # OPTIONAL 5. Chaneel Attention Map
-        if self.attention == 'channel':
-            inv_feats = torch.cat([src_inv_feats, trg_inv_feats], dim=-1)  # (1, C*3, N+M)
-            attention = self.c_attn(inv_feats) # (1, C*3, N+M) -> (1, D, N+M)
-            shape_attention, occ_attention = attention[:, :512], attention[:, 512:] # [TODO] We should check this part, This can incurr problem
         
 
         # 6. SHAPE DESCRIPTOR 
         src_shape_feats = self.shape_mlp(src_inv_feats) # (1, C*3, N) -> (1, D, N)
-        if self.attention == 'channel': # (1, D, N) * channel attention
-            src_shape_feats = src_shape_feats * shape_attention
-        
         trg_shape_feats = self.shape_mlp(trg_inv_feats) # # (1, C*3, M) -> (1, D, N)
-        if self.attention == 'channel': # (1, D, M) * channel attention
-            trg_shape_feats = trg_shape_feats * shape_attention
-        
-
-        # check_inf_or_nan(src_shape_feats, 'src_shape_feats', log=(self.log if mode=='train' else None))
-        # check_inf_or_nan(trg_shape_feats, 'trg_shape_feats', log=(self.log if mode=='train' else None))
-
-
-        if not self.delete_occupancy_loss:
-            # 6-2. OCCUPANCY DESCRIPTOR
-            src_occ_feats = self.occ_mlp(src_inv_feats) # (1, 1023, N) -> (1, 512, N)
-            if self.attention == 'channel': 
-                src_occ_feats = src_occ_feats * occ_attention
-            
-            trg_occ_feats = self.occ_mlp(trg_inv_feats) # (1, 1023, M) -> (1, 512, M)
-            if self.attention == 'channel': 
-                trg_occ_feats = trg_occ_feats * occ_attention
         
 
         # 7. Optimal Transport
-        if not self.delete_occupancy_loss: # Only negative occupancy loss is used
-            shape_matching_scores = self.calculate_matching_score(src_shape_feats, trg_shape_feats, eps=0.0)
-            occ_matching_scores = - self.calculate_matching_score(src_occ_feats, trg_occ_feats, eps=0.0)
-            shape_matching_scores = shape_matching_scores + occ_matching_scores # Combine shape and occupancy scores
-            
-        else:
-            shape_matching_scores = self.calculate_matching_score(src_shape_feats, trg_shape_feats, eps=1e-8)
-        
-        
+        shape_matching_scores = self.calculate_matching_score(src_shape_feats, trg_shape_feats, eps=1e-8)
 
-        if self.delete_Sinkhorn:
-            row_slack = -shape_matching_scores.mean(dim=1) # (1, N, M) -> (1, M)
-            col_slack = -shape_matching_scores.mean(dim=2) # (1, N, M) -> (1, N)
-            corner = torch.tensor([[0.0]], device=shape_matching_scores.device, dtype=shape_matching_scores.dtype) # (1, 1)
-            matching_scores = torch.cat([
-                torch.cat([shape_matching_scores, col_slack.unsqueeze(2)], dim=2), # (1, N, M) concat (1, N, 1) -> (1, N, M+1)
-                torch.cat([row_slack, corner], dim=1).unsqueeze(1) # (1, M) concat (1,1) -> (1, M+1) ->  (1, 1, M+1)
-            ], dim=1) # (1, N+1, M+1) each slack is fill with minus mean value of each row/column.
-            matching_scores_drop = shape_matching_scores
-        else:
-            matching_scores = self.optimal_transport(shape_matching_scores) # Optimal Transport is in log space, so inside registration, there is exp operation
-            matching_scores_drop = matching_scores[:,:-1,:-1]   
 
-        
-        # check_inf_or_nan(matching_scores, 'matching_scores')
+        # 8. Calculate Matching Scores
+        matching_scores = self.optimal_transport(shape_matching_scores) # Optimal Transport is in log space, so inside registration, there is exp operation
+        matching_scores_drop = matching_scores[:,:-1,:-1]   
+
 
 
         if mode in ['train', 'val']: # Do not calculate for test
             # 8. Calculate Loss
-            # Orientation loss
-            if self.new_orientation_module:
-                loss['o_loss'] = self.orientation_loss(src_ori, trg_ori, gt_corr, in_dict['gt_normals'])
-            else:
-                loss['o_loss'] = self.orientation_loss(src_ori, trg_ori, gt_corr, in_dict['gt_rotat'])
-            
-
-            # Shape loss
-            if self.debugged_circle_loss:
-                loss['s_loss'], pos_neg_distribution = self.shape_loss(src_pcd_raw, trg_pcd_raw, src_shape_feats.transpose(-2,-1), trg_shape_feats.transpose(-2,-1), gt_corr)
-            else:
-                loss['s_loss'], pos_neg_distribution = self.shape_loss(src_pcd_raw, trg_pcd_raw, src_shape_feats.transpose(-2,-1), trg_shape_feats.transpose(-2,-1), gt_corr)
-
-            
-            # Point matching loss
-            if self.exp_scale_for_point_matching_loss:
-                loss['p_loss'] = 1.0 + self.matching_loss(torch.exp(matching_scores), gt_corr, src_pcd_raw, trg_pcd_raw).float() # Optimal Transport is in log space, so before registration, we need to exp it
-            else:
-                loss['p_loss'] = self.matching_loss(matching_scores, gt_corr, src_pcd_raw, trg_pcd_raw).float()
-
-
-            if not self.delete_occupancy_loss:
-                loss['occ_loss'], _ = self.occupancy_loss(src_pcd_raw, trg_pcd_raw, src_occ_feats.transpose(-2,-1), -trg_occ_feats.transpose(-2,-1), gt_corr)
-            
-
-            # Final loss
-            if not self.delete_occupancy_loss:
-                loss['loss'] = self.o_loss_weight * loss['o_loss'] + self.s_loss_weight * loss['s_loss'] + self.p_loss_weight * loss['p_loss'] + self.occ_loss_weight * loss['occ_loss']
-            else:
-                loss['loss'] = self.o_loss_weight * loss['o_loss'] + self.s_loss_weight * loss['s_loss'] + self.p_loss_weight * loss['p_loss']
-
-            
-            # Check for Inf or Nan
-            # for loss_name, loss_value in loss.items():
-            #     check_inf_or_nan(loss_value, f'{loss_name}')
-            
-
+            loss['s_loss'], pos_neg_distribution = self.shape_loss(src_pcd_raw, trg_pcd_raw, src_shape_feats.transpose(-2,-1), trg_shape_feats.transpose(-2,-1), gt_corr)
+            loss['p_loss'] = self.matching_loss(matching_scores, gt_corr, src_pcd_raw, trg_pcd_raw).float()
+            loss['o_loss'] = self.orientation_loss(src_ori, trg_ori, gt_corr, in_dict['gt_normals'])
+            loss['loss'] = self.o_loss_weight * loss['o_loss'] + self.s_loss_weight * loss['s_loss'] + self.p_loss_weight * loss['p_loss']
             out_dict.update(loss)
 
-
-        if mode == 'train':
-            with torch.no_grad():
-                # This is for checking the normal error
-                loss['n_error'], _, loss['n_suc_rate'] = self._normal_error(in_dict, out_dict, success_criterion_in_degree=self.success_criterion_in_degree) 
-
+            if mode == 'train':
+                with torch.no_grad():
+                    # This is for checking the normal error
+                    loss['n_error'], _, loss['n_suc_rate'] = self._normal_error(in_dict, out_dict, success_criterion_in_degree=self.success_criterion_in_degree)
+        
 
         # 9. Evaluation
         if mode in ['val', 'test']:
-            if self.use_Sinkhorn_infer:
-                with torch.no_grad():
-                    matching_scores_drop = self.optimal_transport(matching_scores_drop) # Optimal Transport is in log space, so inside registration, there is exp operation
-                    matching_scores_drop = matching_scores_drop[:,:-1,:-1]
-
-
             # Point cloud registration
             src_predicted_frame = None
             trg_predicted_frame = None
+            
             if self.use_predicted_normal:
                 src_predicted_frame = src_ori.squeeze(0) # (1, N, 3, 3) -> (N, 3, 3)
                 trg_predicted_frame = trg_ori.squeeze(0) # (1, M, 3, 3) -> (M, 3, 3)
+           
             with torch.no_grad():
                 if self.use_RANSAC:
                     estimated_transform = _RANSAC(in_dict=in_dict, 
@@ -924,7 +538,7 @@ class EquiAssem(pl.LightningModule):
                                                   topk=self.infer_topk)
                 else:
                     # fine_matching predict Rt to move points from src_points to ref_points
-                    estimated_transform = self.fine_matching(src_pcd,trg_pcd, matching_scores_drop, no_exp=self.svd_no_exp)
+                    estimated_transform = self.fine_matching(src_pcd,trg_pcd, matching_scores_drop)
 
             # estimated_transform: target_point = R * source_point + t
             out_dict['estimated_rotat'] = estimated_transform[:3, :3] # R

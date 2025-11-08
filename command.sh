@@ -250,3 +250,8 @@ rm -rf checkpoint/G8ND_S_AVN0_OG_6_DB_FNUC/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,
 rm -rf checkpoint/G8ND_S_AVN0_OG_6_DB_UC/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --model CMpp_equiassem --logpath G8ND_S_AVN0_OG_6_DB_UC --scale small --multiplicity 1 --epochs 0 --n_avn 0 --detach_mode --use_opt_gram --double_backbone --use_consistency_loss --gpus 0 1 2 3 4 5 6 7 --n_worker 6 
 rm -rf checkpoint/G8ND_S_AVN0_OG_6_DB/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --model CMpp_equiassem --logpath G8ND_S_AVN0_OG_6_DB --scale small --multiplicity 1 --epochs 0 --n_avn 0 --detach_mode --use_opt_gram --double_backbone --gpus 0 1 2 3 4 5 6 7 --n_worker 6 
 
+
+
+
+rm -rf checkpoint/DEBUG_OVERFIT_FLIP/ && CUDA_VISIBLE_DEVICES=0 python main.py --model CMpp_equiassem --logpath DEBUG_OVERFIT_FLIP --scale overfitting --multiplicity 100 --epochs 0 --n_avn 0 --detach_mode --use_opt_gram --gpus 0 --n_worker 6 --flip_normal --wandb --wandb_project CMpp
+
