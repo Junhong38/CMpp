@@ -68,14 +68,12 @@ def main(args):
                           ckp_dir=ckp_dir,
                           debug=args.debug,
                           success_criterion_in_degree=args.success_criterion_in_degree,
-                          flip_normal=args.flip_normal,
-                          use_consistency_loss=args.use_consistency_loss,
                           only_train_normal=args.only_train_normal,
-                          occ_mode=args.occ_mode,
 
                           n_knn=args.n_knn,
                           only_one_norm=args.only_one_norm,
                           n_avn=args.n_avn,
+                          more_mlps=args.more_mlps,
                           move_smaller=args.move_smaller,
                           
                           infer_match_option='topk', # Fix match option value during training
@@ -256,6 +254,7 @@ if __name__ == '__main__':
     parser.add_argument('--n_knn', type=int, default=20, help='Number of nearest neighbors for KNN')
     parser.add_argument('--only_one_norm', action='store_true', help='If True, use only one Normalization layer for the equivariant shape feature')
     parser.add_argument('--n_avn', type=int, default=5, help='Number of AVN layers for the equivariant shape feature')
+    parser.add_argument('--more_mlps', type=int, default=5, help='Instantiate more MLP layers for the invariant shape feature')
     parser.add_argument('--move_smaller', action='store_true', help='If True, always move the smaller point cloud to the origin')
 
     # Weights for losses
@@ -278,10 +277,7 @@ if __name__ == '__main__':
     parser.add_argument('--viz_max_arrow_num', type=int, default=0, help='Maximum number of arrows for visualization. This only works when visualize is True')
     parser.add_argument('--debug', action='store_true')
     parser.add_argument('--success_criterion_in_degree', type=int, default=10, help='Success criterion in degree for normal error')
-    parser.add_argument('--flip_normal', action='store_true', help='If True, flip predicted normal')
-    parser.add_argument('--use_consistency_loss', action='store_true', help='Use consistency loss related to frame for training')
     parser.add_argument('--only_train_normal', action='store_true', help='Only train the normal vector, it will be used for stage 1 training')
-    parser.add_argument('--occ_mode', action='store_true', help='')
 
 
     # DDP argument

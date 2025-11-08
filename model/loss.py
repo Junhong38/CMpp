@@ -219,9 +219,8 @@ class PointMatchingLoss(nn.Module):
 
 
 class OrientationLoss(nn.Module):
-    def __init__(self, use_consistency_loss=False):
+    def __init__(self):
         super(OrientationLoss, self).__init__()
-        self.use_consistency_loss = use_consistency_loss
         self.loss_fn = nn.SmoothL1Loss(beta=1.0, reduction='mean')
     
     def forward(self, src_ori, trg_ori, correspondence, gt_normals):
@@ -245,16 +244,6 @@ class OrientationLoss(nn.Module):
         trg_normal_basis_loss = self.loss_fn(trg_normal_basis, gt_normals[1])
 
         final_loss = (src_normal_basis_loss + trg_normal_basis_loss) / 2
-
-        if self.use_consistency_loss and (len(correspondence) > 0): # Make frame from src and trg be consistent with each other
-            src_from_mating_surface = src_ori[:, correspondence[:,0], :, :] # (1, P, 3, 3)
-            trg_from_mating_surface = trg_ori[:, correspondence[:,1], :, :] # (1, P, 3, 3)
-
-            consistency_loss_2nd = self.loss_fn(src_from_mating_surface[:, :, 1, :], trg_from_mating_surface[:, :, 2, :]) # 2nd <-> 3rd
-            consistency_loss_3rd = self.loss_fn(src_from_mating_surface[:, :, 2, :], trg_from_mating_surface[:, :, 1, :]) # 3rd <-> 2nd
-            consistency_loss = (consistency_loss_2nd + consistency_loss_3rd) / 2
-            final_loss = final_loss + consistency_loss
-
         return final_loss
 
         
