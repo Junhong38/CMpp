@@ -41,6 +41,7 @@ class EquiAssem(pl.LightningModule):
             flip_normal=False,
             use_consistency_loss=False,
             only_train_normal=False,
+            occ_mode=False,
 
             n_knn=20,
             only_one_norm=False,
@@ -59,7 +60,7 @@ class EquiAssem(pl.LightningModule):
 
         Args:
             lr (float): Learning rate for optimizer.
-            scheduler_mode (str, optional): Scheduler type ('cos', 'onecycle', 'NONE). Defaults to 'cos'.
+            scheduler_mode (str, optional): Scheduler type ('cos', 'onecycle', 'none). Defaults to 'cos'.
             backbone (str, optional): Backbone network architecture. Defaults to 'vn_unet'.
             
             # Circle loss arguments
@@ -81,6 +82,7 @@ class EquiAssem(pl.LightningModule):
             flip_normal (bool, optional): Whether to flip the normal vector. Defaults to False.
             use_consistency_loss (float, optional): Weight for consistency loss. Defaults to 0.0.
             only_train_normal (bool, optional): Whether to only train the normal vector, it will be used for stage 1 training. Defaults to False.
+            occ_mode (bool, optional): Whether to use occupancy mode. Defaults to False.
 
             n_knn (int, optional): Number of nearest neighbors for KNN. Defaults to 20.
 
@@ -120,6 +122,7 @@ class EquiAssem(pl.LightningModule):
         print(f"flip_normal: {flip_normal}")
         print(f"use_consistency_loss: {use_consistency_loss}")
         print(f"only_train_normal: {only_train_normal}")
+        print(f"occ_mode: {occ_mode}")
 
         print(f"n_knn: {n_knn}")
 
@@ -147,6 +150,8 @@ class EquiAssem(pl.LightningModule):
         self.success_criterion_in_degree = success_criterion_in_degree
         self.flip_normal = flip_normal
         self.only_train_normal = only_train_normal
+        self.occ_mode = occ_mode
+
         self.move_smaller = move_smaller
 
         # Inference arguments
@@ -162,16 +167,15 @@ class EquiAssem(pl.LightningModule):
 
         
         # Objectives
-        self.shape_loss = CircleLoss(log_scale=log_scale, pos_optimal=pos_margin, neg_optimal=neg_margin, same_opt=same_opt, no_balance=no_balance)
-        # self.occupancy_loss = CircleLoss(log_scale=log_scale, pos_optimal=pos_margin, neg_optimal=neg_margin, same_opt=same_opt, no_balance=no_balance)
+        self.circle_loss = CircleLoss(log_scale=log_scale, pos_optimal=pos_margin, neg_optimal=neg_margin, same_opt=same_opt, no_balance=no_balance)
         self.orientation_loss = OrientationLoss(use_consistency_loss=use_consistency_loss)
         self.matching_loss = PointMatchingLoss()
         
 
         # Weights for losses
-        self.s_loss_weight = s_loss_weight
-        self.p_loss_weight = p_loss_weight
-        self.o_loss_weight = o_loss_weight
+        self.s_loss_weight = s_loss_weight # circle loss weight
+        self.p_loss_weight = p_loss_weight # point matching loss weight
+        self.o_loss_weight = o_loss_weight # orientation loss weight
 
         print("------------------------------------------------------")
         print("Weight for losses")
@@ -209,16 +213,16 @@ class EquiAssem(pl.LightningModule):
             self.equi_layer = nn.Identity()
 
 
-        self.shape_mlp = nn.Sequential(nn.Conv1d((self.feat_dim//3) * 3, self.feat_dim, kernel_size=1, bias=False),
-                                        nn.InstanceNorm1d(self.feat_dim),
-                                        nn.LeakyReLU(negative_slope=0.2),
-                                        nn.Conv1d(self.feat_dim, self.feat_dim, kernel_size=1, bias=False),
-                                        nn.InstanceNorm1d(self.feat_dim),
-                                        nn.LeakyReLU(negative_slope=0.2),
-                                        nn.Conv1d(self.feat_dim, self.feat_dim, kernel_size=1, bias=False),
-                                        nn.InstanceNorm1d(self.feat_dim),
-                                        nn.LeakyReLU(negative_slope=0.2),
-                                        )
+        self.final_mlp = nn.Sequential(nn.Conv1d((self.feat_dim//3) * 3, self.feat_dim, kernel_size=1, bias=False),
+                                       nn.InstanceNorm1d(self.feat_dim),
+                                       nn.LeakyReLU(negative_slope=0.2),
+                                       nn.Conv1d(self.feat_dim, self.feat_dim, kernel_size=1, bias=False),
+                                       nn.InstanceNorm1d(self.feat_dim),
+                                       nn.LeakyReLU(negative_slope=0.2),
+                                       nn.Conv1d(self.feat_dim, self.feat_dim, kernel_size=1, bias=False),
+                                       nn.InstanceNorm1d(self.feat_dim),
+                                       nn.LeakyReLU(negative_slope=0.2),
+                                       )
         
 
         # Optimal Transport
@@ -254,7 +258,7 @@ class EquiAssem(pl.LightningModule):
                                                       pct_start=0.05, anneal_strategy="cos", div_factor=10.0,
                                                       final_div_factor=1000.0)
         
-        else:
+        else: # none
             scheduler = None
 
         if scheduler is not None:
@@ -487,23 +491,28 @@ class EquiAssem(pl.LightningModule):
         
 
         # 6. SHAPE DESCRIPTOR 
-        src_shape_feats = self.shape_mlp(src_inv_feats) # (1, C*3, N) -> (1, D, N)
-        trg_shape_feats = self.shape_mlp(trg_inv_feats) # # (1, C*3, M) -> (1, D, N)
+        src_final_feats = self.final_mlp(src_inv_feats) # (1, C*3, N) -> (1, D, N)
+        trg_final_feats = self.final_mlp(trg_inv_feats) # # (1, C*3, M) -> (1, D, N)
         
 
         # 7. Optimal Transport
-        shape_matching_scores = self.calculate_matching_score(src_shape_feats, trg_shape_feats, eps=1e-8)
+        feat_matching_scores = self.calculate_matching_score(src_final_feats, trg_final_feats, eps=1e-8)
+        if self.occ_mode:
+            feat_matching_scores = - feat_matching_scores
 
 
         # 8. Calculate Matching Scores
-        matching_scores = self.optimal_transport(shape_matching_scores) # Optimal Transport is in log space, so inside registration, there is exp operation
+        matching_scores = self.optimal_transport(feat_matching_scores) # Optimal Transport is in log space, so inside registration, there is exp operation
         matching_scores_drop = matching_scores[:,:-1,:-1]   
-
 
 
         if mode in ['train', 'val']: # Do not calculate for test
             # 8. Calculate Loss
-            loss['s_loss'], pos_neg_distribution = self.shape_loss(src_pcd_raw, trg_pcd_raw, src_shape_feats.transpose(-2,-1), trg_shape_feats.transpose(-2,-1), gt_corr)
+            if self.occ_mode:
+                loss['s_loss'], pos_neg_distribution = self.circle_loss(src_pcd_raw, trg_pcd_raw, - src_final_feats.transpose(-2,-1), trg_final_feats.transpose(-2,-1), gt_corr)
+            else:
+                loss['s_loss'], pos_neg_distribution = self.circle_loss(src_pcd_raw, trg_pcd_raw, src_final_feats.transpose(-2,-1), trg_final_feats.transpose(-2,-1), gt_corr)
+            
             loss['p_loss'] = self.matching_loss(matching_scores, gt_corr, src_pcd_raw, trg_pcd_raw).float()
             loss['o_loss'] = self.orientation_loss(src_ori, trg_ori, gt_corr, in_dict['gt_normals'])
             loss['loss'] = self.o_loss_weight * loss['o_loss'] + self.s_loss_weight * loss['s_loss'] + self.p_loss_weight * loss['p_loss']
@@ -528,7 +537,7 @@ class EquiAssem(pl.LightningModule):
             with torch.no_grad():
                 if self.use_RANSAC:
                     estimated_transform = _RANSAC(in_dict=in_dict, 
-                                                  shape_matching_scores=shape_matching_scores, 
+                                                  shape_matching_scores=feat_matching_scores, 
                                                   src_pcd=src_pcd, 
                                                   trg_pcd=trg_pcd, 
                                                   src_predicted_frame=src_predicted_frame,

@@ -74,6 +74,7 @@ def main(args):
                           flip_normal=args.flip_normal,
                           use_consistency_loss=args.use_consistency_loss,
                           only_train_normal=args.only_train_normal,
+                          occ_mode=args.occ_mode,
 
                           n_knn=args.n_knn,
                           only_one_norm=args.only_one_norm,
@@ -238,7 +239,7 @@ if __name__ == '__main__':
     parser.add_argument('--n_worker', type=int, default=4, help='Number of workers. If you use multi-GPU training, the number of workers is multiplied by the number of GPUs.')
     parser.add_argument('--load', type=str, default='', help='Load checkpoint for training')
     parser.add_argument('--resume', type=str, default='', help='Resume training from the checkpoint')
-    parser.add_argument('--scheduler_mode', type=str, default='cos', choices=['none', 'cos', 'onecycle', 'CM', 'CMpp'])
+    parser.add_argument('--scheduler_mode', type=str, default='cos', choices=['none', 'cos', 'onecycle'])
     parser.add_argument('--gradient_clip_val', type=float, default=0.0, help='Gradient clip value')
 
 
@@ -284,6 +285,7 @@ if __name__ == '__main__':
     parser.add_argument('--flip_normal', action='store_true', help='If True, flip predicted normal')
     parser.add_argument('--use_consistency_loss', action='store_true', help='Use consistency loss related to frame for training')
     parser.add_argument('--only_train_normal', action='store_true', help='Only train the normal vector, it will be used for stage 1 training')
+    parser.add_argument('--occ_mode', action='store_true', help='')
 
 
     # DDP argument
@@ -319,6 +321,10 @@ if __name__ == '__main__':
     # If gradient clip value is 0.0, set it to None
     if args.gradient_clip_val <= 0.0:
         args.gradient_clip_val = None
+
+    
+    if args.occ_mode: # Enforce flip normal
+        args.flip_normal = True
 
     # Assertions
     assert args.batch_size == 1, "Batch size must be 1"
