@@ -300,5 +300,9 @@ rm -rf checkpoint/DEBUG/ && CUDA_VISIBLE_DEVICES=0 python main.py --model CMpp_e
 
 
 rm -rf checkpoint/DEBUG_G8ND_S_BV2AVN3mlpH_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --logpath DEBUG_G8ND_S_BV2AVN3mlpH_6 --model CMpp_equiassem --backbone vn_unet_deep_v2 --n_avn 3 --mlp_mode half --scale small --multiplicity 1 --epochs 0 --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --wandb --wandb_project CMpp
+rm -rf checkpoint/DEBUG_G8ND_S_BV3AVN3mlpH_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --logpath DEBUG_G8ND_S_BV3AVN3mlpH_6 --model CMpp_equiassem --backbone vn_unet_deep_v3 --n_avn 3 --mlp_mode half --scale small --multiplicity 1 --epochs 0 --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --wandb --wandb_project CMpp
+
+
 
 rm -rf checkpoint/DEBUG_G8ND_S_BV2AVN3mlpH_6/ && CUDA_VISIBLE_DEVICES=0 python main.py --logpath DEBUG_G8ND_S_BV2AVN3mlpH_6 --model CMpp_equiassem --backbone vn_unet_deep_v2 --n_avn 3 --mlp_mode half --scale small --multiplicity 1 --epochs 0 --gpus 0 --n_worker 6
+rm -rf checkpoint/DEBUG_G8ND_S_BV3AVN3mlpH_6/ && CUDA_VISIBLE_DEVICES=0 python main.py --logpath DEBUG_G8ND_S_BV3AVN3mlpH_6 --model CMpp_equiassem --backbone vn_unet_deep_v3 --n_avn 3 --mlp_mode half --scale small --multiplicity 1 --epochs 0 --gpus 0 --n_worker 6

@@ -243,7 +243,7 @@ if __name__ == '__main__':
 
 
     # This arguments are used only for CM_equiassem
-    parser.add_argument('--backbone', type=str, default='vn_unet', choices=['vn_unet', 'vn_unet_deep', 'vn_unet_deep_v2', 'vn_dgcnn', 'unet', 'dgcnn'])
+    parser.add_argument('--backbone', type=str, default='vn_unet', choices=['vn_unet', 'vn_unet_deep', 'vn_unet_deep_v2', 'vn_unet_deep_v3', 'vn_dgcnn', 'unet', 'dgcnn'])
     parser.add_argument('--shape_loss', type=str, default='positive', choices=['positive', 'negative'])
     parser.add_argument('--occ_loss', type=str, default='negative', choices=['positive', 'negative'])
     parser.add_argument('--no_ori', action='store_true')
