@@ -232,7 +232,6 @@ class EquiAssem(pl.LightningModule):
                                            nn.Conv1d(self.feat_dim//2, self.feat_dim//2, kernel_size=1, bias=False),
                                            nn.InstanceNorm1d(self.feat_dim//2),
                                            nn.LeakyReLU(negative_slope=0.2),
-                                           nn.Conv1d(self.feat_dim//2, self.feat_dim//2, kernel_size=1, bias=False),
                                            )
         
         
