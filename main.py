@@ -73,7 +73,7 @@ def main(args):
                           n_knn=args.n_knn,
                           only_one_norm=args.only_one_norm,
                           n_avn=args.n_avn,
-                          more_mlps=args.more_mlps,
+                          mlp_mode=args.mlp_mode,
                           move_smaller=args.move_smaller,
                           
                           infer_match_option='topk', # Fix match option value during training
@@ -243,7 +243,7 @@ if __name__ == '__main__':
 
 
     # This arguments are used only for CM_equiassem
-    parser.add_argument('--backbone', type=str, default='vn_unet', choices=['vn_unet', 'vn_dgcnn', 'unet', 'dgcnn'])
+    parser.add_argument('--backbone', type=str, default='vn_unet', choices=['vn_unet', 'vn_unet_deep', 'vn_dgcnn', 'unet', 'dgcnn'])
     parser.add_argument('--shape_loss', type=str, default='positive', choices=['positive', 'negative'])
     parser.add_argument('--occ_loss', type=str, default='negative', choices=['positive', 'negative'])
     parser.add_argument('--no_ori', action='store_true')
@@ -254,7 +254,7 @@ if __name__ == '__main__':
     parser.add_argument('--n_knn', type=int, default=20, help='Number of nearest neighbors for KNN')
     parser.add_argument('--only_one_norm', action='store_true', help='If True, use only one Normalization layer for the equivariant shape feature')
     parser.add_argument('--n_avn', type=int, default=5, help='Number of AVN layers for the equivariant shape feature')
-    parser.add_argument('--more_mlps', action='store_true', help='If True, instantiate more MLP layers for the invariant shape feature')
+    parser.add_argument('--mlp_mode', type=str, default='CMpp', choices=['CMpp', 'half', 'deep'])
     parser.add_argument('--move_smaller', action='store_true', help='If True, always move the smaller point cloud to the origin')
 
     # Weights for losses

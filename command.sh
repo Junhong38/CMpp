@@ -289,3 +289,12 @@ rm -rf checkpoint/G8ND_F_AVN3_mMLP_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 py
 
 
 
+
+
+
+
+rm -rf checkpoint/DEBUG/ && CUDA_VISIBLE_DEVICES=0 python main.py --model CM_equiassem --logpath DEBUG --scale small --multiplicity 1 --epochs 0 --gpus 0 --n_worker 6
+
+
+rm -rf checkpoint/DEBUG/ && CUDA_VISIBLE_DEVICES=0 python main.py --model CMpp_equiassem --backbone vn_unet_deep --logpath DEBUG --scale small --multiplicity 1 --epochs 0 --n_avn 3 --mlp_mode half --gpus 0 --n_worker 6
+

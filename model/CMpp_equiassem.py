@@ -11,7 +11,7 @@ import torch.nn as nn
 import torch.optim as optim
 from einops import rearrange
 
-from model.backbone.vn_dgcnn import EQCNN_equi_unet, EQCNN_equi
+from model.backbone.vn_dgcnn import EQCNN_equi_unet, EQCNN_equi_unet_deep, EQCNN_equi
 from model.backbone.vn_layers import VNLinear, VNLinearLeakyReLU
 from model.loss import CircleLoss, PointMatchingLoss, OrientationLoss
 from model.learnable_sinkhorn import LearnableLogOptimalTransport
@@ -42,7 +42,7 @@ class EquiAssem(pl.LightningModule):
             n_knn=20,
             only_one_norm=False,
             n_avn=5,
-            more_mlps=False,
+            mlp_mode='CMpp',
             move_smaller=False,
             
             # RANSAC arguments
@@ -83,7 +83,7 @@ class EquiAssem(pl.LightningModule):
 
             only_one_norm (bool, optional): Whether to use only one Normalization layer for the equivariant shape feature. Defaults to False.
             n_avn (int, optional): Number of AVN layers for the equivariant shape feature. Defaults to 5.
-            more_mlps (bool, optional): Whether to instantiate more MLP layers for the invariant shape feature. Defaults to False.
+            mlp_mode (str, optional): 'CMpp' or 'half' or 'deep'. Defaults to 'CMpp'.
             move_smaller (bool, optional): Whether to always move the smaller point cloud to the origin. Defaults to False.
 
             # RANSAC arguments
@@ -121,7 +121,7 @@ class EquiAssem(pl.LightningModule):
 
         print(f"only_one_norm: {only_one_norm}")
         print(f"n_avn: {n_avn}")
-        print(f"more_mlps: {more_mlps}")
+        print(f"mlp_mode: {mlp_mode}")
         print(f"move_smaller: {move_smaller}")
 
 
@@ -185,6 +185,8 @@ class EquiAssem(pl.LightningModule):
         # VN BACKBONE
         if backbone == 'vn_unet':
             self.backbone = EQCNN_equi_unet(feat_dim=self.feat_dim, pooling="mean", k=n_knn)
+        elif backbone == 'vn_unet_deep':
+            self.backbone = EQCNN_equi_unet_deep(feat_dim=self.feat_dim, pooling="mean", k=n_knn)
         elif backbone == 'vn_dgcnn':
             self.backbone = EQCNN_equi(feat_dim=self.feat_dim, pooling="mean", k=n_knn)
         else:
@@ -199,7 +201,7 @@ class EquiAssem(pl.LightningModule):
         else:
             self.equi_layer = nn.Identity()
 
-        if more_mlps:
+        if mlp_mode == 'deep':
             self.shape_mlp = nn.Sequential(nn.Conv1d((self.feat_dim//3) * 3, self.feat_dim//2, kernel_size=1, bias=False),
                                            nn.InstanceNorm1d(self.feat_dim//2),
                                            nn.LeakyReLU(negative_slope=0.2),
@@ -219,7 +221,22 @@ class EquiAssem(pl.LightningModule):
                                            nn.InstanceNorm1d(self.feat_dim//2),
                                            nn.LeakyReLU(negative_slope=0.2),
                                            )
-        else:
+        
+        elif mlp_mode == 'half':
+            self.shape_mlp = nn.Sequential(nn.Conv1d((self.feat_dim//3) * 3, self.feat_dim//2, kernel_size=1, bias=False),
+                                           nn.InstanceNorm1d(self.feat_dim//2),
+                                           nn.LeakyReLU(negative_slope=0.2),
+                                           nn.Conv1d(self.feat_dim//2, self.feat_dim//2, kernel_size=1, bias=False),
+                                           nn.InstanceNorm1d(self.feat_dim//2),
+                                           nn.LeakyReLU(negative_slope=0.2),
+                                           nn.Conv1d(self.feat_dim//2, self.feat_dim//2, kernel_size=1, bias=False),
+                                           nn.InstanceNorm1d(self.feat_dim//2),
+                                           nn.LeakyReLU(negative_slope=0.2),
+                                           nn.Conv1d(self.feat_dim//2, self.feat_dim//2, kernel_size=1, bias=False),
+                                           )
+        
+        
+        elif mlp_mode == 'CMpp':
             self.shape_mlp = nn.Sequential(nn.Conv1d((self.feat_dim//3) * 3, self.feat_dim, kernel_size=1, bias=False),
                                            nn.InstanceNorm1d(self.feat_dim),nn.LeakyReLU(negative_slope=0.2),
                                            nn.Conv1d(self.feat_dim, self.feat_dim, kernel_size=1, bias=False),
