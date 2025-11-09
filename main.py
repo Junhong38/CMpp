@@ -71,6 +71,7 @@ def main(args):
                           only_train_normal=args.only_train_normal,
                           flip_normal=args.flip_normal,
                           consitency_loss=args.consitency_loss,
+                          double_bacbone=args.double_bacbone,
 
                           n_knn=args.n_knn,
                           only_one_norm=args.only_one_norm,
@@ -282,6 +283,7 @@ if __name__ == '__main__':
     parser.add_argument('--only_train_normal', action='store_true', help='Only train the normal vector, it will be used for stage 1 training')
     parser.add_argument('--flip_normal', action='store_true', help='If True, flip the normal vector of the point cloud')
     parser.add_argument('--consitency_loss', action='store_true', help='')
+    parser.add_argument('--double_bacbone', action='store_true', help='')
 
 
     # DDP argument

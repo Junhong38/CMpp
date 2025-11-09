@@ -40,6 +40,7 @@ class EquiAssem(pl.LightningModule):
             only_train_normal=False,
             flip_normal=False,
             consitency_loss=False,
+            double_bacbone=False,
 
             n_knn=20,
             only_one_norm=False,
@@ -82,6 +83,7 @@ class EquiAssem(pl.LightningModule):
             only_train_normal (bool, optional): Whether to only train the normal vector, it will be used for stage 1 training. Defaults to False.
             flip_normal (bool, optional): Whether to flip the normal vector. Defaults to False.
             consitency_loss (bool, optional): Whether to use consistency loss. Defaults to False.
+            double_bacbone (bool, optional): Whether to use double backbone. Defaults to False.
 
             n_knn (int, optional): Number of nearest neighbors for KNN. Defaults to 20.
 
@@ -122,6 +124,7 @@ class EquiAssem(pl.LightningModule):
         print(f"only_train_normal: {only_train_normal}")
         print(f"flip_normal: {flip_normal}")
         print(f"consitency_loss: {consitency_loss}")
+        print(f"double_bacbone: {double_bacbone}")
 
         print(f"n_knn: {n_knn}")
 
@@ -192,14 +195,19 @@ class EquiAssem(pl.LightningModule):
         # VN BACKBONE
         if backbone == 'vn_unet':
             self.backbone = EQCNN_equi_unet(feat_dim=self.feat_dim, pooling="mean", k=n_knn)
+            self.ori_backbone = EQCNN_equi_unet(feat_dim=self.feat_dim, pooling="mean", k=n_knn) if double_bacbone else None
         elif backbone == 'vn_unet_deep':
             self.backbone = EQCNN_equi_unet_deep(feat_dim=self.feat_dim, pooling="mean", k=n_knn)
+            self.ori_backbone = EQCNN_equi_unet_deep(feat_dim=self.feat_dim, pooling="mean", k=n_knn) if double_bacbone else None
         elif backbone == 'vn_unet_deep_v2':
             self.backbone = EQCNN_equi_unet_deep_v2(feat_dim=self.feat_dim, pooling="mean", k=n_knn)
+            self.ori_backbone = EQCNN_equi_unet_deep_v2(feat_dim=self.feat_dim, pooling="mean", k=n_knn) if double_bacbone else None
         elif backbone == 'vn_unet_deep_v3':
             self.backbone = EQCNN_equi_unet_deep_v3(feat_dim=self.feat_dim, pooling="mean", k=n_knn)
+            self.ori_backbone = EQCNN_equi_unet_deep_v3(feat_dim=self.feat_dim, pooling="mean", k=n_knn) if double_bacbone else None
         elif backbone == 'vn_unet_deep_v4':
             self.backbone = EQCNN_equi_unet_deep_v4(feat_dim=self.feat_dim, pooling="mean", k=n_knn)
+            self.ori_backbone = EQCNN_equi_unet_deep_v4(feat_dim=self.feat_dim, pooling="mean", k=n_knn) if double_bacbone else None
         elif backbone == 'vn_dgcnn':
             self.backbone = EQCNN_equi(feat_dim=self.feat_dim, pooling="mean", k=n_knn)
         else:
@@ -463,20 +471,23 @@ class EquiAssem(pl.LightningModule):
         # 1. SO(3)-Equivariant Feature Extractor
         src_equi_feats_backbone = self.backbone(src_pcd) # (1, C, 3, N)
         trg_equi_feats_backbone = self.backbone(trg_pcd) # (1, C, 3, M)
-        
-        
+
+
         # 2. Frame Prediction
+        src_equi_feats_ori_backbone = self.ori_backbone(src_pcd) if self.ori_backbone is not None else src_equi_feats_backbone
+        trg_equi_feats_ori_backbone = self.ori_backbone(trg_pcd) if self.ori_backbone is not None else trg_equi_feats_backbone
+
         # 2-1. Merge global information by averaging
         # (1, C, 3, N) -> (1, C, 3, 1) -> (1, C, 3, N)
-        src_equi_feats_backbone_mean = src_equi_feats_backbone.mean(dim=-1, keepdim=True).expand(src_equi_feats_backbone.size())
+        src_equi_feats_backbone_mean = src_equi_feats_ori_backbone.mean(dim=-1, keepdim=True).expand(src_equi_feats_ori_backbone.size())
         # (1, C, 3, M) -> (1, C, 3, 1) -> (1, C, 3, M)
-        trg_equi_feats_backbone_mean = trg_equi_feats_backbone.mean(dim=-1, keepdim=True).expand(trg_equi_feats_backbone.size())
+        trg_equi_feats_backbone_mean = trg_equi_feats_ori_backbone.mean(dim=-1, keepdim=True).expand(trg_equi_feats_ori_backbone.size())
 
         # 2-2. Basis Vector Projection, those vectors will be used as frame basis vectors
         # (1, C, 3, N) concat (1, C, 3, N) ->  (1, 2C, 3, N) -> (1, 2C, 3, N, 1) -> (1, 2, 3, N, 1) -> (1, 2, 3, N) -> (1, N, 2, 3)
-        src_vecs = self.proj(torch.cat((src_equi_feats_backbone, src_equi_feats_backbone_mean), 1).unsqueeze(-1)).squeeze(-1).permute(0, 3, 1, 2) 
+        src_vecs = self.proj(torch.cat((src_equi_feats_ori_backbone, src_equi_feats_backbone_mean), 1).unsqueeze(-1)).squeeze(-1).permute(0, 3, 1, 2) 
         # (1, C, 3, M) concat (1, C, 3, M) ->  (1, 2C, 3, M) -> (1, 2C, 3, M, 1) -> (1, 2, 3, M, 1) -> (1, 2, 3, M) -> (1, M, 2, 3)
-        trg_vecs = self.proj(torch.cat((trg_equi_feats_backbone, trg_equi_feats_backbone_mean), 1).unsqueeze(-1)).squeeze(-1).permute(0, 3, 1, 2) 
+        trg_vecs = self.proj(torch.cat((trg_equi_feats_ori_backbone, trg_equi_feats_backbone_mean), 1).unsqueeze(-1)).squeeze(-1).permute(0, 3, 1, 2) 
 
         
         # 3. Calculate equivariant shape features
