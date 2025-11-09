@@ -69,6 +69,8 @@ def main(args):
                           debug=args.debug,
                           success_criterion_in_degree=args.success_criterion_in_degree,
                           only_train_normal=args.only_train_normal,
+                          flip_normal=args.flip_normal,
+                          consitency_loss=args.consitency_loss,
 
                           n_knn=args.n_knn,
                           only_one_norm=args.only_one_norm,
@@ -243,7 +245,7 @@ if __name__ == '__main__':
 
 
     # This arguments are used only for CM_equiassem
-    parser.add_argument('--backbone', type=str, default='vn_unet', choices=['vn_unet', 'vn_unet_deep', 'vn_unet_deep_v2', 'vn_unet_deep_v3', 'vn_dgcnn', 'unet', 'dgcnn'])
+    parser.add_argument('--backbone', type=str, default='vn_unet', choices=['vn_unet', 'vn_unet_deep', 'vn_unet_deep_v2', 'vn_unet_deep_v3', 'vn_unet_deep_v4', 'vn_dgcnn', 'unet', 'dgcnn'])
     parser.add_argument('--shape_loss', type=str, default='positive', choices=['positive', 'negative'])
     parser.add_argument('--occ_loss', type=str, default='negative', choices=['positive', 'negative'])
     parser.add_argument('--no_ori', action='store_true')
@@ -278,6 +280,8 @@ if __name__ == '__main__':
     parser.add_argument('--debug', action='store_true')
     parser.add_argument('--success_criterion_in_degree', type=int, default=10, help='Success criterion in degree for normal error')
     parser.add_argument('--only_train_normal', action='store_true', help='Only train the normal vector, it will be used for stage 1 training')
+    parser.add_argument('--flip_normal', action='store_true', help='If True, flip the normal vector of the point cloud')
+    parser.add_argument('--consitency_loss', action='store_true', help='')
 
 
     # DDP argument

@@ -11,7 +11,7 @@ import torch.nn as nn
 import torch.optim as optim
 from einops import rearrange
 
-from model.backbone.vn_dgcnn import EQCNN_equi_unet, EQCNN_equi_unet_deep, EQCNN_equi, EQCNN_equi_unet_deep_v2, EQCNN_equi_unet_deep_v3
+from model.backbone.vn_dgcnn import EQCNN_equi_unet, EQCNN_equi_unet_deep, EQCNN_equi, EQCNN_equi_unet_deep_v2, EQCNN_equi_unet_deep_v3, EQCNN_equi_unet_deep_v4
 from model.backbone.vn_layers import VNLinear, VNLinearLeakyReLU
 from model.loss import CircleLoss, PointMatchingLoss, OrientationLoss
 from model.learnable_sinkhorn import LearnableLogOptimalTransport
@@ -38,6 +38,8 @@ class EquiAssem(pl.LightningModule):
             visualize=False, viz_epoch=30, viz_max_arrow_num=0, ckp_dir=None, debug=False,
             success_criterion_in_degree=10,
             only_train_normal=False,
+            flip_normal=False,
+            consitency_loss=False,
 
             n_knn=20,
             only_one_norm=False,
@@ -78,6 +80,8 @@ class EquiAssem(pl.LightningModule):
             debug (bool, optional): Whether to enable debug mode. Defaults to False.
             success_criterion_in_degree (int, optional): Success criterion in degree for normal error. Defaults to 10.
             only_train_normal (bool, optional): Whether to only train the normal vector, it will be used for stage 1 training. Defaults to False.
+            flip_normal (bool, optional): Whether to flip the normal vector. Defaults to False.
+            consitency_loss (bool, optional): Whether to use consistency loss. Defaults to False.
 
             n_knn (int, optional): Number of nearest neighbors for KNN. Defaults to 20.
 
@@ -116,6 +120,8 @@ class EquiAssem(pl.LightningModule):
         print(f"debug: {debug}")
         print(f"success_criterion_in_degree: {success_criterion_in_degree}")
         print(f"only_train_normal: {only_train_normal}")
+        print(f"flip_normal: {flip_normal}")
+        print(f"consitency_loss: {consitency_loss}")
 
         print(f"n_knn: {n_knn}")
 
@@ -143,6 +149,7 @@ class EquiAssem(pl.LightningModule):
         self.debug = debug
         self.success_criterion_in_degree = success_criterion_in_degree
         self.only_train_normal = only_train_normal
+        self.flip_normal = flip_normal
 
         self.move_smaller = move_smaller
 
@@ -159,7 +166,7 @@ class EquiAssem(pl.LightningModule):
         
         # Objectives
         self.circle_loss = CircleLoss(log_scale=log_scale, pos_optimal=pos_margin, neg_optimal=neg_margin, same_opt=same_opt, no_balance=no_balance)
-        self.orientation_loss = OrientationLoss()
+        self.orientation_loss = OrientationLoss(consitency_loss=consitency_loss)
         self.matching_loss = PointMatchingLoss()
         
 
@@ -191,6 +198,8 @@ class EquiAssem(pl.LightningModule):
             self.backbone = EQCNN_equi_unet_deep_v2(feat_dim=self.feat_dim, pooling="mean", k=n_knn)
         elif backbone == 'vn_unet_deep_v3':
             self.backbone = EQCNN_equi_unet_deep_v3(feat_dim=self.feat_dim, pooling="mean", k=n_knn)
+        elif backbone == 'vn_unet_deep_v4':
+            self.backbone = EQCNN_equi_unet_deep_v4(feat_dim=self.feat_dim, pooling="mean", k=n_knn)
         elif backbone == 'vn_dgcnn':
             self.backbone = EQCNN_equi(feat_dim=self.feat_dim, pooling="mean", k=n_knn)
         else:
@@ -487,7 +496,7 @@ class EquiAssem(pl.LightningModule):
 
         if self.only_train_normal:
             # Only train the normal vector
-            loss['o_loss'] = self.orientation_loss(src_ori, trg_ori, in_dict['gt_normals'])
+            loss['o_loss'] = self.orientation_loss(src_ori, trg_ori, gt_corr, in_dict['gt_normals'])
             loss['loss'] = loss['o_loss']
 
             # Compute Normal Error
@@ -501,32 +510,53 @@ class EquiAssem(pl.LightningModule):
 
 
         # 5. Invariant Features
-        src_inv_feats = torch.matmul(src_equi_feats.permute(0, 3, 1, 2).float(), src_ori.transpose(-2,-1).float()) # (1, N, C, 3) x (1, N, 3, 3) -> (1, N, C, 3)
-        trg_inv_feats = torch.matmul(trg_equi_feats.permute(0, 3, 1, 2).float(), trg_ori.transpose(-2,-1).float()) # (1, M, C, 3) x (1, M, 3, 3) -> (1, M, C, 3)
-
-        src_inv_feats = rearrange(src_inv_feats, 'b n c r -> b (c r) n') # (1, N, C, 3) -> (1, C*3, N)
-        trg_inv_feats = rearrange(trg_inv_feats, 'b n c r -> b (c r) n') # (1, M, C, 3) -> (1, C*3, M)
+        src_inv_feats, trg_inv_feats = self.make_inv_feats(src_ori, trg_ori, src_equi_feats, trg_equi_feats, src_flip=True)
+        
+        if self.flip_normal and mode in ['train', 'val']:
+            symmetric_src_inv_feats, symmetric_trg_inv_feats = self.make_inv_feats(src_ori, trg_ori, src_equi_feats, trg_equi_feats, src_flip=False)
         
 
         # 6. SHAPE DESCRIPTOR 
         src_shape_feats = self.shape_mlp(src_inv_feats) # (1, C*3, N) -> (1, D, N)
         trg_shape_feats = self.shape_mlp(trg_inv_feats) # (1, C*3, M) -> (1, D, N)
 
+        if self.flip_normal and mode in ['train', 'val']:
+            symmetric_src_shape_feats = self.shape_mlp(symmetric_src_inv_feats) # (1, C*3, N) -> (1, D, N)
+            symmetric_trg_shape_feats = self.shape_mlp(symmetric_trg_inv_feats) # (1, C*3, M) -> (1, D, N)
+
 
         # 7. Optimal Transport
         shape_matching_scores = self.calculate_matching_score(src_shape_feats, trg_shape_feats, eps=1e-8)
 
+        if self.flip_normal and mode in ['train', 'val']:
+            symmetric_matching_scores = self.calculate_matching_score(symmetric_src_shape_feats, symmetric_trg_shape_feats, eps=1e-8)
+
 
         # 8. Calculate Matching Scores
         matching_scores = self.optimal_transport(shape_matching_scores) # Optimal Transport is in log space, so inside registration, there is exp operation
-        matching_scores_drop = matching_scores[:,:-1,:-1]   
+        matching_scores_drop = matching_scores[:,:-1,:-1]
+
+        if self.flip_normal and mode in ['train', 'val']:
+            symmetric_matching_scores = self.optimal_transport(symmetric_matching_scores)
 
 
         if mode in ['train', 'val']: # Do not calculate for test
             # 8. Calculate Loss
-            loss['s_loss'], pos_neg_distribution = self.circle_loss(src_pcd_raw, trg_pcd_raw, src_shape_feats.transpose(-2,-1), trg_shape_feats.transpose(-2,-1), gt_corr)
-            loss['p_loss'] = self.matching_loss(matching_scores, src_pcd_raw, trg_pcd_raw).float()
-            loss['o_loss'] = self.orientation_loss(src_ori, trg_ori, in_dict['gt_normals'])
+            if self.flip_normal:
+                src_move_circle_loss, pos_neg_distribution = self.circle_loss(src_pcd_raw, trg_pcd_raw, src_shape_feats.transpose(-2,-1), trg_shape_feats.transpose(-2,-1), gt_corr)
+                trg_move_circle_loss, _ = self.circle_loss(src_pcd_raw, trg_pcd_raw, symmetric_src_shape_feats.transpose(-2,-1), symmetric_trg_shape_feats.transpose(-2,-1), gt_corr)
+
+                src_move_matching_scores = self.matching_loss(matching_scores, src_pcd_raw, trg_pcd_raw).float()
+                trg_move_matching_scores = self.matching_loss(symmetric_matching_scores, src_pcd_raw, trg_pcd_raw).float()
+
+                loss['s_loss'] = (src_move_circle_loss + trg_move_circle_loss) / 2
+                loss['p_loss'] = (src_move_matching_scores + trg_move_matching_scores) / 2
+            
+            else:
+                loss['s_loss'], pos_neg_distribution = self.circle_loss(src_pcd_raw, trg_pcd_raw, src_shape_feats.transpose(-2,-1), trg_shape_feats.transpose(-2,-1), gt_corr)
+                loss['p_loss'] = self.matching_loss(matching_scores, src_pcd_raw, trg_pcd_raw).float()
+            
+            loss['o_loss'] = self.orientation_loss(src_ori, trg_ori, gt_corr, in_dict['gt_normals'])
             loss['loss'] = self.o_loss_weight * loss['o_loss'] + self.s_loss_weight * loss['s_loss'] + self.p_loss_weight * loss['p_loss']
             out_dict.update(loss)
 
@@ -616,6 +646,40 @@ class EquiAssem(pl.LightningModule):
         self.log(f'{mode}/loss', training_loss, prog_bar=True, logger=True, sync_dist=True, rank_zero_only=True, on_step=True, on_epoch=True, batch_size=1)
         self.log('current_lr', current_lr, prog_bar=True, logger=True, sync_dist=True, rank_zero_only=True, on_step=True, on_epoch=False, batch_size=1)
 
+    
+    def make_inv_feats(self, src_ori, trg_ori, src_equi_feats, trg_equi_feats, src_flip=True):
+        """Make invariant features
+
+        Args:
+            src_ori (torch.Tensor): (1, N, 3, 3)
+            trg_ori (torch.Tensor): (1, M, 3, 3)
+            src_equi_feats (torch.Tensor): (1, C, 3, N)
+            trg_equi_feats (torch.Tensor): (1, C, 3, M)
+            src_flip (bool, optional): Whether to flip the normal vector of src. Defaults to True.
+
+        Returns:
+            src_inv_feats (torch.Tensor): (1, C*3, N)
+            trg_inv_feats (torch.Tensor): (1, C*3, M)
+        """
+        # 5. Invariant Features
+
+        if src_flip:
+            result_src_ori = torch.stack([- src_ori[:, :, 0, :], src_ori[:, :, 2, :], src_ori[:, :, 1, :]], dim=-2) if self.flip_normal else src_ori
+            result_trg_ori = trg_ori
+        
+        else:
+            result_src_ori = src_ori
+            result_trg_ori = torch.stack([- trg_ori[:, :, 0, :], trg_ori[:, :, 2, :], trg_ori[:, :, 1, :]], dim=-2) if self.flip_normal else trg_ori
+
+        src_inv_feats = torch.matmul(src_equi_feats.permute(0, 3, 1, 2).float(), result_src_ori.transpose(-2,-1).float()) # (1, N, C, 3) x (1, N, 3, 3) -> (1, N, C, 3)
+        trg_inv_feats = torch.matmul(trg_equi_feats.permute(0, 3, 1, 2).float(), result_trg_ori.transpose(-2,-1).float()) # (1, M, C, 3) x (1, M, 3, 3) -> (1, M, C, 3)
+        
+        src_inv_feats = rearrange(src_inv_feats, 'b n c r -> b (c r) n') # (1, N, C, 3) -> (1, C*3, N)
+        trg_inv_feats = rearrange(trg_inv_feats, 'b n c r -> b (c r) n') # (1, M, C, 3) -> (1, C*3, M)
+
+        return src_inv_feats, trg_inv_feats
+    
+    
     
     def calculate_matching_score(self, src_feats, trg_feats, eps=1e-8):
         """
