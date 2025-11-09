@@ -238,8 +238,8 @@ class EquiAssem(pl.LightningModule):
                                            nn.Conv1d(self.feat_dim//2, self.feat_dim//2, kernel_size=1, bias=False),
                                            nn.InstanceNorm1d(self.feat_dim//2),
                                            nn.LeakyReLU(negative_slope=0.2),
-                                           nn.Conv1d(self.feat_dim//2, self.feat_dim//2, kernel_size=1, bias=False),
-                                           nn.InstanceNorm1d(self.feat_dim//2),
+                                           nn.Conv1d(self.feat_dim//2, self.feat_dim, kernel_size=1, bias=False),
+                                           nn.InstanceNorm1d(self.feat_dim),
                                            nn.LeakyReLU(negative_slope=0.2),
                                            )
         
@@ -258,8 +258,21 @@ class EquiAssem(pl.LightningModule):
         
         elif mlp_mode == 'CMpp':
             self.shape_mlp = nn.Sequential(nn.Conv1d((self.feat_dim//3) * 3, self.feat_dim, kernel_size=1, bias=False),
-                                           nn.InstanceNorm1d(self.feat_dim),nn.LeakyReLU(negative_slope=0.2),
+                                           nn.InstanceNorm1d(self.feat_dim),
+                                           nn.LeakyReLU(negative_slope=0.2),
                                            nn.Conv1d(self.feat_dim, self.feat_dim, kernel_size=1, bias=False),
+                                           nn.InstanceNorm1d(self.feat_dim),
+                                           nn.LeakyReLU(negative_slope=0.2),
+                                           nn.Conv1d(self.feat_dim, self.feat_dim, kernel_size=1, bias=False),
+                                           nn.InstanceNorm1d(self.feat_dim),
+                                           nn.LeakyReLU(negative_slope=0.2),
+                                           )
+        
+        elif mlp_mode == 'CMpp_half':
+            self.shape_mlp = nn.Sequential(nn.Conv1d((self.feat_dim//3) * 3, self.feat_dim//2, kernel_size=1, bias=False),
+                                           nn.InstanceNorm1d(self.feat_dim//2),
+                                           nn.LeakyReLU(negative_slope=0.2),
+                                           nn.Conv1d(self.feat_dim//2, self.feat_dim, kernel_size=1, bias=False),
                                            nn.InstanceNorm1d(self.feat_dim),
                                            nn.LeakyReLU(negative_slope=0.2),
                                            nn.Conv1d(self.feat_dim, self.feat_dim, kernel_size=1, bias=False),

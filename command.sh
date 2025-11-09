@@ -330,3 +330,13 @@ rm -rf checkpoint/G8ND_F_BV4AVN0MLPH_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 
 
 rm -rf checkpoint/G8ND_S_V0DOUBLEMLPH_6/ && CUDA_VISIBLE_DEVICES=0 python main.py --logpath G8ND_S_V0DOUBLEMLPH_6 --model CMpp_equiassem --double_bacbone --n_avn 0 --mlp_mode half --scale small --multiplicity 1 --epochs 0 --gpus 0 --n_worker 6
 rm -rf checkpoint/DEBUG_G8ND_S_V0DOUBLEMLPH_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --logpath DEBUG_G8ND_S_V0DOUBLEMLPH_6 --model CMpp_equiassem --double_bacbone --n_avn 0 --mlp_mode half --scale small --multiplicity 1 --epochs 0 --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --wandb --wandb_project CMpp
+
+
+
+rm -rf checkpoint/DEBUG_G8ND_S_V0DOUBLEMLPDEEP_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --logpath DEBUG_G8ND_S_V0DOUBLEMLPDEEP_6 --model CMpp_equiassem --double_bacbone --n_avn 0 --mlp_mode deep --scale small --multiplicity 1 --epochs 0 --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --wandb --wandb_project CMpp
+rm -rf checkpoint/DEBUG_G8ND_S_V0DOUBLEMLPDEEP_6/ && CUDA_VISIBLE_DEVICES=0 python main.py --logpath DEBUG_G8ND_S_V0DOUBLEMLPDEEP_6 --model CMpp_equiassem --double_bacbone --n_avn 0 --mlp_mode deep --scale small --multiplicity 1 --epochs 0 --gpus 0 --n_worker 6
+
+rm -rf checkpoint/DEBUG_G8ND_S_V0DOUBLEMLPCMH_6/ && CUDA_VISIBLE_DEVICES=0 python main.py --logpath DEBUG_G8ND_S_V0DOUBLEMLPCMH_6 --model CMpp_equiassem --double_bacbone --n_avn 0 --mlp_mode CMpp_half --scale small --multiplicity 1 --epochs 0 --gpus 0 --n_worker 6
+rm -rf checkpoint/DEBUG_G8ND_S_V0DOUBLEMLPCMH_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --logpath DEBUG_G8ND_S_V0DOUBLEMLPCMH_6 --model CMpp_equiassem --double_bacbone --n_avn 0 --mlp_mode CMpp_half --scale small --multiplicity 1 --epochs 0 --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --wandb --wandb_project CMpp
+
+
