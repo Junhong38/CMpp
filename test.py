@@ -73,7 +73,7 @@ def test(args):
                           n_knn=args.n_knn,
                           only_one_norm=args.only_one_norm,
                           n_avn=args.n_avn,
-                          more_mlps=args.more_mlps,
+                          mlp_mode=args.mlp_mode,
                           move_smaller=args.move_smaller,
                           
                           infer_match_option=args.infer_match_option,
@@ -139,7 +139,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Equivariant Assembly Pytorch Implementation')
 
     # Dataset arguments
-    parser.add_argument('--datapath', type=str, default='../../../../../hdd/junhong/temp_data/breaking_bad/volume_constrained') 
+    parser.add_argument('--datapath', type=str, default='/home/kimsangki/breaking_bad/volume_constrained') 
     #'../../../../hdd/junhong/data/bbad_v2' and /mnt/nvme2n1p1/kimsangki_datasets/breaking_bad/volume_constrained , /home/kimsangki/breaking_bad/volume_constrained
     parser.add_argument('--data_category', type=str, default='everyday', choices=['everyday', 'artifact', 'synthetic'])
     parser.add_argument('--sub_category', type=str, default='all')
@@ -174,7 +174,7 @@ if __name__ == '__main__':
     parser.add_argument('--n_knn', type=int, default=20, help='Number of nearest neighbors for KNN')
     parser.add_argument('--only_one_norm', action='store_true', help='If True, use only one Normalization layer for the equivariant shape feature')
     parser.add_argument('--n_avn', type=int, default=5, help='Number of AVN layers for the equivariant shape feature')
-    parser.add_argument('--more_mlps', action='store_true', help='If True, instantiate more MLP layers for the invariant shape feature')
+    parser.add_argument('--mlp_mode', type=str, default='CMpp', choices=['CMpp', 'CMpp_half', 'half', 'deep'])
     parser.add_argument('--move_smaller', action='store_true', help='If True, always move the smaller point cloud to the origin')
 
 

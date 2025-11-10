@@ -201,6 +201,20 @@ def main(args):
         ckp_path = None
         model.load_state_dict(ckp['state_dict'])
     
+    elif args.load_ori != '': # Load orientation backbone network
+        ckp = torch.load(args.load_ori, map_location='cpu')
+        print(f"Loading orientation backbone network from {ckp.keys()}")
+        ckp_path = None
+        
+        loaded_weights = {}
+        for key in ckp['state_dict'].keys():
+            if key.startswith('ori_backbone.') or key.startswith('proj.'):
+                loaded_weights[key] = ckp['state_dict'][key]
+        
+        load_result = model.load_state_dict(loaded_weights, strict=False)
+        print(f"Missing keys: {load_result[0]}")
+        print(f"Unexpected keys: {load_result[1]}")
+    
     elif args.resume != '': # Resume training from the checkpoint
         ckp_path = args.resume
     
@@ -235,6 +249,7 @@ if __name__ == '__main__':
     parser.add_argument('--epochs', type=int, default=0, help='Number of epochs. If 0, it is automatically set to 200 for everyday dataset and 300 for other datasets.')
     parser.add_argument('--n_worker', type=int, default=4, help='Number of workers. If you use multi-GPU training, the number of workers is multiplied by the number of GPUs.')
     parser.add_argument('--load', type=str, default='', help='Load checkpoint for training')
+    parser.add_argument('--load_ori', type=str, default='', help='Only load the orientation backbone network, this is only allowed when double_backbone, and stage 2')
     parser.add_argument('--resume', type=str, default='', help='Resume training from the checkpoint')
     parser.add_argument('--scheduler_mode', type=str, default='cos', choices=['none', 'cos', 'onecycle'])
     parser.add_argument('--gradient_clip_val', type=float, default=0.0, help='Gradient clip value')
@@ -331,6 +346,10 @@ if __name__ == '__main__':
 
 
     assert not ((args.load != '') and (args.resume != '')), "Load and resume cannot be used together"
+    assert not ((args.load_ori != '') and (args.load != '')), "load_ori and load cannot be used together"
+    
+    if args.load_ori != '':
+        assert args.double_bacbone != 'none', "load_ori is only allowed when double_bacbone is not none"
 
 
     main(args)
