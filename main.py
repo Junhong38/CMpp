@@ -69,28 +69,11 @@ def main(args):
                           debug=args.debug,
                           success_criterion_in_degree=args.success_criterion_in_degree,
                           only_train_normal=args.only_train_normal,
-<<<<<<< HEAD
                           flip_normal=args.flip_normal,
                           consitency_loss=args.consitency_loss,
                           double_bacbone=args.double_bacbone,
-=======
-                          freeze_normal_param=args.freeze_normal_param,
-                          double_backbone=args.double_backbone,
-                          symmetric_flip=args.symmetric_flip,
-                          
->>>>>>> 1836b78501eb79bb184bed4c409436513a906300
 
                           n_knn=args.n_knn,
-<<<<<<< HEAD
-=======
-                          new_orientation_module=args.new_orientation_module,
-                          delete_occupancy_loss=args.delete_occupancy_loss,
-                          use_opt_gram=args.use_opt_gram,
-
-                          additional_VNLLReLU_for_frame=args.additional_VNLLReLU_for_frame,
-                          n_afl=args.n_afl,
-                          
->>>>>>> 1836b78501eb79bb184bed4c409436513a906300
                           only_one_norm=args.only_one_norm,
                           n_avn=args.n_avn,
                           mlp_mode=args.mlp_mode,
