@@ -50,6 +50,7 @@ def main(args):
         model = EquiAssem(lr=args.lr,
                           scheduler_mode=args.scheduler_mode,
                           backbone=args.backbone,
+                          double_bacbone=args.double_bacbone,
 
                           # Circle loss arguments
                           pos_margin=args.pos_margin,
@@ -71,7 +72,6 @@ def main(args):
                           only_train_normal=args.only_train_normal,
                           flip_normal=args.flip_normal,
                           consitency_loss=args.consitency_loss,
-                          double_bacbone=args.double_bacbone,
 
                           n_knn=args.n_knn,
                           only_one_norm=args.only_one_norm,
@@ -217,7 +217,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Equivariant Assembly Pytorch Implementation')
 
     # Dataset arguments
-    parser.add_argument('--datapath', type=str, default='../../../../../hdd/junhong/temp_data/breaking_bad/volume_constrained') 
+    parser.add_argument('--datapath', type=str, default='/home/kimsangki/breaking_bad/volume_constrained/') 
     #'../../../../hdd/junhong/data/bbad_v2' and /mnt/nvme2n1p1/kimsangki_datasets/breaking_bad/volume_constrained , /home/kimsangki/breaking_bad/volume_constrained 
     # ../data/temp_breaking_bad/breaking_bad/volume_constrained , ../../../../../hdd/junhong/temp_data/breaking_bad/volume_constrained
     parser.add_argument('--data_category', type=str, default='everyday', choices=['everyday', 'artifact', 'synthetic'])
@@ -247,6 +247,7 @@ if __name__ == '__main__':
 
     # This arguments are used only for CM_equiassem
     parser.add_argument('--backbone', type=str, default='vn_unet', choices=['vn_unet', 'vn_unet_deep', 'vn_unet_deep_v2', 'vn_unet_deep_v3', 'vn_unet_deep_v4', 'vn_dgcnn', 'unet', 'dgcnn'])
+    parser.add_argument('--double_bacbone', type=str, default='none', choices=['none', 'vn_unet', 'vn_unet_deep', 'vn_unet_deep_v2', 'vn_unet_deep_v3', 'vn_unet_deep_v4', 'vn_dgcnn', 'unet', 'dgcnn'])
     parser.add_argument('--shape_loss', type=str, default='positive', choices=['positive', 'negative'])
     parser.add_argument('--occ_loss', type=str, default='negative', choices=['positive', 'negative'])
     parser.add_argument('--no_ori', action='store_true')
@@ -283,7 +284,6 @@ if __name__ == '__main__':
     parser.add_argument('--only_train_normal', action='store_true', help='Only train the normal vector, it will be used for stage 1 training')
     parser.add_argument('--flip_normal', action='store_true', help='If True, flip the normal vector of the point cloud')
     parser.add_argument('--consitency_loss', action='store_true', help='')
-    parser.add_argument('--double_bacbone', action='store_true', help='')
 
 
     # DDP argument

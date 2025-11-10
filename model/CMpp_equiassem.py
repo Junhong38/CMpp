@@ -32,7 +32,7 @@ class EquiAssem(pl.LightningModule):
             self, 
             lr, 
             scheduler_mode='cos',
-            backbone='vn_unet', 
+            backbone='vn_unet', double_bacbone='none',
             pos_margin=0.1, neg_margin=1.4, log_scale=24, same_opt=False, no_balance=False,
             s_loss_weight=1.0, p_loss_weight=1.0, o_loss_weight=1.0,
             visualize=False, viz_epoch=30, viz_max_arrow_num=0, ckp_dir=None, debug=False,
@@ -40,8 +40,7 @@ class EquiAssem(pl.LightningModule):
             only_train_normal=False,
             flip_normal=False,
             consitency_loss=False,
-            double_bacbone=False,
-
+            
             n_knn=20,
             only_one_norm=False,
             n_avn=5,
@@ -62,6 +61,7 @@ class EquiAssem(pl.LightningModule):
             lr (float): Learning rate for optimizer.
             scheduler_mode (str, optional): Scheduler type ('cos', 'onecycle', 'none). Defaults to 'cos'.
             backbone (str, optional): Backbone network architecture. Defaults to 'vn_unet'.
+            double_bacbone (str, optional): 'none' or 'vn_unet' or 'vn_unet_deep' or 'vn_unet_deep_v2' or 'vn_unet_deep_v3' or 'vn_unet_deep_v4' or 'vn_dgcnn' or 'unet' or 'dgcnn'. Defaults to 'none'.
             
             # Circle loss arguments
             pos_margin (float, optional): Margin for positive samples in loss computation. Defaults to 0.1.
@@ -83,10 +83,8 @@ class EquiAssem(pl.LightningModule):
             only_train_normal (bool, optional): Whether to only train the normal vector, it will be used for stage 1 training. Defaults to False.
             flip_normal (bool, optional): Whether to flip the normal vector. Defaults to False.
             consitency_loss (bool, optional): Whether to use consistency loss. Defaults to False.
-            double_bacbone (bool, optional): Whether to use double backbone. Defaults to False.
 
             n_knn (int, optional): Number of nearest neighbors for KNN. Defaults to 20.
-
             only_one_norm (bool, optional): Whether to use only one Normalization layer for the equivariant shape feature. Defaults to False.
             n_avn (int, optional): Number of AVN layers for the equivariant shape feature. Defaults to 5.
             mlp_mode (str, optional): 'CMpp' or 'half' or 'deep'. Defaults to 'CMpp'.
@@ -108,6 +106,7 @@ class EquiAssem(pl.LightningModule):
         print(f"lr: {lr}")
         print(f"scheduler_mode: {scheduler_mode}")
         print(f"backbone: {backbone}")
+        print(f"double_bacbone: {double_bacbone}")
         
         # Circle loss parameters will be printed in CircleLoss initialization
 
@@ -124,15 +123,12 @@ class EquiAssem(pl.LightningModule):
         print(f"only_train_normal: {only_train_normal}")
         print(f"flip_normal: {flip_normal}")
         print(f"consitency_loss: {consitency_loss}")
-        print(f"double_bacbone: {double_bacbone}")
 
         print(f"n_knn: {n_knn}")
-
         print(f"only_one_norm: {only_one_norm}")
         print(f"n_avn: {n_avn}")
         print(f"mlp_mode: {mlp_mode}")
         print(f"move_smaller: {move_smaller}")
-
 
         # RANSAC arguments
         print(f"infer_match_option: {infer_match_option}")
@@ -195,23 +191,33 @@ class EquiAssem(pl.LightningModule):
         # VN BACKBONE
         if backbone == 'vn_unet':
             self.backbone = EQCNN_equi_unet(feat_dim=self.feat_dim, pooling="mean", k=n_knn)
-            self.ori_backbone = EQCNN_equi_unet(feat_dim=self.feat_dim, pooling="mean", k=n_knn) if double_bacbone else None
         elif backbone == 'vn_unet_deep':
             self.backbone = EQCNN_equi_unet_deep(feat_dim=self.feat_dim, pooling="mean", k=n_knn)
-            self.ori_backbone = EQCNN_equi_unet_deep(feat_dim=self.feat_dim, pooling="mean", k=n_knn) if double_bacbone else None
         elif backbone == 'vn_unet_deep_v2':
             self.backbone = EQCNN_equi_unet_deep_v2(feat_dim=self.feat_dim, pooling="mean", k=n_knn)
-            self.ori_backbone = EQCNN_equi_unet_deep_v2(feat_dim=self.feat_dim, pooling="mean", k=n_knn) if double_bacbone else None
         elif backbone == 'vn_unet_deep_v3':
             self.backbone = EQCNN_equi_unet_deep_v3(feat_dim=self.feat_dim, pooling="mean", k=n_knn)
-            self.ori_backbone = EQCNN_equi_unet_deep_v3(feat_dim=self.feat_dim, pooling="mean", k=n_knn) if double_bacbone else None
         elif backbone == 'vn_unet_deep_v4':
             self.backbone = EQCNN_equi_unet_deep_v4(feat_dim=self.feat_dim, pooling="mean", k=n_knn)
-            self.ori_backbone = EQCNN_equi_unet_deep_v4(feat_dim=self.feat_dim, pooling="mean", k=n_knn) if double_bacbone else None
         elif backbone == 'vn_dgcnn':
             self.backbone = EQCNN_equi(feat_dim=self.feat_dim, pooling="mean", k=n_knn)
-            if self.double_backbone:
-                self.frame_backbone = EQCNN_equi(feat_dim=self.feat_dim, pooling="mean", k=n_knn)
+        else:
+            raise NotImplementedError("DGCNN backbone not implemented")
+        
+        if double_bacbone == 'vn_unet':
+            self.ori_backbone = EQCNN_equi_unet(feat_dim=self.feat_dim, pooling="mean", k=n_knn)
+        elif double_bacbone == 'vn_unet_deep':
+            self.ori_backbone = EQCNN_equi_unet_deep(feat_dim=self.feat_dim, pooling="mean", k=n_knn)
+        elif double_bacbone == 'vn_unet_deep_v2':
+            self.ori_backbone = EQCNN_equi_unet_deep_v2(feat_dim=self.feat_dim, pooling="mean", k=n_knn)
+        elif double_bacbone == 'vn_unet_deep_v3':
+            self.ori_backbone = EQCNN_equi_unet_deep_v3(feat_dim=self.feat_dim, pooling="mean", k=n_knn)
+        elif double_bacbone == 'vn_unet_deep_v4':
+            self.ori_backbone = EQCNN_equi_unet_deep_v4(feat_dim=self.feat_dim, pooling="mean", k=n_knn)
+        elif double_bacbone == 'vn_dgcnn':
+            self.ori_backbone = EQCNN_equi(feat_dim=self.feat_dim, pooling="mean", k=n_knn)
+        elif double_bacbone == 'none':
+            self.ori_backbone = None
         else:
             raise NotImplementedError("DGCNN backbone not implemented")
 
@@ -486,14 +492,6 @@ class EquiAssem(pl.LightningModule):
         # 1. SO(3)-Equivariant Feature Extractor
         src_equi_feats_backbone = self.backbone(src_pcd) # (1, C, 3, N)
         trg_equi_feats_backbone = self.backbone(trg_pcd) # (1, C, 3, M)
-
-        if self.double_backbone:
-            src_equi_feats_frame_backbone = self.frame_backbone(src_pcd) # (1, C, 3, N)
-            trg_equi_feats_frame_backbone = self.frame_backbone(trg_pcd) # (1, C, 3, M)
-        
-        else: 
-            src_equi_feats_frame_backbone = self.frame_layer(src_equi_feats_backbone.unsqueeze(-1)).squeeze(-1)
-            trg_equi_feats_frame_backbone = self.frame_layer(trg_equi_feats_backbone.unsqueeze(-1)).squeeze(-1)
 
         # 2. Frame Prediction
         src_equi_feats_ori_backbone = self.ori_backbone(src_pcd) if self.ori_backbone is not None else src_equi_feats_backbone

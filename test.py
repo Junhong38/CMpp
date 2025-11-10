@@ -47,6 +47,7 @@ def test(args):
         model = EquiAssem(lr=0, # We don't need to use learning rate for testing
                           scheduler_mode=None,
                           backbone=args.backbone,
+                          double_bacbone=args.double_bacbone,
 
                           # Circle loss arguments
                           pos_margin=0, # We don't need to use this parameter for testing  
@@ -162,6 +163,7 @@ if __name__ == '__main__':
 
     # This arguments are used only for CM_equiassem
     parser.add_argument('--backbone', type=str, default='vn_unet', choices=['vn_unet', 'vn_unet_deep', 'vn_unet_deep_v2', 'vn_unet_deep_v3', 'vn_unet_deep_v4', 'vn_dgcnn', 'unet', 'dgcnn'])
+    parser.add_argument('--double_bacbone', type=str, default='none', choices=['none', 'vn_unet', 'vn_unet_deep', 'vn_unet_deep_v2', 'vn_unet_deep_v3', 'vn_unet_deep_v4', 'vn_dgcnn', 'unet', 'dgcnn'])
     parser.add_argument('--shape_loss', type=str, default='positive', choices=['positive', 'negative'])
     parser.add_argument('--occ_loss', type=str, default='negative', choices=['positive', 'negative'])
     parser.add_argument('--no_ori', action='store_true')
