@@ -210,6 +210,8 @@ class EquiAssem(pl.LightningModule):
             self.ori_backbone = EQCNN_equi_unet_deep_v4(feat_dim=self.feat_dim, pooling="mean", k=n_knn) if double_bacbone else None
         elif backbone == 'vn_dgcnn':
             self.backbone = EQCNN_equi(feat_dim=self.feat_dim, pooling="mean", k=n_knn)
+            if self.double_backbone:
+                self.frame_backbone = EQCNN_equi(feat_dim=self.feat_dim, pooling="mean", k=n_knn)
         else:
             raise NotImplementedError("DGCNN backbone not implemented")
 
@@ -485,6 +487,13 @@ class EquiAssem(pl.LightningModule):
         src_equi_feats_backbone = self.backbone(src_pcd) # (1, C, 3, N)
         trg_equi_feats_backbone = self.backbone(trg_pcd) # (1, C, 3, M)
 
+        if self.double_backbone:
+            src_equi_feats_frame_backbone = self.frame_backbone(src_pcd) # (1, C, 3, N)
+            trg_equi_feats_frame_backbone = self.frame_backbone(trg_pcd) # (1, C, 3, M)
+        
+        else: 
+            src_equi_feats_frame_backbone = self.frame_layer(src_equi_feats_backbone.unsqueeze(-1)).squeeze(-1)
+            trg_equi_feats_frame_backbone = self.frame_layer(trg_equi_feats_backbone.unsqueeze(-1)).squeeze(-1)
 
         # 2. Frame Prediction
         src_equi_feats_ori_backbone = self.ori_backbone(src_pcd) if self.ori_backbone is not None else src_equi_feats_backbone
