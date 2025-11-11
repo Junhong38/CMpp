@@ -5,7 +5,7 @@ import torch.nn.functional as F
 
 class CircleLoss(nn.Module):
 
-    def __init__(self, log_scale=24, pos_optimal=0.1, neg_optimal=1.4, same_opt=False, no_balance=False):
+    def __init__(self, log_scale=24, pos_optimal=0.1, neg_optimal=1.4, same_opt=False, no_balance=False, hard_negative=0.0):
 
 
         super(CircleLoss,self).__init__()
@@ -13,6 +13,7 @@ class CircleLoss(nn.Module):
         self.pos_optimal = pos_optimal
         self.neg_optimal = neg_optimal
         self.no_balance = no_balance
+        self.hard_negative = hard_negative
 
 
         if same_opt:
@@ -29,14 +30,63 @@ class CircleLoss(nn.Module):
         print("------------------------------------------------------")
         print("INITIALIZING CircleLoss")
         print("------------------------------------------------------")
-        print(f"log_scale: {log_scale}")
-        print(f"pos_optimal: {pos_optimal}, pos_margin: {self.pos_margin}")
-        print(f"neg_optimal: {neg_optimal}, neg_margin: {self.neg_margin}")
-        print(f"same_opt: {same_opt}, no_balance: {no_balance}")
+        print(f"log_scale: {self.log_scale}")
+        print(f"pos_optimal: {self.pos_optimal}, pos_margin: {self.pos_margin}")
+        print(f"neg_optimal: {self.neg_optimal}, neg_margin: {self.neg_margin}")
+        print(f"same_opt: {same_opt}, no_balance: {self.no_balance}")
+        print(f"hard_negative: {self.hard_negative}")
         print("------------------------------------------------------")
 
+
+    def negative_sampling(self, matching_scores, pos_mask, neg_mask):
+        """
+        Args:
+            matching_scores (torch.Tensor): (1, N, M)
+            pos_mask (torch.Tensor): (N, M)
+            neg_mask (torch.Tensor): (N, M)
+        """
+
+        if self.hard_negative: # Hard negative sampling
+            smallest_pos_score = matching_scores[0][pos_mask].min()
+            bigger_than_smallest_pos_score = matching_scores[0] >= smallest_pos_score
+
+            # We want to divide pos and neg completely.
+            # So, if neg sample has bigger score than smallest pos sample, it is a hard negative.
+            hard_neg_mask = torch.logical_and(neg_mask, bigger_than_smallest_pos_score)
+
+        else:
+            hard_neg_mask = torch.zeros_like(neg_mask, dtype=torch.bool)
+        
+
+        if not self.no_balance:
+            num_of_pos = pos_mask.sum()
+            num_of_hard_negs = hard_neg_mask.sum()
+
+            if num_of_hard_negs < num_of_pos // 2: 
+                # If hard negatives are less than half of positive samples, we should sample more negative samples.
+                num_of_sampled_negs = num_of_pos - num_of_hard_negs
+                num_of_sampled_hards = num_of_hard_negs
+            else:
+                # If hard negatives are greater than half of positive samples, we should sample equal ratio from negative and hard negative samples.
+                num_of_sampled_negs = num_of_pos - num_of_pos // 2
+                num_of_sampled_hards = num_of_pos // 2
+
+            # Sample the hard negatives
+            hard_neg_indices = hard_neg_mask.nonzero(as_tuple=False)
+            hard_neg_nonsampled = hard_neg_indices[torch.randperm(hard_neg_indices.size(0))[num_of_sampled_hards:]]
+            hard_neg_mask[hard_neg_nonsampled[:,0], hard_neg_nonsampled[:,1]] = False
+
+            # Sample the neg_mask to match proportions, and do not overlap with hard negatives
+            neg_indices = torch.logical_and(neg_mask, ~hard_neg_mask).nonzero(as_tuple=False)
+            neg_nonsampled = neg_indices[torch.randperm(neg_indices.size(0))[num_of_sampled_negs:]]
+            neg_mask[neg_nonsampled[:,0], neg_nonsampled[:,1]] = False
+
+
+        neg_mask = torch.logical_or(neg_mask, hard_neg_mask) 
+        return neg_mask, hard_neg_mask.sum()
     
-    def get_circle_loss(self, coords_dist, feats_dist):
+    
+    def get_circle_loss(self, coords_dist, feats_dist, matching_scores):
         """
         Modified from: https://github.com/XuyangBai/D3Feat.pytorch
         Trivially modified from GeoTransformer Implementation
@@ -44,6 +94,7 @@ class CircleLoss(nn.Module):
         Args:
             coords_dist (torch.Tensor): (N, M)
             feats_dist (torch.Tensor): (N, M)
+            matching_scores (torch.Tensor): (1, N, M)
 
         Returns:
             torch.Tensor: (1, ), circle loss
@@ -70,14 +121,10 @@ class CircleLoss(nn.Module):
                 'neg_min': neg_dists.min().item() if does_neg_mask_exist else 0,
                 'neg_max': neg_dists.max().item() if does_neg_mask_exist else 0,
             }
+        
+        neg_mask, pos_neg_distribution['num_of_hard_neg'] = self.negative_sampling(matching_scores, pos_mask, neg_mask)
             
-        if not self.no_balance:
-            # sample the neg_mask to match proportions
-            neg_indices = neg_mask.nonzero(as_tuple=False)
-            neg_nonsampled = neg_indices[torch.randperm(neg_indices.size(0))[pos_mask.sum():]]
-            neg_mask[neg_nonsampled[:,0], neg_nonsampled[:,1]] = False
-
-
+        
         # get anchors that have both positive and negative pairs
         row_sel = ((pos_mask.sum(-1)>0) * (neg_mask.sum(-1)>0)).detach() # (N,M) -> (N, )
         col_sel = ((pos_mask.sum(-2)>0) * (neg_mask.sum(-2)>0)).detach() # (N,M) -> (M, )
@@ -117,7 +164,7 @@ class CircleLoss(nn.Module):
         return circle_loss, pos_neg_distribution
 
 
-    def forward(self, src_pcd, tgt_pcd, src_feats, tgt_feats, correspondence):
+    def forward(self, src_pcd, tgt_pcd, src_feats, tgt_feats, correspondence, matching_scores):
         """
         Args:
             src_pcd (torch.Tensor): (N, 3)
@@ -125,6 +172,7 @@ class CircleLoss(nn.Module):
             src_feats (torch.Tensor): (1, N, D)
             tgt_feats (torch.Tensor): (1, M, D)
             correspondence (torch.Tensor): (P, 2)
+            matching_scores (torch.Tensor): (1, N, M)
 
         Returns:
             torch.Tensor: (1, ), circle loss
@@ -173,7 +221,7 @@ class CircleLoss(nn.Module):
         feats_dist = torch.sqrt(torch.clamp(value, min=1e-8))
 
         # Calculate circle loss and feature matching recall (FMR)
-        circle_loss, pos_neg_distribution = self.get_circle_loss(coords_dist, feats_dist)
+        circle_loss, pos_neg_distribution = self.get_circle_loss(coords_dist, feats_dist, matching_scores)
 
         if torch.isnan(circle_loss):
             assert False, "Circle loss is nan"

@@ -58,6 +58,7 @@ def main(args):
                           log_scale=args.log_scale,
                           same_opt=args.same_opt,
                           no_balance=args.no_balance,
+                          hard_negative=args.hard_negative,
 
                           s_loss_weight=args.s_loss_weight,
                           p_loss_weight=args.p_loss_weight,
@@ -288,6 +289,7 @@ if __name__ == '__main__':
     parser.add_argument('--log_scale', type=float, default=24, help='Log scale for Circle loss computation')
     parser.add_argument('--same_opt', action='store_true', help='Make margin value be same with optimal value')
     parser.add_argument('--no_balance', action='store_true', help='Use positive and negative balance for Circle loss computation')
+    parser.add_argument('--hard_negative', action='store_true', help='')
 
 
     # Additional experiments
@@ -299,7 +301,7 @@ if __name__ == '__main__':
     parser.add_argument('--only_train_normal', action='store_true', help='Only train the normal vector, it will be used for stage 1 training')
     parser.add_argument('--flip_normal', action='store_true', help='If True, flip the normal vector of the point cloud')
     parser.add_argument('--consitency_loss', action='store_true', help='')
-
+    
 
     # DDP argument
     parser.add_argument('--gpus', nargs='+', default=[0], type=int)

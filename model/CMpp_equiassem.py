@@ -33,7 +33,7 @@ class EquiAssem(pl.LightningModule):
             lr, 
             scheduler_mode='cos',
             backbone='vn_unet', double_bacbone='none',
-            pos_margin=0.1, neg_margin=1.4, log_scale=24, same_opt=False, no_balance=False,
+            pos_margin=0.1, neg_margin=1.4, log_scale=24, same_opt=False, no_balance=False, hard_negative=False,
             s_loss_weight=1.0, p_loss_weight=1.0, o_loss_weight=1.0,
             visualize=False, viz_epoch=30, viz_max_arrow_num=0, ckp_dir=None, debug=False,
             success_criterion_in_degree=10,
@@ -69,6 +69,7 @@ class EquiAssem(pl.LightningModule):
             log_scale (int, optional): Log scaling factor for loss computation. Defaults to 24.
             same_opt (bool, optional): Whether to use the same optimal value as margin in loss computation. Defaults to False.
             no_balance (bool, optional): Whether to not use positive and negative balance for circle loss computation. Defaults to False.
+            hard_negative (bool, optional): Whether to use hard negative sampling for circle loss computation. Defaults to False.
             
             s_loss_weight (float, optional): Weight for shape loss. Defaults to 1.0.
             p_loss_weight (float, optional): Weight for point loss. Defaults to 1.0.
@@ -164,7 +165,7 @@ class EquiAssem(pl.LightningModule):
         self.feat_dim = 1024
         
         # Objectives
-        self.circle_loss = CircleLoss(log_scale=log_scale, pos_optimal=pos_margin, neg_optimal=neg_margin, same_opt=same_opt, no_balance=no_balance)
+        self.circle_loss = CircleLoss(log_scale=log_scale, pos_optimal=pos_margin, neg_optimal=neg_margin, same_opt=same_opt, no_balance=no_balance, hard_negative=hard_negative)
         self.orientation_loss = OrientationLoss(consitency_loss=consitency_loss)
         self.matching_loss = PointMatchingLoss()
         
@@ -574,8 +575,8 @@ class EquiAssem(pl.LightningModule):
         if mode in ['train', 'val']: # Do not calculate for test
             # 8. Calculate Loss
             if self.flip_normal:
-                src_move_circle_loss, pos_neg_distribution = self.circle_loss(src_pcd_raw, trg_pcd_raw, src_shape_feats.transpose(-2,-1), trg_shape_feats.transpose(-2,-1), gt_corr)
-                trg_move_circle_loss, _ = self.circle_loss(src_pcd_raw, trg_pcd_raw, symmetric_src_shape_feats.transpose(-2,-1), symmetric_trg_shape_feats.transpose(-2,-1), gt_corr)
+                src_move_circle_loss, pos_neg_distribution = self.circle_loss(src_pcd_raw, trg_pcd_raw, src_shape_feats.transpose(-2,-1), trg_shape_feats.transpose(-2,-1), gt_corr, shape_matching_scores)
+                trg_move_circle_loss, _ = self.circle_loss(src_pcd_raw, trg_pcd_raw, symmetric_src_shape_feats.transpose(-2,-1), symmetric_trg_shape_feats.transpose(-2,-1), gt_corr, symmetric_matching_scores)
 
                 src_move_matching_scores = self.matching_loss(matching_scores, src_pcd_raw, trg_pcd_raw).float()
                 trg_move_matching_scores = self.matching_loss(symmetric_matching_scores, src_pcd_raw, trg_pcd_raw).float()
@@ -584,7 +585,7 @@ class EquiAssem(pl.LightningModule):
                 loss['p_loss'] = (src_move_matching_scores + trg_move_matching_scores) / 2
             
             else:
-                loss['s_loss'], pos_neg_distribution = self.circle_loss(src_pcd_raw, trg_pcd_raw, src_shape_feats.transpose(-2,-1), trg_shape_feats.transpose(-2,-1), gt_corr)
+                loss['s_loss'], pos_neg_distribution = self.circle_loss(src_pcd_raw, trg_pcd_raw, src_shape_feats.transpose(-2,-1), trg_shape_feats.transpose(-2,-1), gt_corr, shape_matching_scores)
                 loss['p_loss'] = self.matching_loss(matching_scores, src_pcd_raw, trg_pcd_raw).float()
             
             loss['o_loss'] = self.orientation_loss(src_ori, trg_ori, gt_corr, in_dict['gt_normals'])
