@@ -1,30 +1,18 @@
 import os
 import sys
-import pwd
 import argparse
-import importlib
-import time
 import gc
-from distutils.dir_util import copy_tree
 
 import torch
-import torch.nn as nn
-import torch.optim as optim
 
 from scipy.spatial.transform import Rotation
 
-import pytorch_lightning as pl
-from pytorch_lightning.loggers import WandbLogger
-from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor
 
 from data.dataset import GADataset
 from common import utils
 import open3d as o3d
 
-from model.equiassem import EquiAssem
-
-import warnings
-warnings.filterwarnings("ignore", message="divide by zero encountered in double_scalars", category=RuntimeWarning)
+from model.CM_equiassem import EquiAssem
 
 import itertools
 import gtsam
@@ -34,6 +22,8 @@ import open3d as o3d
 import trimesh
 
 from chamfer_distance import ChamferDistance as chamfer_dist
+
+
 
 def save_pc(filename:str, pcd_tensors:list):
     pcds = []
