@@ -55,6 +55,7 @@ def test(args):
                           log_scale=1, # We don't need to use this parameter for testing
                           same_opt=False, # We don't need to use this parameter for testing
                           no_balance=False, # We don't need to use this parameter for testing
+                          hard_negative=False, # We don't need to use this parameter for testing
 
                           s_loss_weight=0.0, # We don't need to use this parameter for testing
                           p_loss_weight=0.0, # We don't need to use this parameter for testing

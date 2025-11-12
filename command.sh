@@ -20,11 +20,26 @@ rm -rf checkpoint/G8ND_S2_F_FV0DV0MH_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 
 
 rm -rf checkpoint/G8ND_S2_F_FV1DV0MH_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --load_ori checkpoint/G8ND_S1_F_FV0DV0MH_6/models/last.ckpt --logpath G8ND_S2_F_FV1DV0MH_6 --model CMpp_equiassem --backbone vn_unet_deep --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale full --multiplicity 1 --epochs 0 --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --wandb --wandb_entity CMppProject --wandb_project CMpp
 # rm -rf checkpoint/G8ND_S2_S_FV1DV0MH_6/ && CUDA_VISIBLE_DEVICES=0 python main.py --logpath G8ND_S2_S_FV1DV0MH_6 --model CMpp_equiassem --backbone vn_unet_deep --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale small --multiplicity 1 --epochs 1 --gpus 0 --n_worker 6
-end
+
 
 
 rm -rf checkpoint/NDET_MT1_F_NCD_NPM_NODOCC_OG_6_S_HARD/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --load checkpoint/NDET_MT1_F_NCD_NPM_NODOCC_OG_6/models/last.ckpt --logpath NDET_MT1_F_NCD_NPM_NODOCC_OG_6_S_HARD --model CMpp_equiassem --backbone vn_unet --n_avn 0 --mlp_mode CMpp --scale full --multiplicity 1 --epochs 0 --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --hard_negative --wandb --wandb_entity CMppProject --wandb_project CMpp
 rm -rf checkpoint/G8ND_F_FV0DV0MH_HARD_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --logpath G8ND_F_FV0DV0MH_HARD_6 --model CMpp_equiassem --backbone vn_unet --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale full --multiplicity 1 --epochs 0 --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --hard_negative --wandb --wandb_entity CMppProject --wandb_project CMpp
+end
+
+# G8ND_F_V0DH_6
+# G8ND_S2_F_FV0DV0MH_6
+# G8ND_S2_F_FV1DV0MH_6
+# NDET_MT1_F_NCD_NPM_NODOCC_OG_6
+
+rm -rf checkpoint/TOP128_G8ND_F_V0DH_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --load test_checkpoint/G8ND_F_V0DH_6/models/last.ckpt --logpath TOP128_G8ND_F_V0DH_6 --model CMpp_equiassem --backbone vn_unet --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale full --multiplicity 1 --epochs 0 --n_worker 6 --gpus 0 1 2 3 4 5 6 7  --wandb --wandb_entity CMppProject --wandb_project CMpp_test
+rm -rf checkpoint/TOP128_G8ND_S2_F_FV0DV0MH_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --load test_checkpoint/G8ND_S2_F_FV0DV0MH_6/models/last.ckpt --logpath TOP128_G8ND_S2_F_FV0DV0MH_6 --model CMpp_equiassem --backbone vn_unet --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale full --multiplicity 1 --epochs 0 --n_worker 6 --gpus 0 1 2 3 4 5 6 7  --wandb --wandb_entity CMppProject --wandb_project CMpp_test
+rm -rf checkpoint/TOP128_G8ND_S2_F_FV1DV0MH_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --load test_checkpoint/G8ND_S2_F_FV1DV0MH_6/models/last.ckpt --logpath TOP128_G8ND_S2_F_FV1DV0MH_6 --model CMpp_equiassem --backbone vn_unet_deep --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale full --multiplicity 1 --epochs 0 --n_worker 6 --gpus 0 1 2 3 4 5 6 7  --wandb --wandb_entity CMppProject --wandb_project CMpp_test
+rm -rf checkpoint/TOP128_NDET_MT1_F_NCD_NPM_NODOCC_OG_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --load test_checkpoint/NDET_MT1_F_NCD_NPM_NODOCC_OG_6/models/last.ckpt --logpath TOP128_NDET_MT1_F_NCD_NPM_NODOCC_OG_6 --model CMpp_equiassem --backbone vn_unet --n_avn 0 --mlp_mode CMpp --scale full --multiplicity 1 --epochs 0 --n_worker 6 --gpus 0 1 2 3 4 5 6 7  --wandb --wandb_entity CMppProject --wandb_project CMpp_test
+
+
+
+
 
 
 
