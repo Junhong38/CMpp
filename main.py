@@ -14,10 +14,12 @@ from pytorch_lightning.loggers import WandbLogger, CSVLogger
 from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor
 from pytorch_lightning import seed_everything
 
+from model.CMpp_equiassem import EquiAssem
 
 
 def main(args):
-    seed_everything(42, workers=True)
+    if not args.not_seed_fix:
+        seed_everything(42, workers=True)
 
     # Create checkpoint directory
     cfg_name = args.logpath
@@ -28,67 +30,52 @@ def main(args):
     print(f"checkpoint directory (ckp_dir): {ckp_dir}")
 
     # Dataset initialization
-    GADataset.initialize(args.datapath, args.data_category, args.sub_category, args.min_part, args.max_part, args.n_pts, args.scale, args.multiplicity, CMorigin_mode=(args.model == 'CM_equiassem'))
+    GADataset.initialize(args.datapath, args.data_category, args.sub_category, args.scale, args.multiplicity, args.min_part, args.max_part, args.min_n_pts, args.n_pts, args.overlap_radius)
     dataloader_trn = GADataset.build_dataloader(args.batch_size, args.n_worker, 'train')
-    dataloader_val = GADataset.build_dataloader(args.batch_size, args.n_worker, 'val')
+    dataloader_val = GADataset.build_dataloader(1, args.n_worker, 'val')
 
-    # Model initialization
-    # [TODO] MODEL IS CHANGED
-    if args.model == 'CM_equiassem':
-        from model.CM_equiassem import EquiAssem
-        model = EquiAssem(lr=args.lr,
-                          backbone=args.backbone,
-                          shape_loss=args.shape_loss, 
-                          occ_loss=args.occ_loss, 
-                          no_ori=args.no_ori,
-                          attention=args.attention,
-                          visualize=args.visualize,
-                          debug=args.debug)
-        
-    elif args.model == 'CMpp_equiassem': # Import developing mode model
-        from model.CMpp_equiassem import EquiAssem
-        model = EquiAssem(lr=args.lr,
-                          scheduler_mode=args.scheduler_mode,
-                          backbone=args.backbone,
-                          double_bacbone=args.double_bacbone,
+    # Model initialization        
+    model = EquiAssem(lr=args.lr,
+                        scheduler_mode=args.scheduler_mode,
+                        backbone=args.backbone,
+                        double_bacbone=args.double_bacbone,
 
-                          # Circle loss arguments
-                          pos_margin=args.pos_margin,
-                          neg_margin=args.neg_margin,
-                          log_scale=args.log_scale,
-                          same_opt=args.same_opt,
-                          no_balance=args.no_balance,
-                          hard_negative=args.hard_negative,
+                        # Circle loss arguments
+                        pos_margin=args.pos_margin,
+                        neg_margin=args.neg_margin,
+                        log_scale=args.log_scale,
+                        same_opt=args.same_opt,
+                        no_balance=args.no_balance,
+                        hard_negative=args.hard_negative,
 
-                          s_loss_weight=args.s_loss_weight,
-                          p_loss_weight=args.p_loss_weight,
-                          o_loss_weight=args.o_loss_weight,
+                        s_loss_weight=args.s_loss_weight,
+                        p_loss_weight=args.p_loss_weight,
+                        o_loss_weight=args.o_loss_weight,
 
-                          visualize=args.visualize,
-                          viz_epoch=args.viz_epoch,
-                          viz_max_arrow_num=args.viz_max_arrow_num,
-                          ckp_dir=ckp_dir,
-                          debug=args.debug,
-                          success_criterion_in_degree=args.success_criterion_in_degree,
-                          only_train_normal=args.only_train_normal,
-                          flip_normal=args.flip_normal,
-                          consitency_loss=args.consitency_loss,
+                        visualize=args.visualize,
+                        viz_epoch=args.viz_epoch,
+                        viz_max_arrow_num=args.viz_max_arrow_num,
+                        ckp_dir=ckp_dir,
+                        debug=args.debug,
+                        success_criterion_in_degree=args.success_criterion_in_degree,
+                        only_train_normal=args.only_train_normal,
+                        flip_normal=args.flip_normal,
+                        consistency_loss=args.consistency_loss,
 
-                          n_knn=args.n_knn,
-                          only_one_norm=args.only_one_norm,
-                          n_avn=args.n_avn,
-                          mlp_mode=args.mlp_mode,
-                          move_smaller=args.move_smaller,
-                          
-                          infer_match_option='topk', # Fix match option value during training
-                          infer_topk=128, # Fix topk value during training
-                          infer_score_threshold_ratio=0.0, # Block filtering correspondences during training
-                          use_RANSAC=False, # RANSAC is not used for training
-                          RANSAC_type='default', # RANSAC is not used for training
-                          use_predicted_normal=False # RANSAC is not used for training
-                          )
-    else:
-        raise NotImplementedError("Model not implemented")
+                        n_knn=args.n_knn,
+                        only_one_norm=args.only_one_norm,
+                        n_avn=args.n_avn,
+                        mlp_mode=args.mlp_mode,
+                        move_smaller=args.move_smaller,
+                        
+                        infer_match_option='topk', # Fix match option value during training
+                        infer_topk=128, # Fix topk value during training
+                        infer_score_threshold_ratio=0.0, # Block filtering correspondences during training
+                        use_RANSAC=False, # RANSAC is not used for training
+                        RANSAC_type='default', # RANSAC is not used for training
+                        use_predicted_normal=False # RANSAC is not used for training
+                        )
+
     
     
     # This code is for running on clusters
@@ -235,13 +222,16 @@ if __name__ == '__main__':
     parser.add_argument('--datapath', type=str, default='/home/kimsangki/breaking_bad/volume_constrained/') 
     #'../../../../hdd/junhong/data/bbad_v2' and /mnt/nvme2n1p1/kimsangki_datasets/breaking_bad/volume_constrained , /home/kimsangki/breaking_bad/volume_constrained 
     # ../data/temp_breaking_bad/breaking_bad/volume_constrained , ../../../../../hdd/junhong/temp_data/breaking_bad/volume_constrained
-    parser.add_argument('--data_category', type=str, default='everyday', choices=['everyday', 'artifact', 'synthetic'])
+    parser.add_argument('--data_category', type=str, default='everyday', choices=['everyday', 'artifact'])
     parser.add_argument('--sub_category', type=str, default='all')
-    parser.add_argument('--n_pts', type=int, default=5000)
+    parser.add_argument('--scale', type=str, default='overfitting', choices=['overfitting', 'tiny', 'small', 'full'])
+    parser.add_argument('--multiplicity', type=int, default=1, help='Multiplicity of the dataset')
     parser.add_argument('--min_part', type=int, default=2)
     parser.add_argument('--max_part', type=int, default=2)
-    parser.add_argument('--multiplicity', type=int, default=1, help='Multiplicity of the dataset')
-
+    parser.add_argument('--min_n_pts', type=int, default=256)
+    parser.add_argument('--n_pts', type=int, default=5000)
+    parser.add_argument('--overlap_radius', type=float, default=0.018)
+    
 
     # Training arguments
     parser.add_argument('--logpath', type=str, default='default_logpath', help='Log path and name for project')
@@ -256,26 +246,15 @@ if __name__ == '__main__':
     parser.add_argument('--gradient_clip_val', type=float, default=0.0, help='Gradient clip value')
 
 
-    # Debugging arguments
+    # Model arguments
     parser.add_argument('--model', type=str, default='CMpp_equiassem', choices=['CM_equiassem', 'CMpp_equiassem'])
-    parser.add_argument('--scale', type=str, default='overfitting', choices=['overfitting', 'tiny', 'small', 'full'])
-
-
-    # This arguments are used only for CM_equiassem
     parser.add_argument('--backbone', type=str, default='vn_unet', choices=['vn_unet', 'vn_unet_deep', 'vn_unet_deep_v2', 'vn_unet_deep_v3', 'vn_unet_deep_v4', 'vn_dgcnn', 'unet', 'dgcnn'])
     parser.add_argument('--double_bacbone', type=str, default='none', choices=['none', 'vn_unet', 'vn_unet_deep', 'vn_unet_deep_v2', 'vn_unet_deep_v3', 'vn_unet_deep_v4', 'vn_dgcnn', 'unet', 'dgcnn'])
-    parser.add_argument('--shape_loss', type=str, default='positive', choices=['positive', 'negative'])
-    parser.add_argument('--occ_loss', type=str, default='negative', choices=['positive', 'negative'])
-    parser.add_argument('--no_ori', action='store_true')
-    parser.add_argument('--attention', type=str, default='channel', choices=['channel', 'none'])
-
-    
-    # Developing temporarily used experiments arguments
     parser.add_argument('--n_knn', type=int, default=20, help='Number of nearest neighbors for KNN')
     parser.add_argument('--only_one_norm', action='store_true', help='If True, use only one Normalization layer for the equivariant shape feature')
     parser.add_argument('--n_avn', type=int, default=5, help='Number of AVN layers for the equivariant shape feature')
     parser.add_argument('--mlp_mode', type=str, default='CMpp', choices=['CMpp', 'CMpp_half', 'half', 'deep'])
-    parser.add_argument('--move_smaller', action='store_true', help='If True, always move the smaller point cloud to the origin')
+    
 
     # Weights for losses
     parser.add_argument('--s_loss_weight', type=float, default=1.0, help='Weight for shape loss')
@@ -293,14 +272,18 @@ if __name__ == '__main__':
 
 
     # Additional experiments
+    parser.add_argument('--success_criterion_in_degree', type=int, default=10, help='Success criterion in degree for normal error')
+    parser.add_argument('--only_train_normal', action='store_true', help='Only train the normal vector, it will be used for stage 1 training')
+    parser.add_argument('--flip_normal', action='store_true', help='If True, flip the normal vector of the point cloud')
+    parser.add_argument('--consistency_loss', action='store_true', help='')
+    parser.add_argument('--move_smaller', action='store_true', help='If True, always move the smaller point cloud to the origin')
+
+
+    # Visualization arguments
     parser.add_argument('--visualize', action='store_true')
     parser.add_argument('--viz_epoch', type=int, default=30, help='Epoch for visualization. This only works when visualize is True')
     parser.add_argument('--viz_max_arrow_num', type=int, default=0, help='Maximum number of arrows for visualization. This only works when visualize is True')
     parser.add_argument('--debug', action='store_true')
-    parser.add_argument('--success_criterion_in_degree', type=int, default=10, help='Success criterion in degree for normal error')
-    parser.add_argument('--only_train_normal', action='store_true', help='Only train the normal vector, it will be used for stage 1 training')
-    parser.add_argument('--flip_normal', action='store_true', help='If True, flip the normal vector of the point cloud')
-    parser.add_argument('--consitency_loss', action='store_true', help='')
     
 
     # DDP argument
@@ -314,6 +297,7 @@ if __name__ == '__main__':
 
 
     # Deterministic argument
+    parser.add_argument('--not_seed_fix', action='store_true')
     parser.add_argument('--deterministic', action='store_true')
 
     
@@ -338,8 +322,6 @@ if __name__ == '__main__':
     if args.gradient_clip_val <= 0.0:
         args.gradient_clip_val = None
 
-    # Assertions
-    assert args.batch_size == 1, "Batch size must be 1"
 
     
     print("================================================")
@@ -355,5 +337,3 @@ if __name__ == '__main__':
 
 
     main(args)
-
-

@@ -10,23 +10,25 @@ import torch
 from torch.utils.data import Dataset
 
 from data.utils import to_o3d_pcd, get_correspondences
-
+from common.misc import offset2batch
 
 class DatasetBreakingBad(Dataset):
-    def __init__(self, datapath, data_category, sub_category, min_part, max_part, n_pts, split, scale, multiplicity, CMorigin_mode=False):
+    def __init__(self, datapath, data_category, sub_category, split, scale='full', multiplicity=1,
+                 min_part=2, max_part=2, min_n_pts=256, n_pts=5000, overlap_radius=0.018):
         """Dataset for Breaking Bad
 
         Args:
             datapath (str): path to the dataset
-            data_category (str): ['everyday', 'artifact', 'synthetic'], candidates are fixed by argparse
+            data_category (str): ['everyday', 'artifact'], candidates are fixed by argparse
             sub_category (str): ['all', 'xxx', ...]
-            min_part (int): minimum number of parts
-            max_part (int): maximum number of parts
-            n_pts (int): number of points to sample
             split (str): ['train', 'val', 'test']
             scale (str): ['full', 'small', 'overfitting', 'tiny'], candidates are fixed by argparse
             multiplicity (int): multiplicity of the dataset
-            CMorigin_mode (bool, optional): whether to use CM origin mode. Defaults to False.
+            min_part (int): minimum number of parts
+            max_part (int): maximum number of parts
+            min_n_pts (int): minimum number of points to sample
+            n_pts (int): number of points to sample
+            overlap_radius (float): overlap radius for correspondence
         """
         # Assertion
         assert split in ['train', 'val', 'test'], f"split must be in ['train', 'val', 'test'], but got {split}"
@@ -34,33 +36,24 @@ class DatasetBreakingBad(Dataset):
         self.datapath = datapath
         self.data_category = data_category 
         self.sub_category = sub_category
-
-        self.min_n_pts = 256
+        self.split = split
+        self.multiplicity = multiplicity if split == 'train' else 1
+        
         self.min_part = min_part
         self.max_part = max_part
+        self.min_n_pts = min_n_pts
         self.n_pts = n_pts
 
-        self.split = split
-        
-        self.multiplicity = multiplicity if split == 'train' else 1
-        self.CMorigin_mode = CMorigin_mode
+        self.overlap_radius = overlap_radius
 
-        self.mpa = True if self.max_part > 2 else False
-        self.anchor_idx = 0
-
-        if self.mpa and self.split in ['train', 'val']:
-            filepaths = join('./data/data_list', f"mpa_{data_category}_{split}.txt")
-        else:
-            if self.split == 'test': 
-                split = 'val'
+        if self.split == 'test': 
+            split = 'val'
             
-            # Read fracture path list
-            if scale in ['overfitting', 'tiny']:
-                filepaths = join('./data/data_list', f"{data_category}_{split}_{scale}.txt")
-            elif scale == 'full':
-                filepaths = join('./data/data_list', f"{data_category}_{split}.txt")
-            else:
-                filepaths = join('./data/data_list', f"{data_category}_{split}_small.txt")
+        # Read fracture path list
+        if scale in ['overfitting', 'tiny', 'small']:
+            filepaths = join('./data/data_list', f"{data_category}_{split}_{scale}.txt")
+        elif scale == 'full':
+            filepaths = join('./data/data_list', f"{data_category}_{split}.txt")
 
         with open(filepaths, 'r') as f:
             self.filepaths = [x.strip() for x in f.readlines() if x.strip()]
@@ -69,39 +62,18 @@ class DatasetBreakingBad(Dataset):
         if self.sub_category != 'all': 
             self.filepaths = [x for x in self.filepaths if x.split()[1].split('/')[1] == self.sub_category]
 
-        if self.mpa and self.split in ['train', 'val']:
-            self.frac0 = [x.split()[2] for x in self.filepaths]
-            self.frac1 = [x.split()[3] for x in self.filepaths]
-
         self.n_frac = [int(x.split()[0]) for x in self.filepaths]
         self.filepaths = [x.split()[1] for x in self.filepaths]
         self.len_filepaths = len(self.filepaths)
         
-        self.overlap_radius = 0.018
+        
 
         print("================================================")
         print(f"DATASET INITIALIZATION for {self.split}")
-        print(f"datapath: {self.datapath}")
-        print(f"data_category: {self.data_category}")
-        print(f"split: {self.split}")
-        print(f"sub_category: {self.sub_category}")
-        print(f"n_pts: {self.n_pts}")
-        print(f"min_n_pts: {self.min_n_pts}")
-        print(f"min_part: {self.min_part}")
-        print(f"max_part: {self.max_part}")
-        print(f"mpa: {self.mpa}")
-        print(f"anchor_idx: {self.anchor_idx}")
-        print(f"overlap_radius: {self.overlap_radius}") 
-        print(f"scale: {scale}")
-        print(f"multiplicity: {self.multiplicity}")
-        print(f"CMorigin_mode: {self.CMorigin_mode}")
-
-        print(f"n_frac: {self.n_frac}")
-        # print(f"filepaths: {self.filepaths}")
-
-        if self.mpa:
-            print(f"frac0: {self.frac0}")
-            print(f"frac1: {self.frac1}")
+        print(f"datapath: {self.datapath} | data_category: {self.data_category} | sub_category: {self.sub_category}")
+        print(f"scale: {scale} | multiplicity: {self.multiplicity}")
+        print(f"min_part: {self.min_part} | max_part: {self.max_part} | min_n_pts: {self.min_n_pts} | n_pts: {self.n_pts}")
+        print(f"overlap_radius: {self.overlap_radius}")
         print("================================================")
         
 
@@ -182,9 +154,6 @@ class DatasetBreakingBad(Dataset):
             relative_rotat = rotat1 @ rotat0.T
             relative_trans = (rotat1 @ (trans0 - trans1))
 
-            if self.CMorigin_mode:
-                relative_trans = - relative_trans
-
             # Save relative transformation between each pairs
             key = f"{src_idx}-{trg_idx}"
             permut_relative_transform[key] = relative_rotat, relative_trans
@@ -195,7 +164,7 @@ class DatasetBreakingBad(Dataset):
             return permut_relative_transform
 
     
-    def _extract_gt_normals(self, mesh, face, filepath):
+    def _extract_gt_normals(self, mesh, face):
         """Extract ground-truth normals from meshes and point clouds
 
         Args:
@@ -212,7 +181,7 @@ class DatasetBreakingBad(Dataset):
             # For face normals ensure that vectors are consistently pointed outwards, 
             # and that self.faces is wound in the correct direction for all connected components.
             mesh_.fix_normals()
-            gt_normals.append(mesh_.face_normals[face[i]])
+            gt_normals.append(torch.tensor(mesh_.face_normals[face[i]]))
 
         return gt_normals
 
@@ -233,11 +202,10 @@ class DatasetBreakingBad(Dataset):
         idx = idx % self.len_filepaths
 
         # Read mesh, point cloud of a fractured object
-        mesh, pcd, face = self.read_obj_data(idx)
+        filepath, n_frac, anchor_idx, mesh, pcd, face = self.read_obj_data(idx)
 
         # Get all possible pairs. If two parts, then [0,1], [1,0]
         pair_indices = list(itertools.permutations([i for i in range(self.n_frac[idx])], 2))
-        
 
         # Get ground-truth correspondences
         if self.split in ['train', 'val']:
@@ -249,43 +217,41 @@ class DatasetBreakingBad(Dataset):
                 matching_inds[f'{pair_idx0}-{pair_idx1}'] = get_correspondences(to_o3d_pcd(pcd[pair_idx0]), to_o3d_pcd(pcd[pair_idx1]), self.overlap_radius)
             matching_inds = [matching_inds]
         
-
         # Apply random transformation to sampled points
         pcd_t, mesh_t, gt_trans = self._translate(mesh, pcd)
         pcd_t, mesh_t, gt_rotat = self._rotate(mesh_t, pcd_t)
         gt_relative_trsfm = self._compute_relative_transform(gt_trans, gt_rotat)
+        gt_normals = self._extract_gt_normals(mesh_t, face)
 
-
-        gt_normals = self._extract_gt_normals(mesh_t, face, self.filepaths[idx])
-
+        concat_pcd = torch.cat(pcd, dim=0) # (total_N, 3)
+        concat_pcd_t = torch.cat(pcd_t, dim=0) # (total_N, 3)
+        concat_gt_normals = torch.cat(gt_normals, dim=0) # (total_N, 3)
+        pcd_batch_info = offset2batch(torch.tensor([len(pcd_) for pcd_ in pcd])) # (total_N, )
 
         batch = {
                 'eval_idx': idx, # integer e.g. 0
-                'filepath': self.filepaths[idx], # string e.g. 'everyday/BeerBottle/2927d6c8438f6e24fe6460d8d9bd16c6/fractured_37'
-                'obj_class': self.filepaths[idx].split('/')[1], # string e.g. 'BeerBottle'
+                'filepath': filepath, # string e.g. 'everyday/BeerBottle/2927d6c8438f6e24fe6460d8d9bd16c6/fractured_37'
+                'obj_class': filepath.split('/')[1], # string e.g. 'BeerBottle'
+                'n_frac': n_frac, # integer e.g. 2
+                'anchor_idx': anchor_idx, # integer e.g. 0
+                
 
+                'pcd': concat_pcd, # torch.Tensor, (total_N, 3)
+                'pcd_t': concat_pcd_t, # torch.Tensor, (total_N, 3)
+                'gt_normals': concat_gt_normals, # torch.Tensor, (total_N, 3)
+                'pcd_batch_info': pcd_batch_info, # torch.Tensor, (total_N, ), batch index of the point cloud
+                'gt_correspondence': matching_inds, # if test then dict, key: string e.g. '0-1', value: torch.Tensor, (Corr, 2) else torch.Tensor, (Corr, 2)
+                }
+        
+        if self.split in ['val', 'test']:
+            eval_dict = {
+                # Eval
                 'mesh': [torch.tensor(_mesh.vertices).float() for _mesh in mesh], # list of torch.Tensor, (N', 3)
                 'mesh_t': [torch.tensor(_mesh.vertices).float() for _mesh in mesh_t], # list of torch.Tensor, (N', 3)
-
                 'mesh_faces': [torch.tensor(_mesh.faces) for _mesh in mesh], # list of torch.Tensor, (F, 3)
-                
-                'pcd': pcd, # list of torch.Tensor, (N, 3)
-                'pcd_t': pcd_t, # list of torch.Tensor, (N, 3)
-
-                'n_frac': self.n_frac[idx], # integer e.g. 2
-                'anchor_idx': self.anchor_idx, # integer e.g. 0
-
-                'gt_trans': gt_trans, # list of torch.Tensor, (3, )
-                'gt_rotat': gt_rotat, # list of torch.Tensor, (3, 3)
-
-                'gt_trans_inv': [-t for t in gt_trans], # list of torch.Tensor, (3, )
-                'gt_rotat_inv': [R.T for R in gt_rotat], # list of torch.Tensor, (3, 3)
-                
                 'relative_trsfm': gt_relative_trsfm, # dict, key: string e.g. '0-1', value: tuple of (torch.Tensor (3, 3), torch.Tensor (3, ))
-
-                'gt_normals': gt_normals, # list of np.array, (N, 3)
-                'gt_correspondence': matching_inds, # if test then dict, key: string e.g. '0-1', value: torch.Tensor, (P, 2) else torch.Tensor, (P, 2)
-                }
+            }
+            batch.update(eval_dict)
     
         return batch
 
@@ -295,27 +261,26 @@ class DatasetBreakingBad(Dataset):
 
         # Load N-part meshes and calculate each area
         base_path = join(self.datapath, filepath)
+        obj_paths = [join(base_path, x) for x in os.listdir(base_path)]
         
-        if self.mpa and self.split in ['train', 'val']:
-            obj_paths = [join(base_path, x) for x in [self.frac0[idx], self.frac1[idx]]]
-        else: 
-            obj_paths = [join(base_path, x) for x in os.listdir(base_path)]
-        
-
         # Load meshes, obj files
         meshes = [trimesh.load_mesh(x) for x in obj_paths] # If two parts, then length is 2
         mesh_areas = [mesh_.area for mesh_ in meshes] # area -> Summed area of all triangles in the current mesh
 
-
         # Set anchor fracture and sum all of areas
-        self.anchor_idx, total_area = mesh_areas.index(max(mesh_areas)), sum(mesh_areas)
+        anchor_idx, total_area = mesh_areas.index(max(mesh_areas)), sum(mesh_areas)
+
+        # Calculate number of points for each part
+        remaining_points = self.n_pts - self.min_n_pts * len(meshes)
+        counts = (self.min_n_pts + (remaining_points * (mesh_areas / total_area)).astype(int)).tolist()
+        diff = self.n_pts - sum(counts)
+        counts[np.argmax(counts)] += diff
 
 
         # Sample N-part point clouds from meshes
         pcds = []
         faces = []
-        for mesh in meshes:
-            n_pts = int(self.n_pts * mesh.area / total_area)
+        for mesh, n_pts in zip(meshes, counts):
             if self.split in ['val', 'test']: 
                 sampled_pts, face_idx = trimesh.sample.sample_surface_even(mesh, n_pts, seed=idx) # (N, 3), (N, )
             else: 
@@ -323,22 +288,17 @@ class DatasetBreakingBad(Dataset):
 
             sampled_pts = torch.tensor(sampled_pts).float() # (N, 3)
 
-            if sampled_pts.size(0) < self.min_n_pts: # if the number of points is less than the minimum number of points, sample more points
+            if sampled_pts.size(0) < n_pts: # if the number of points is less than the number of points to sample, sample more points
                 if self.split in ['val', 'test']: 
-                    extra_pts, extra_face_idx = trimesh.sample.sample_surface(mesh, self.min_n_pts - sampled_pts.size(0), seed=idx) # (N', 3), (N', )
+                    extra_pts, extra_face_idx = trimesh.sample.sample_surface(mesh, n_pts - sampled_pts.size(0), seed=idx) # (N', 3), (N', )
                 else: 
-                    extra_pts, extra_face_idx = trimesh.sample.sample_surface(mesh, self.min_n_pts - sampled_pts.size(0)) # (N', 3), (N', )
+                    extra_pts, extra_face_idx = trimesh.sample.sample_surface(mesh, n_pts - sampled_pts.size(0)) # (N', 3), (N', )
                 sampled_pts = torch.cat([sampled_pts, torch.tensor(extra_pts).float()], dim=0) # (N + N', 3)
                 face_idx = np.concatenate([face_idx, extra_face_idx], axis=0) # (N + N', )
             
             pcds.append(sampled_pts)
             faces.append(face_idx)
-        
-        
-        
-        # [TODO] Implement MPA part after finishing two parts matching
-        assert not self.mpa or len(pcds) <= 2, f"len(pcds): {len(pcds)}, mpa is blocked now"
-        
+
 
         # Augment train dataset
         if self.split == 'train' and random.random() > 0.5:
@@ -346,4 +306,60 @@ class DatasetBreakingBad(Dataset):
             pcds.reverse()
             faces.reverse()
         
-        return meshes, pcds, faces
+        return filepath, n_frac, anchor_idx, meshes, pcds, faces
+
+
+def collate_fn(batch):
+    """_summary_
+    batch = {
+            'eval_idx': idx, # integer e.g. 0
+            'filepath': filepath, # string e.g. 'everyday/BeerBottle/2927d6c8438f6e24fe6460d8d9bd16c6/fractured_37'
+            'obj_class': filepath.split('/')[1], # string e.g. 'BeerBottle'
+            'n_frac': n_frac, # integer e.g. 2
+            'anchor_idx': anchor_idx, # integer e.g. 0
+            
+
+            'pcd': concat_pcd, # torch.Tensor, (total_N, 3)
+            'pcd_t': concat_pcd_t, # torch.Tensor, (total_N, 3)
+            'gt_normals': concat_gt_normals, # torch.Tensor, (total_N, 3)
+            'pcd_batch_info': pcd_batch_info, # torch.Tensor, (total_N, ), batch index of the point cloud
+            'gt_correspondence': matching_inds, # if test then dict, key: string e.g. '0-1', value: torch.Tensor, (Corr, 2) else torch.Tensor, (Corr, 2)
+            }
+
+    if self.split in ['val', 'test']:
+        eval_dict = {
+            # Eval
+            'mesh': [torch.tensor(_mesh.vertices).float() for _mesh in mesh], # list of torch.Tensor, (N', 3)
+            'mesh_t': [torch.tensor(_mesh.vertices).float() for _mesh in mesh_t], # list of torch.Tensor, (N', 3)
+            'mesh_faces': [torch.tensor(_mesh.faces) for _mesh in mesh], # list of torch.Tensor, (F, 3)
+            'relative_trsfm': gt_relative_trsfm, # dict, key: string e.g. '0-1', value: tuple of (torch.Tensor (3, 3), torch.Tensor (3, ))
+        }
+    """
+
+    result_batch = {}
+
+    for batch_key in batch[0].keys():
+        if batch_key in ['eval_idx', 'n_frac', 'anchor_idx']:
+            result_batch[batch_key] = torch.tensor([a_batch[batch_key] for a_batch in batch]) # (B, )
+
+        elif batch_key in ['filepath', 'obj_class']:
+            result_batch[batch_key] = [a_batch[batch_key] for a_batch in batch] # (B, )
+
+        elif batch_key in ['pcd', 'pcd_t', 'gt_normals', 'pcd_batch_info']:
+            result_batch[batch_key] = torch.stack([a_batch[batch_key] for a_batch in batch], dim=0) # (B, total_N, 3) or (B, total_N, )
+        
+        elif batch_key in ['gt_correspondence']:
+            if isinstance(batch[0][batch_key], dict):
+                assert len(batch) == 1, f"len(batch): {len(batch)}, batch size must be 1 for evaluation"
+                result_batch[batch_key] = batch[0][batch_key] # (Corr, 2)
+            else:
+                list_of_gt_correspondence = [a_batch[batch_key] for a_batch in batch]
+                gt_corr_offset_info = torch.tensor([len(gt_corr) for gt_corr in list_of_gt_correspondence]) # (B, )
+                result_batch[batch_key] = torch.cat(list_of_gt_correspondence, dim=0) # (total_Corr, 2)
+                result_batch['gt_corr_offset_info'] = gt_corr_offset_info
+        
+        elif batch_key in ['mesh', 'mesh_t', 'mesh_faces', 'relative_trsfm']: # Only for evaluation, So batch size must be 1
+            assert len(batch) == 1, f"len(batch): {len(batch)}, batch size must be 1 for evaluation"
+            result_batch[batch_key] = batch[0][batch_key]
+    
+    return result_batch

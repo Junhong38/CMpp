@@ -266,9 +266,9 @@ class PointMatchingLoss(nn.Module):
 
 
 class OrientationLoss(nn.Module):
-    def __init__(self, consitency_loss=False):
+    def __init__(self, consistency_loss=False):
         super(OrientationLoss, self).__init__()
-        self.consitency_loss = consitency_loss
+        self.consistency_loss = consistency_loss
         self.loss_fn = nn.SmoothL1Loss(beta=1.0, reduction='mean')
     
     def forward(self, src_ori, trg_ori, correspondence, gt_normals):
@@ -293,7 +293,7 @@ class OrientationLoss(nn.Module):
 
         final_loss = (src_normal_basis_loss + trg_normal_basis_loss) / 2
 
-        if self.consitency_loss and (len(correspondence) > 0): # Make frame from src and trg be consistent with each other
+        if self.consistency_loss and (len(correspondence) > 0): # Make frame from src and trg be consistent with each other
             src_from_mating_surface = src_ori[:, correspondence[:,0], :, :] # (1, P, 3, 3)
             trg_from_mating_surface = trg_ori[:, correspondence[:,1], :, :] # (1, P, 3, 3)
 

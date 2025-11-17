@@ -39,7 +39,7 @@ class EquiAssem(pl.LightningModule):
             success_criterion_in_degree=10,
             only_train_normal=False,
             flip_normal=False,
-            consitency_loss=False,
+            consistency_loss=False,
             
             n_knn=20,
             only_one_norm=False,
@@ -83,7 +83,7 @@ class EquiAssem(pl.LightningModule):
             success_criterion_in_degree (int, optional): Success criterion in degree for normal error. Defaults to 10.
             only_train_normal (bool, optional): Whether to only train the normal vector, it will be used for stage 1 training. Defaults to False.
             flip_normal (bool, optional): Whether to flip the normal vector. Defaults to False.
-            consitency_loss (bool, optional): Whether to use consistency loss. Defaults to False.
+            consistency_loss (bool, optional): Whether to use consistency loss. Defaults to False.
 
             n_knn (int, optional): Number of nearest neighbors for KNN. Defaults to 20.
             only_one_norm (bool, optional): Whether to use only one Normalization layer for the equivariant shape feature. Defaults to False.
@@ -123,7 +123,7 @@ class EquiAssem(pl.LightningModule):
         print(f"success_criterion_in_degree: {success_criterion_in_degree}")
         print(f"only_train_normal: {only_train_normal}")
         print(f"flip_normal: {flip_normal}")
-        print(f"consitency_loss: {consitency_loss}")
+        print(f"consistency_loss: {consistency_loss}")
 
         print(f"n_knn: {n_knn}")
         print(f"only_one_norm: {only_one_norm}")
@@ -166,7 +166,7 @@ class EquiAssem(pl.LightningModule):
         
         # Objectives
         self.circle_loss = CircleLoss(log_scale=log_scale, pos_optimal=pos_margin, neg_optimal=neg_margin, same_opt=same_opt, no_balance=no_balance, hard_negative=hard_negative)
-        self.orientation_loss = OrientationLoss(consitency_loss=consitency_loss)
+        self.orientation_loss = OrientationLoss(consistency_loss=consistency_loss)
         self.matching_loss = PointMatchingLoss()
         
 
@@ -479,6 +479,8 @@ class EquiAssem(pl.LightningModule):
                     - rpf_rmse: (1, )
                     - rpf_tmse: (1, )
         """
+
+        exit("stop")
 
         out_dict, loss = {}, {}
 
