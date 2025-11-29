@@ -491,8 +491,7 @@ class EquiAssem(pl.LightningModule):
                     - rpf_rmse: (1, )
                     - rpf_tmse: (1, )
         """
-        print(f"[{in_dict['eval_idx']}]pcd_batch_info: \n{in_dict['pcd_batch_info']}")
-
+        assert in_dict['pcd_batch_info'].max() == 1, f"We assume there are two objects in the batch, but got {in_dict['pcd_batch_info'].max()}"
 
         out_dict, loss = {}, {}
 
@@ -507,49 +506,36 @@ class EquiAssem(pl.LightningModule):
         trg_pcd = extractd_pcd_t[1].unsqueeze(0) # (M, 3) -> (1, M ,3)
         gt_corr = in_dict['gt_correspondence'] # (total_Corr, 2) where total_Corr := Corr_1 + Corr_2 + ... + Corr_B
         gt_normals = [extractd_gt_normals[0].unsqueeze(0), extractd_gt_normals[1].unsqueeze(0)]
-        
+
+
+        # 0. Get Point Clouds and Ground Truth Correspondence
+        pcd_raw = in_dict['pcd']
+        pcd_input = in_dict['pcd_t']
+        gt_normals = in_dict['gt_normals']
+        pcd_batch_info = in_dict['pcd_batch_info']
+
         # 1. SO(3)-Equivariant Feature Extractor
-        equi_feats_backbone = self.backbone(in_dict['pcd_t'], in_dict['pcd_batch_info']) # (B, C, 3, N+M)
-        extractd_equi_feats_backbone = extract_all_objects(equi_feats_backbone[0].transpose(0,-1), in_dict['pcd_batch_info'][0])
-        src_equi_feats_backbone = extractd_equi_feats_backbone[0].transpose(0,-1).unsqueeze(0) # (1, C, 3, N)
-        trg_equi_feats_backbone = extractd_equi_feats_backbone[1].transpose(0,-1).unsqueeze(0) # (1, C, 3, M)
+        equi_feats_backbone = self.backbone(pcd_input, pcd_batch_info) # (B, C, 3, N+M)
 
+        # 2. Calculate equivariant shape features
+        equi_feats = self.equi_layer(equi_feats_backbone.unsqueeze(-1)).squeeze(-1) # (B, C, 3, N+M)
 
-        # 2. Frame Prediction
-        equi_feats_ori_backbone = self.ori_backbone(in_dict['pcd_t'], in_dict['pcd_batch_info'])
-        extractd_equi_feats_ori_backbone = extract_all_objects(equi_feats_ori_backbone[0].transpose(0,-1), in_dict['pcd_batch_info'][0])
-        src_equi_feats_ori_backbone = extractd_equi_feats_ori_backbone[0].transpose(0,-1).unsqueeze(0) # (1, C, 3, N)
-        trg_equi_feats_ori_backbone = extractd_equi_feats_ori_backbone[1].transpose(0,-1).unsqueeze(0) # (1, C, 3, M)
+        # 3. Frame Prediction
+        equi_feats_ori_backbone = self.ori_backbone(pcd_input, pcd_batch_info) if self.ori_backbone is not None else equi_feats_backbone
 
+        # 3-1. Merge global information by averaging
+        # (B, C, 3, N+M) -> (B, C, 3, 1) -> (B, C, 3, N+M)
+        equi_feats_ori_backbone_mean = equi_feats_ori_backbone.mean(dim=-1, keepdim=True).expand(equi_feats_ori_backbone.size())
 
-        # 2-1. Merge global information by averaging
-        # (1, C, 3, N) -> (1, C, 3, 1) -> (1, C, 3, N)
-        src_equi_feats_backbone_mean = src_equi_feats_ori_backbone.mean(dim=-1, keepdim=True).expand(src_equi_feats_ori_backbone.size())
-        # (1, C, 3, M) -> (1, C, 3, 1) -> (1, C, 3, M)
-        trg_equi_feats_backbone_mean = trg_equi_feats_ori_backbone.mean(dim=-1, keepdim=True).expand(trg_equi_feats_ori_backbone.size())
-
-        # 2-2. Basis Vector Projection, those vectors will be used as frame basis vectors
-        # (1, C, 3, N) concat (1, C, 3, N) ->  (1, 2C, 3, N) -> (1, 2C, 3, N, 1) -> (1, 2, 3, N, 1) -> (1, 2, 3, N) -> (1, N, 2, 3)
-        src_vecs = self.proj(torch.cat((src_equi_feats_ori_backbone, src_equi_feats_backbone_mean), 1).unsqueeze(-1)).squeeze(-1).permute(0, 3, 1, 2) 
-        # (1, C, 3, M) concat (1, C, 3, M) ->  (1, 2C, 3, M) -> (1, 2C, 3, M, 1) -> (1, 2, 3, M, 1) -> (1, 2, 3, M) -> (1, M, 2, 3)
-        trg_vecs = self.proj(torch.cat((trg_equi_feats_ori_backbone, trg_equi_feats_backbone_mean), 1).unsqueeze(-1)).squeeze(-1).permute(0, 3, 1, 2) 
-
-        
-        # 3. Calculate equivariant shape features
-        src_equi_feats = self.equi_layer(src_equi_feats_backbone.unsqueeze(-1)).squeeze(-1) # (1, C, 3, N)
-        trg_equi_feats = self.equi_layer(trg_equi_feats_backbone.unsqueeze(-1)).squeeze(-1) # (1, C, 3, M)
-
+        # 3-2. Basis Vector Projection, those vectors will be used as frame basis vectors
+        # (B, C, 3, N+M) concat (B, C, 3, N+M) ->  (B, 2C, 3, N+M) -> (B, 2C, 3, N+M, 1) -> (B, 2, 3, N+M, 1) -> (B, 2, 3, N+M) -> (B, N+M, 2, 3)
+        vecs = self.proj(torch.cat((equi_feats_ori_backbone, equi_feats_ori_backbone_mean), dim=1).unsqueeze(-1)).squeeze(-1).permute(0, 3, 1, 2) 
 
         # 4. Gram Schmidt & Cross-product, this is for making three basis vectors by using two predicted vectors
-        src_ori = ortho2rotation(src_vecs, optimum=True) # (1, N, 2, 3) -> (1, N, 3, 3)
-        trg_ori = ortho2rotation(trg_vecs, optimum=True) # (1, M, 2, 3) -> (1, M, 3, 3)
-        
+        oris = ortho2rotation(vecs) # (B, N+M, 2, 3) -> (B, N+M, 3, 3)
+        out_dict['oris'] = oris
 
-        # Save for visualization
-        out_dict['src_ori'] = src_ori
-        out_dict['trg_ori'] = trg_ori
-
-
+        """
         if self.only_train_normal:
             # Only train the normal vector
             loss['o_loss'] = self.orientation_loss(src_ori, trg_ori, gt_corr, gt_normals)
@@ -563,37 +549,34 @@ class EquiAssem(pl.LightningModule):
             if mode == 'train':
                 self.log_for_training(loss=loss, pos_neg_distribution=None, mode=mode)
             return out_dict, loss
-
+        """
 
         # 5. Invariant Features
-        src_inv_feats, trg_inv_feats = self.make_inv_feats(src_ori, trg_ori, src_equi_feats, trg_equi_feats, src_flip=True)
-        
+        inv_feats = self.make_inv_feats(oris, pcd_batch_info, equi_feats, src_flip=True) # (B, C*3, N+M)
         if self.flip_normal and mode in ['train', 'val']:
-            symmetric_src_inv_feats, symmetric_trg_inv_feats = self.make_inv_feats(src_ori, trg_ori, src_equi_feats, trg_equi_feats, src_flip=False)
+            symmetric_inv_feats = self.make_inv_feats(oris, pcd_batch_info, equi_feats, src_flip=False) # (B, C*3, N+M)
         
 
         # 6. SHAPE DESCRIPTOR 
-        src_shape_feats = self.shape_mlp(src_inv_feats) # (1, C*3, N) -> (1, D, N)
-        trg_shape_feats = self.shape_mlp(trg_inv_feats) # (1, C*3, M) -> (1, D, N)
-
+        shape_feats = self.shape_mlp(inv_feats) # (B, C*3, N+M) -> (B, D, N+M)
         if self.flip_normal and mode in ['train', 'val']:
-            symmetric_src_shape_feats = self.shape_mlp(symmetric_src_inv_feats) # (1, C*3, N) -> (1, D, N)
-            symmetric_trg_shape_feats = self.shape_mlp(symmetric_trg_inv_feats) # (1, C*3, M) -> (1, D, N)
+            symmetric_shape_feats = self.shape_mlp(symmetric_inv_feats) # (B, C*3, N+M) -> (B, D, N+M)
 
-
-        # 7. Optimal Transport
-        shape_matching_scores = self.calculate_matching_score(src_shape_feats, trg_shape_feats, eps=1e-8)
-
+        # 7. Calculate Matching Scores
+        shape_matching_scores, active_mask = self.calculate_matching_score(shape_feats, pcd_batch_info, eps=1e-8)
         if self.flip_normal and mode in ['train', 'val']:
-            symmetric_matching_scores = self.calculate_matching_score(symmetric_src_shape_feats, symmetric_trg_shape_feats, eps=1e-8)
+            symmetric_matching_scores, symmetric_active_mask = self.calculate_matching_score(symmetric_shape_feats, pcd_batch_info, eps=1e-8)
 
-
-        # 8. Calculate Matching Scores
-        matching_scores = self.optimal_transport(shape_matching_scores) # Optimal Transport is in log space, so inside registration, there is exp operation
-        matching_scores_drop = matching_scores[:,:-1,:-1]
-
+        # 8. Optimal Transport
+        # Optimal Transport is in log space, so inside registration, there is exp operation
+        matching_scores = self.optimal_transport(shape_matching_scores, row_masks=(pcd_batch_info == 0), col_masks=(pcd_batch_info == 1)) # (B, N+M+1, N+M+1)
+        matching_scores_drop = matching_scores[:,:-1,:-1] # (B, N+M, N+M)
         if self.flip_normal and mode in ['train', 'val']:
-            symmetric_matching_scores = self.optimal_transport(symmetric_matching_scores)
+            symmetric_matching_scores = self.optimal_transport(symmetric_matching_scores) # (B, N+M+1, N+M+1)
+        
+        print(f"matching_scores.shape: {matching_scores.shape}")
+        print(f"matching_scores_drop.shape: {matching_scores_drop.shape}")
+        exit("stop")
 
 
         if mode in ['train', 'val']: # Do not calculate for test
@@ -702,58 +685,64 @@ class EquiAssem(pl.LightningModule):
         self.log_dict(log_dict, prog_bar=False, logger=True, sync_dist=True, rank_zero_only=True, on_step=True, on_epoch=True, batch_size=1)
         self.log(f'{mode}/loss', training_loss, prog_bar=True, logger=True, sync_dist=True, rank_zero_only=True, on_step=True, on_epoch=True, batch_size=1)
         self.log('current_lr', current_lr, prog_bar=True, logger=True, sync_dist=True, rank_zero_only=True, on_step=True, on_epoch=False, batch_size=1)
-
     
-    def make_inv_feats(self, src_ori, trg_ori, src_equi_feats, trg_equi_feats, src_flip=True):
+
+    def make_inv_feats(self, oris, oris_batch_info, equi_feats, src_flip=True):
         """Make invariant features
 
         Args:
-            src_ori (torch.Tensor): (1, N, 3, 3)
-            trg_ori (torch.Tensor): (1, M, 3, 3)
-            src_equi_feats (torch.Tensor): (1, C, 3, N)
-            trg_equi_feats (torch.Tensor): (1, C, 3, M)
+            oris (torch.Tensor): (B, N+M, 3, 3)
+            oris_batch_info (torch.Tensor): (B, N+M, ), batch index of the point cloud
+            equi_feats (torch.Tensor): (B, C, 3, N+M)
             src_flip (bool, optional): Whether to flip the normal vector of src. Defaults to True.
 
         Returns:
-            src_inv_feats (torch.Tensor): (1, C*3, N)
-            trg_inv_feats (torch.Tensor): (1, C*3, M)
+            inv_feats (torch.Tensor): (B, C*3, N)
         """
-        # 5. Invariant Features
 
-        if src_flip:
-            result_src_ori = torch.stack([- src_ori[:, :, 0, :], src_ori[:, :, 2, :], src_ori[:, :, 1, :]], dim=-2) if self.flip_normal else src_ori
-            result_trg_ori = trg_ori
+        # (B, N+M, 3, 3)
+        postprocessed_oris = torch.stack([- oris[:, :, 0, :], oris[:, :, 2, :], oris[:, :, 1, :]], dim=-2) if self.flip_normal else oris
+
+        if src_flip: # Flip the normal vector of src
+            # We assume there are two objects in the batch
+            src_batch_info = oris_batch_info == 0 # (B, N+M, )
+            result_oris = postprocessed_oris * src_batch_info[:,:,None,None] + oris * (~ src_batch_info)[:,:,None,None]
         
-        else:
-            result_src_ori = src_ori
-            result_trg_ori = torch.stack([- trg_ori[:, :, 0, :], trg_ori[:, :, 2, :], trg_ori[:, :, 1, :]], dim=-2) if self.flip_normal else trg_ori
-
-        src_inv_feats = torch.matmul(src_equi_feats.permute(0, 3, 1, 2).float(), result_src_ori.transpose(-2,-1).float()) # (1, N, C, 3) x (1, N, 3, 3) -> (1, N, C, 3)
-        trg_inv_feats = torch.matmul(trg_equi_feats.permute(0, 3, 1, 2).float(), result_trg_ori.transpose(-2,-1).float()) # (1, M, C, 3) x (1, M, 3, 3) -> (1, M, C, 3)
+        else: # Flip the normal vector of trg
+            trg_batch_info = oris_batch_info == 1 # (B, N+M, )
+            result_oris = postprocessed_oris * trg_batch_info[:,:,None,None] + oris * (~ trg_batch_info)[:,:,None,None]
         
-        src_inv_feats = rearrange(src_inv_feats, 'b n c r -> b (c r) n') # (1, N, C, 3) -> (1, C*3, N)
-        trg_inv_feats = rearrange(trg_inv_feats, 'b n c r -> b (c r) n') # (1, M, C, 3) -> (1, C*3, M)
+        # (B, C, 3, N) -> (B, N, C, 3) @ (B, N, 3, 3) -> (B, N, 3, 3) => (B, N, C, 3)
+        inv_feats = torch.matmul(equi_feats.permute(0, 3, 1, 2).float(), result_oris.transpose(-2,-1).float()) 
+        inv_feats = rearrange(inv_feats, 'b n c r -> b (c r) n') # (B, N, C, 3) -> (B, C*3, N)
+        return inv_feats
+    
 
-        return src_inv_feats, trg_inv_feats
-    
-    
-    
-    def calculate_matching_score(self, src_feats, trg_feats, eps=1e-8):
+    def calculate_matching_score(self, shape_feats, batch_info, eps=1e-8):
         """
         Calculate matching score between src and trg features
-        When mode is CM, then calculate score like CM
-        When mode is cos, then calculate score like cosine similarity
 
         Args:
-            src_feats (torch.Tensor): (1, C, N)
-            trg_feats (torch.Tensor): (1, C, M)
-
+            shape_feats (torch.Tensor): (B, D, N+M)
+            batch_info (torch.Tensor): (B, N+M, ), batch index of the point cloud
         Returns:
-            matching_scores (torch.Tensor): (1, N, M)
+            matching_scores (torch.Tensor): (B, N+M, N+M)
         """
-        matching_scores = torch.einsum('b c n , b c m -> b n m', src_feats, trg_feats) # (1, N, M)
-        matching_scores = matching_scores / (src_feats.shape[1] ** 0.5 + eps) # 1e-8 is for avoiding division by zero
-        return matching_scores
+        # Leave only the matching scores between the different objects
+        # Right-Upper part is only left
+        num_of_points = batch_info.size(1)
+        repeated_batch_info_row_for_src = batch_info[:,:,None].expand(-1, -1, num_of_points) == 0  # (B, N+M, N+M)
+        repeated_batch_info_col_for_trg = batch_info[:,None,:].expand(-1, num_of_points, -1) == 1 # (B, N+M, N+M)
+        active_parts = torch.logical_and(repeated_batch_info_row_for_src, repeated_batch_info_col_for_trg) # (B, N+M, N+M)
+
+        # Calculate matching scores
+        matching_scores = torch.einsum('b c n , b c m -> b n m', shape_feats, shape_feats) # (B, N+M, N+M)
+        matching_scores = matching_scores / (shape_feats.shape[1] ** 0.5 + eps) # 1e-8 is for avoiding division by zero
+
+        # Remove the matching scores between the same objects
+        matching_scores = matching_scores * active_parts
+
+        return matching_scores, active_parts
     
     
     @torch.no_grad()

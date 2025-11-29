@@ -35,6 +35,7 @@ def knn(x, batch_info, k):
     repeated_batch_info_col = batch_info[:,:,None].expand(-1, -1, num_of_points)
     matrix_batch_info = torch.stack([repeated_batch_info_row, repeated_batch_info_col], dim=-1) # (B, N+M, N+M, 2)
     matrix_batch_info = matrix_batch_info[:,:,:,0] == matrix_batch_info[:,:,:,1] # (B, N+M, N+M) -> True if the point is included in same obj
+    torch.set_printoptions(threshold=torch.inf, linewidth=1000)
     pairwise_distance = pairwise_distance * matrix_batch_info + (- 1e9) * ( ~ matrix_batch_info)
 
     idx = pairwise_distance.topk(k=k, dim=-1)[1]   # (B, N+M, k)
