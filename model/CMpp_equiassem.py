@@ -599,7 +599,7 @@ class EquiAssem(pl.LightningModule):
                     # This is for checking the normal error
                     loss['n_error'], _, loss['n_suc_rate'] = self._normal_error(in_dict, out_dict, success_criterion_in_degree=self.success_criterion_in_degree)
         
-
+        """
         # 9. Evaluation
         if mode in ['val', 'test']:
             # Point cloud registration
@@ -637,6 +637,7 @@ class EquiAssem(pl.LightningModule):
                 eval_dict.update(self._calculate_recall(matching_scores_drop, gt_corr))
 
             loss.update(eval_dict)
+        """
         
 
         if self.debug:

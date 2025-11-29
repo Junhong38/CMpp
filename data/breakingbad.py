@@ -143,11 +143,11 @@ class DatasetBreakingBad(Dataset):
             trans0, trans1 = trans[src_idx], trans[trg_idx]
             rotat0, rotat1 = rotat[src_idx], rotat[trg_idx]
 
-            # From _pairwise_mating, we will move src_pcd to trg_pcd -> self._transform(src_pcd.squeeze(0), rotat, -trans, True)
+            # From _pairwise_mating, we will move src_pcd to trg_pcd -> self._transform(src_pcd.squeeze(0), rotat, trans)
             # src_pcd_t = R_0 * (src_pcd - T_0)
             # trg_pcd_t = R_1 * (trg_pcd - T_1)
             # R_0 * (src_pcd - T_0) -> R_1 * R_0^T * R_0 * (src_pcd - T_0) = R_1 * src_pcd - R_1 * T_0
-            # - R_1 * T_0 + R' = - R_1 * T_1, So R' = R_1 * T_0 - R_1 * T_1 = R_1 * (T_0 - T_1)
+            # - R_1 * T_0 + T' = - R_1 * T_1, So T' = R_1 * T_0 - R_1 * T_1 = R_1 * (T_0 - T_1)
             # In short, R_1 * R_0^T, R_1 * (T_0 - T_1)
             # Hence, in self._transform, R_1 * R_0^T * R_0 * (src_pcd - T_0) + R_1 * (T_0 - T_1) = R_1 * src_pcd - R_1 * T_0 + R_1 * T_0 - R_1 * T_1 = R_1 * src_pcd - R_1 * T_1 = R_1 * (src_pcd - T_1)
 
@@ -198,7 +198,6 @@ class DatasetBreakingBad(Dataset):
             random.seed(idx)
         """
 
-        
         idx = idx % self.len_filepaths
 
         # Read mesh, point cloud of a fractured object
@@ -223,6 +222,10 @@ class DatasetBreakingBad(Dataset):
         gt_relative_trsfm = self._compute_relative_transform(gt_trans, gt_rotat)
         gt_normals = self._extract_gt_normals(mesh_t, face)
 
+        for pcd_ in pcd:
+            print(f"pcd_.shape : {pcd_.shape}")
+
+
         concat_pcd = torch.cat(pcd, dim=0) # (total_N, 3)
         concat_pcd_t = torch.cat(pcd_t, dim=0) # (total_N, 3)
         concat_gt_normals = torch.cat(gt_normals, dim=0) # (total_N, 3)
@@ -235,7 +238,6 @@ class DatasetBreakingBad(Dataset):
                 'n_frac': n_frac, # integer e.g. 2
                 'anchor_idx': anchor_idx, # integer e.g. 0
                 
-
                 'pcd': concat_pcd, # torch.Tensor, (total_N, 3)
                 'pcd_t': concat_pcd_t, # torch.Tensor, (total_N, 3)
                 'gt_normals': concat_gt_normals, # torch.Tensor, (total_N, 3)
@@ -254,6 +256,7 @@ class DatasetBreakingBad(Dataset):
             batch.update(eval_dict)
     
         return batch
+    
 
     def read_obj_data(self, idx):        
         filepath = self.filepaths[idx]
@@ -317,7 +320,6 @@ def collate_fn(batch):
             'obj_class': filepath.split('/')[1], # string e.g. 'BeerBottle'
             'n_frac': n_frac, # integer e.g. 2
             'anchor_idx': anchor_idx, # integer e.g. 0
-            
 
             'pcd': concat_pcd, # torch.Tensor, (total_N, 3)
             'pcd_t': concat_pcd_t, # torch.Tensor, (total_N, 3)
@@ -339,10 +341,10 @@ def collate_fn(batch):
     result_batch = {}
 
     for batch_key in batch[0].keys():
-        if batch_key in ['eval_idx', 'n_frac', 'anchor_idx']:
+        if batch_key in ['eval_idx', 'n_frac', 'anchor_idx']: # Single numerical value
             result_batch[batch_key] = torch.tensor([a_batch[batch_key] for a_batch in batch]) # (B, )
 
-        elif batch_key in ['filepath', 'obj_class']:
+        elif batch_key in ['filepath', 'obj_class']: # Single string value
             result_batch[batch_key] = [a_batch[batch_key] for a_batch in batch] # (B, )
 
         elif batch_key in ['pcd', 'pcd_t', 'gt_normals', 'pcd_batch_info']:

@@ -228,9 +228,9 @@ if __name__ == '__main__':
     parser.add_argument('--multiplicity', type=int, default=1, help='Multiplicity of the dataset')
     parser.add_argument('--min_part', type=int, default=2)
     parser.add_argument('--max_part', type=int, default=2)
-    parser.add_argument('--min_n_pts', type=int, default=256)
-    parser.add_argument('--n_pts', type=int, default=5000)
-    parser.add_argument('--overlap_radius', type=float, default=0.018)
+    parser.add_argument('--min_n_pts', type=int, default=3)
+    parser.add_argument('--n_pts', type=int, default=10)
+    parser.add_argument('--overlap_radius', type=float, default=1.0)
     
 
     # Training arguments
