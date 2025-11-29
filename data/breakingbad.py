@@ -223,7 +223,7 @@ class DatasetBreakingBad(Dataset):
         gt_normals = self._extract_gt_normals(mesh_t, face)
 
         for pcd_ in pcd:
-            print(f"pcd_.shape : {pcd_.shape}")
+            print(f"[{idx}]pcd_.shape : {pcd_.shape}")
 
 
         concat_pcd = torch.cat(pcd, dim=0) # (total_N, 3)

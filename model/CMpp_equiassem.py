@@ -393,54 +393,35 @@ class EquiAssem(pl.LightningModule):
             Assumption: Batch size is 1
 
             in_dict (dict):
-                - eval_idx (torch.Tensor): (1, )
-                - filepath (list): (1, ), e.g. ['everyday/BeerBottle/2927d6c8438f6e24fe6460d8d9bd16c6/fractured_37']
-                - obj_class (list): (1, ), e.g. ['BeerBottle']
-                
-                - mesh (list): length is 2, only for two pieces
-                    - mesh[0]: (1, N', 3)
-                    - mesh[1]: (1, M', 3)
-                - mesh_t (list): length is 2, only for two pieces
-                    - mesh_t[0]: (1, N', 3)
-                    - mesh_t[1]: (1, M', 3)
+                - eval_idx (torch.Tensor): (B, )
+                - filepath (list): (B, ), e.g. ['everyday/BeerBottle/2927d6c8438f6e24fe6460d8d9bd16c6/fractured_37']
+                - obj_class (list): (B, ), e.g. ['BeerBottle']
+                - n_frac (torch.Tensor): (B, )
+                - anchor_idx (torch.Tensor): (B, )
 
-                - mesh_faces (list): length is 2, only for two pieces
-                    - mesh_faces[0]: (1, F, 3)
-                    - mesh_faces[1]: (1, F, 3)
-                
-                - pcd_t (list): length is 2, only for two pieces
-                    - pcd_t[0]: (1, N, 3)
-                    - pcd_t[1]: (1, M, 3)
-                - pcd (list): length is 2, only for two pieces
-                    - pcd[0]: (1, N, 3)
-                    - pcd[1]: (1, M, 3)
-                
-                - n_frac (torch.Tensor): (1, )
-                - anchor_idx (torch.Tensor): (1, )
-                
-                - gt_trans (list): length is 2, only for two pieces
-                    - gt_trans[0]: (1, 3)
-                    - gt_trans[1]: (1, 3)
-                - gt_rotat (list): length is 2, only for two pieces
-                    - gt_rotat[0]: (1, 3, 3)
-                    - gt_rotat[1]: (1, 3, 3)
-                - gt_trans_inv (list): length is 2, only for two pieces
-                    - gt_trans_inv[0]: (1, 3)
-                    - gt_trans_inv[1]: (1, 3)
-                - gt_rotat_inv (list): length is 2, only for two pieces
-                    - gt_rotat_inv[0]: (1, 3, 3)
-                    - gt_rotat_inv[1]: (1, 3, 3)
-                
-                - relative_trsfm (dict):
-                    - key: relative_rotat, relative_trans
-                        - relative_rotat: (1, 3, 3)
-                        - relative_trans: (1, 3)
-                
-                - gt_normals (list): length is 2, only for two pieces
-                    - gt_normals[0]: (1, N, 3)
-                    - gt_normals[1]: (1, M, 3)
+                - pcd (torch.Tensor): (B, N+M, 3)
+                - pcd_t (torch.Tensor): (B, N+M, 3)
+                - gt_normals (torch.Tensor): (B, N+M, 3)
+                - pcd_batch_info (torch.Tensor): (B, N+M)
 
-                - gt_correspondence (torch.Tensor): (1, P, 2)
+                - gt_correspondence (torch.Tensor): (total_Corr, 2) where total_Corr := Corr_1 + Corr_2 + ... + Corr_B
+                - gt_corr_offset_info (torch.Tensor): (B, ) where gt_corr_offset_info[i] shows size of Corr_i
+
+                For evaluation
+                    - mesh (list): length is 2, only for two pieces
+                        - mesh[0]: (N', 3)
+                        - mesh[1]: (M', 3)
+                    - mesh_t (list): length is 2, only for two pieces
+                        - mesh_t[0]: (N', 3)
+                        - mesh_t[1]: (M', 3)
+                    - mesh_faces (list): length is 2, only for two pieces
+                        - mesh_faces[0]: (F_1, 3)
+                        - mesh_faces[1]: (F_2, 3)
+                    
+                    - relative_trsfm (dict):
+                        - key: relative_rotat, relative_trans
+                            - relative_rotat: (3, 3)
+                            - relative_trans: (3)
 
             mode (string): ['train', 'val', 'test']
 
@@ -451,9 +432,6 @@ class EquiAssem(pl.LightningModule):
                     - s_loss: (1, )
                     - p_loss: (1, )
                     - loss: (1, )
-                    
-                    if not delete_occupancy_loss:
-                        - occ_loss: (1, )
                 
                 - During validation or test, the following keys are added
                     - estimated_rotat: (3, 3)
@@ -467,9 +445,6 @@ class EquiAssem(pl.LightningModule):
                     - s_loss: (1, )
                     - p_loss: (1, )
                     - loss: (1, )
-
-                    if not delete_occupancy_loss:
-                        - occ_loss: (1, )
                 
                 - During validation or test, the following keys are added
                     - cd: (1, )
@@ -479,8 +454,6 @@ class EquiAssem(pl.LightningModule):
                     - rpf_rmse: (1, )
                     - rpf_tmse: (1, )
         """
-
-        exit("stop")
 
         out_dict, loss = {}, {}
 
