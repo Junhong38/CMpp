@@ -26,6 +26,8 @@ from common.viz import draw_frames, draw_normal_error_histogram
 from pytorch3d.ops import iterative_closest_point
 
 
+from common.misc import extract_by_offset_info, extract_by_batch_index, extract_all_objects
+
 
 class EquiAssem(pl.LightningModule):
     def __init__(
@@ -33,7 +35,10 @@ class EquiAssem(pl.LightningModule):
             lr, 
             scheduler_mode='cos',
             backbone='vn_unet', double_bacbone='none',
+            
+            pos_radius=0.018, safe_radius=0.03, 
             pos_margin=0.1, neg_margin=1.4, log_scale=24, same_opt=False, no_balance=False, hard_negative=False,
+            
             s_loss_weight=1.0, p_loss_weight=1.0, o_loss_weight=1.0,
             visualize=False, viz_epoch=30, viz_max_arrow_num=0, ckp_dir=None, debug=False,
             success_criterion_in_degree=10,
@@ -62,7 +67,11 @@ class EquiAssem(pl.LightningModule):
             scheduler_mode (str, optional): Scheduler type ('cos', 'onecycle', 'none). Defaults to 'cos'.
             backbone (str, optional): Backbone network architecture. Defaults to 'vn_unet'.
             double_bacbone (str, optional): 'none' or 'vn_unet' or 'vn_unet_deep' or 'vn_unet_deep_v2' or 'vn_unet_deep_v3' or 'vn_unet_deep_v4' or 'vn_dgcnn' or 'unet' or 'dgcnn'. Defaults to 'none'.
-            
+
+            # Circle loss and point matching loss arguments
+            pos_radius (float, optional): Radius for positive samples in Circle loss computation and point matching loss. Defaults to 0.018.
+            safe_radius (float, optional): Radius for safe samples in Circle loss computation. Defaults to 0.03.
+
             # Circle loss arguments
             pos_margin (float, optional): Margin for positive samples in loss computation. Defaults to 0.1.
             neg_margin (float, optional): Margin for negative samples in loss computation. Defaults to 1.4.
@@ -165,9 +174,11 @@ class EquiAssem(pl.LightningModule):
         self.feat_dim = 1024
         
         # Objectives
-        self.circle_loss = CircleLoss(log_scale=log_scale, pos_optimal=pos_margin, neg_optimal=neg_margin, same_opt=same_opt, no_balance=no_balance, hard_negative=hard_negative)
+        self.circle_loss = CircleLoss(pos_radius=pos_radius, safe_radius=safe_radius, 
+                                      log_scale=log_scale, pos_optimal=pos_margin, neg_optimal=neg_margin, 
+                                      same_opt=same_opt, no_balance=no_balance, hard_negative=hard_negative)
         self.orientation_loss = OrientationLoss(consistency_loss=consistency_loss)
-        self.matching_loss = PointMatchingLoss()
+        self.matching_loss = PointMatchingLoss(pos_radius=pos_radius)
         
 
         # Weights for losses
@@ -454,17 +465,23 @@ class EquiAssem(pl.LightningModule):
                     - rpf_rmse: (1, )
                     - rpf_tmse: (1, )
         """
+        print(f"[{in_dict['eval_idx']}]pcd_batch_info: \n{in_dict['pcd_batch_info']}")
+
 
         out_dict, loss = {}, {}
 
         # 0. Get Point Clouds and Ground Truth Correspondence
-        src_pcd_raw = in_dict['pcd'][0].squeeze(0) # (N, 3)
-        trg_pcd_raw = in_dict['pcd'][1].squeeze(0) # (M, 3)
-        src_pcd = in_dict['pcd_t'][0] # (1, N ,3)
-        trg_pcd = in_dict['pcd_t'][1] # (1, M ,3)
-        gt_corr = in_dict['gt_correspondence'].squeeze(0) # (1, P, 2) -> (P, 2)
-        
+        extractd_pcd_raw = extract_all_objects(in_dict['pcd'][0], in_dict['pcd_batch_info'][0])
+        extractd_pcd_t = extract_all_objects(in_dict['pcd_t'][0], in_dict['pcd_batch_info'][0])
+        extractd_gt_normals = extract_all_objects(in_dict['gt_normals'][0], in_dict['pcd_batch_info'][0])
 
+        src_pcd_raw = extractd_pcd_raw[0] # (N, 3)
+        trg_pcd_raw = extractd_pcd_raw[1] # (M, 3)
+        src_pcd = extractd_pcd_t[0].unsqueeze(0) # (N, 3) -> (1, N ,3)
+        trg_pcd = extractd_pcd_t[1].unsqueeze(0) # (M, 3) -> (1, M ,3)
+        gt_corr = in_dict['gt_correspondence'] # (total_Corr, 2) where total_Corr := Corr_1 + Corr_2 + ... + Corr_B
+        gt_normals = [extractd_gt_normals[0].unsqueeze(0), extractd_gt_normals[1].unsqueeze(0)]
+        
         # 1. SO(3)-Equivariant Feature Extractor
         src_equi_feats_backbone = self.backbone(src_pcd) # (1, C, 3, N)
         trg_equi_feats_backbone = self.backbone(trg_pcd) # (1, C, 3, M)
@@ -503,13 +520,13 @@ class EquiAssem(pl.LightningModule):
 
         if self.only_train_normal:
             # Only train the normal vector
-            loss['o_loss'] = self.orientation_loss(src_ori, trg_ori, gt_corr, in_dict['gt_normals'])
+            loss['o_loss'] = self.orientation_loss(src_ori, trg_ori, gt_corr, gt_normals)
             loss['loss'] = loss['o_loss']
 
             # Compute Normal Error
-            with torch.no_grad():
-                # (d) Compute Normal Error
-                loss['n_error'], _, loss['n_suc_rate'] = self._normal_error(in_dict, out_dict, success_criterion_in_degree=self.success_criterion_in_degree)
+            # with torch.no_grad():
+            #     # (d) Compute Normal Error
+            #     loss['n_error'], _, loss['n_suc_rate'] = self._normal_error(in_dict, out_dict, success_criterion_in_degree=self.success_criterion_in_degree)
             
             if mode == 'train':
                 self.log_for_training(loss=loss, pos_neg_distribution=None, mode=mode)
@@ -563,14 +580,14 @@ class EquiAssem(pl.LightningModule):
                 loss['s_loss'], pos_neg_distribution = self.circle_loss(src_pcd_raw, trg_pcd_raw, src_shape_feats.transpose(-2,-1), trg_shape_feats.transpose(-2,-1), gt_corr, shape_matching_scores)
                 loss['p_loss'] = self.matching_loss(matching_scores, src_pcd_raw, trg_pcd_raw).float()
             
-            loss['o_loss'] = self.orientation_loss(src_ori, trg_ori, gt_corr, in_dict['gt_normals'])
+            loss['o_loss'] = self.orientation_loss(src_ori, trg_ori, gt_corr, gt_normals)
             loss['loss'] = self.o_loss_weight * loss['o_loss'] + self.s_loss_weight * loss['s_loss'] + self.p_loss_weight * loss['p_loss']
             out_dict.update(loss)
 
-            if mode == 'train':
-                with torch.no_grad():
-                    # This is for checking the normal error
-                    loss['n_error'], _, loss['n_suc_rate'] = self._normal_error(in_dict, out_dict, success_criterion_in_degree=self.success_criterion_in_degree)
+            # if mode == 'train':
+                # with torch.no_grad():
+                #     # This is for checking the normal error
+                #     loss['n_error'], _, loss['n_suc_rate'] = self._normal_error(in_dict, out_dict, success_criterion_in_degree=self.success_criterion_in_degree)
         
         """
         # 9. Evaluation

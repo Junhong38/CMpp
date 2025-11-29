@@ -5,7 +5,7 @@ import torch.nn.functional as F
 
 class CircleLoss(nn.Module):
 
-    def __init__(self, log_scale=24, pos_optimal=0.1, neg_optimal=1.4, same_opt=False, no_balance=False, hard_negative=False):
+    def __init__(self, pos_radius=0.018, safe_radius=0.03, log_scale=24, pos_optimal=0.1, neg_optimal=1.4, same_opt=False, no_balance=False, hard_negative=False):
 
 
         super(CircleLoss,self).__init__()
@@ -23,13 +23,14 @@ class CircleLoss(nn.Module):
             self.pos_margin = pos_optimal - 0.05
             self.neg_margin = neg_optimal + 0.05
 
-        self.pos_radius = 0.018
-        self.safe_radius = 0.03
+        self.pos_radius = pos_radius
+        self.safe_radius = safe_radius
 
         
         print("------------------------------------------------------")
         print("INITIALIZING CircleLoss")
         print("------------------------------------------------------")
+        print(f"pos_radius: {self.pos_radius}, safe_radius: {self.safe_radius}")
         print(f"log_scale: {self.log_scale}")
         print(f"pos_optimal: {self.pos_optimal}, pos_margin: {self.pos_margin}")
         print(f"neg_optimal: {self.neg_optimal}, neg_margin: {self.neg_margin}")
@@ -102,6 +103,7 @@ class CircleLoss(nn.Module):
         """
         pos_mask = coords_dist < self.pos_radius
         neg_mask = coords_dist > self.safe_radius
+        
 
         # Calculate Positive/Negative feats_dist distribution
         with torch.no_grad():
@@ -179,6 +181,13 @@ class CircleLoss(nn.Module):
             dict: (1, ), pos_neg_distribution
         """
 
+        print(f"src_pcd.shape: {src_pcd.shape}")
+        print(f"tgt_pcd.shape: {tgt_pcd.shape}")
+        print(f"src_feats.shape: {src_feats.shape}")
+        print(f"tgt_feats.shape: {tgt_feats.shape}")
+        print(f"correspondence.shape: {correspondence.shape}")
+        print(f"matching_scores.shape: {matching_scores.shape}")
+
         # Check NaN
         if torch.isnan(src_pcd).any() or torch.isnan(tgt_pcd).any() or torch.isnan(src_feats).any() or torch.isnan(tgt_feats).any():
             assert False, "[Circle Loss] Input features are nan\n src_pcd: {}\n tgt_pcd: {}\n src_feats: {}\n tgt_feats: {}".format(src_pcd, tgt_pcd, src_feats, tgt_feats)
@@ -230,9 +239,9 @@ class CircleLoss(nn.Module):
 
 
 class PointMatchingLoss(nn.Module):
-    def __init__(self):
+    def __init__(self, pos_radius=0.018):
         super(PointMatchingLoss, self).__init__()
-        self.positive_radius = 0.018
+        self.positive_radius = pos_radius
 
     def forward(self, matching_scores, src_pcd, trg_pcd):
         """

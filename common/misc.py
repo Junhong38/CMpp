@@ -73,22 +73,18 @@ def extract_by_offset_info(tensor, offset_info, target_idx):
 
 
 @torch.no_grad()
-def extract_by_batch_index(tensor, batch_info, target_batch_idx):
+def extract_by_batch_index(tensor_value, batch_info, target_batch_idx):
     """
     Args:
-        tensor (torch.Tensor): (N, ...)
+        tensor_value (torch.Tensor): (N, ...)
         batch_info (torch.Tensor): (N, )
         target_batch_idx (int): target batch index
     Returns:
-        tensor (torch.Tensor): (N, ...)
+        tensor_value (torch.Tensor): (N, ...)
     """
-    assert len(tensor) == len(batch_info), f"len(tensor): {len(tensor)}, len(batch_info): {len(batch_info)}"
+    assert len(tensor_value) == len(batch_info), f"len(tensor_value): {len(tensor_value)}, len(batch_info): {len(batch_info)}"
     assert target_batch_idx <= batch_info.max(), f"target_batch_idx: {target_batch_idx}, batch_info.max(): {batch_info.max()}"
-
-    print(f"[extract_by_batch_index] tensor: {tensor.shape}, batch_info: {batch_info.shape}, target_batch_idx: {target_batch_idx}")
-
-    selected_part = tensor[batch_info == target_batch_idx]
-    print(f"[extract_by_batch_index] selected_part: {selected_part.shape}")
+    selected_part = tensor_value[batch_info == target_batch_idx]
     return selected_part
 
 
