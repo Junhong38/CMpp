@@ -8,35 +8,34 @@ Please cite our work if the code is helpful to you.
 import torch
 
 
-@torch.no_grad()
+
 def offset2bincount(offset):
     return torch.diff(offset, prepend=torch.tensor([0], device=offset.device, dtype=torch.long))
 
 
-@torch.no_grad()
+
 def bincount2offset(bincount):
     return torch.cumsum(bincount, dim=0)
 
 
-@torch.no_grad()
+
 def offset2batch(offset):
     bincount = offset
     return torch.arange(len(bincount), device=offset.device, dtype=torch.long).repeat_interleave(bincount)
 
 
 
-@torch.no_grad()
+
 def batch2offset(batch):
     return torch.cumsum(batch.bincount(), dim=0).long()
 
 
-@torch.no_grad()
 def batch_scaling(batch):
     """
     Args:
-        batch (torch.Tensor): (batch_size, num_points), batch index of the point cloud
+        batch (torch.Tensor): (B, N+M), batch index of the point cloud
     Returns:
-        batch_scaled_batch (torch.Tensor): (batch_size, num_points), batch index of the point cloud
+        batch_scaled_batch (torch.Tensor): (B, N+M), batch index of the point cloud
     """
     max_val_batch = batch.max(dim=1)[0] # (batch_size,)
 
@@ -50,7 +49,7 @@ def batch_scaling(batch):
     return batch_scaled_batch
 
 
-@torch.no_grad()
+
 def extract_by_offset_info(tensor, offset_info, target_idx):
     """
     Args:
@@ -72,7 +71,7 @@ def extract_by_offset_info(tensor, offset_info, target_idx):
     return tensor[start_idx:end_idx]
 
 
-@torch.no_grad()
+
 def extract_by_batch_index(tensor_value, batch_info, target_batch_idx):
     """
     Args:
@@ -88,7 +87,7 @@ def extract_by_batch_index(tensor_value, batch_info, target_batch_idx):
     return selected_part
 
 
-@torch.no_grad()
+
 def extract_all_objects(tensor, batch_info):
     """
     Args:

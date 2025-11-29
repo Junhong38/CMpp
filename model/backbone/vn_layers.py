@@ -14,35 +14,60 @@ import torch.nn.functional as F
 
 EPS = 1e-6
 
-def knn(x, k):
+def knn(x, batch_info, k):
+    """KNN
+
+    Args:
+        x (torch.Tensor): (B, C, 3, N+M), point features
+        batch_info (torch.Tensor): (B, N+M), batch index of the point cloud
+        k (int): k
+
+    Returns:
+        idx (torch.Tensor): (B, num_points, k), index of the k nearest neighbors
+    """
     inner = -2*torch.matmul(x.transpose(2, 1), x)
     xx = torch.sum(x**2, dim=1, keepdim=True)
     pairwise_distance = -xx - inner - xx.transpose(2, 1)
-    idx = pairwise_distance.topk(k=k, dim=-1)[1]   # (batch_size, num_points, k)
+
+    # To prevent neighboring points in different objects from being considered as neighbors
+    num_of_points = batch_info.size(1)
+    repeated_batch_info_row = batch_info[:,None,:].expand(-1, num_of_points, -1)
+    repeated_batch_info_col = batch_info[:,:,None].expand(-1, -1, num_of_points)
+    matrix_batch_info = torch.stack([repeated_batch_info_row, repeated_batch_info_col], dim=-1) # (B, N+M, N+M, 2)
+    matrix_batch_info = matrix_batch_info[:,:,:,0] == matrix_batch_info[:,:,:,1] # (B, N+M, N+M) -> True if the point is included in same obj
+    pairwise_distance = pairwise_distance * matrix_batch_info + (- 1e9) * ( ~ matrix_batch_info)
+
+    idx = pairwise_distance.topk(k=k, dim=-1)[1]   # (B, N+M, k)
     return idx
 
 
-def get_graph_feature(x, k=20, idx=None, x_coord=None):
+def get_graph_feature(x, batch_info, k=20):
+    """Get graph feature
+
+    Args:
+        x (torch.Tensor): (B, C, 3, N+M), point features
+        batch_info (torch.Tensor): (B, N+M), batch index of the point cloud
+        k (int, optional): k. Defaults to 20.
+        idx (torch.Tensor, optional): idx. Defaults to None.
+        x_coord (torch.Tensor, optional): x_coord. Defaults to None.
+
+    Returns:
+        feature (torch.Tensor): (B, 2C, 3, N+M, k)
+    """
     batch_size = x.size(0)
     num_points = x.size(3)
-    x = x.view(batch_size, -1, num_points)
-    if idx is None:
-        if x_coord is None: # dynamic knn graph
-            idx = knn(x, k=k)   # (batch_size, num_points, k)
-        else:          # fixed knn graph with input point coordinates
-            idx = knn(x_coord, k=k)
+    x = x.view(batch_size, -1, num_points) 
+    idx = knn(x, batch_info, k=k)   # (B, N+M, k)
+
     device = torch.device('cuda')
-
     idx_base = torch.arange(0, batch_size, device=device).view(-1, 1, 1)*num_points
-
     idx = idx + idx_base
-
     idx = idx.view(-1)
  
     _, num_dims, _ = x.size()
     num_dims = num_dims // 3
 
-    x = x.transpose(2, 1).contiguous()   # (batch_size, num_points, num_dims)  -> (batch_size*num_points, num_dims) #   batch_size * num_points * k + range(0, batch_size*num_points)
+    x = x.transpose(2, 1).contiguous() # (B, C*3, N+M) -> (B, N+M, C*3)
     feature = x.view(batch_size*num_points, -1)[idx, :]
     feature = feature.view(batch_size, num_points, k, num_dims, 3) 
     x = x.view(batch_size, num_points, 1, num_dims, 3).repeat(1, 1, k, 1, 1)
@@ -95,10 +120,9 @@ class VNLinearLeakyReLU(nn.Module):
         self.map_to_feat = nn.Linear(in_channels, out_channels, bias=False)
 
         if not no_norm:
-            # self.batchnorm = VNBatchNorm(out_channels, dim=dim)
-            self.batchnorm = VNInstanceNorm(out_channels, dim=dim)
+            self.instance_norm = VNInstanceNorm(out_channels, dim=dim)
         else:
-            self.batchnorm = nn.Identity()
+            self.instance_norm = nn.Identity()
 
         if share_nonlinearity == True:
             self.map_to_dir = nn.Linear(in_channels, 1, bias=False)
@@ -111,8 +135,8 @@ class VNLinearLeakyReLU(nn.Module):
         '''
         # Linear
         p = self.map_to_feat(x.transpose(1,-1)).transpose(1,-1)
-        # BatchNorm
-        p = self.batchnorm(p)
+        # InstanceNorm
+        p = self.instance_norm(p)
         # LeakyReLU
         d = self.map_to_dir(x.transpose(1,-1)).transpose(1,-1)
         dotprod = (p*d).sum(2, keepdims=True)

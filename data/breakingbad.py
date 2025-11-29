@@ -221,11 +221,7 @@ class DatasetBreakingBad(Dataset):
         pcd_t, mesh_t, gt_rotat = self._rotate(mesh_t, pcd_t)
         gt_relative_trsfm = self._compute_relative_transform(gt_trans, gt_rotat)
         gt_normals = self._extract_gt_normals(mesh_t, face)
-
-        for pcd_ in pcd:
-            print(f"[{idx}]pcd_.shape : {pcd_.shape}")
-
-
+        
         concat_pcd = torch.cat(pcd, dim=0) # (total_N, 3)
         concat_pcd_t = torch.cat(pcd_t, dim=0) # (total_N, 3)
         concat_gt_normals = torch.cat(gt_normals, dim=0) # (total_N, 3)

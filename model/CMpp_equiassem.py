@@ -396,6 +396,32 @@ class EquiAssem(pl.LightningModule):
         self.log_dict(avg_loss, logger=True, sync_dist=True, batch_size=1,)
         self.test_step_outputs.clear()
     
+    def on_train_batch_end(self, outputs, batch, batch_idx):
+        for name, param in self.backbone.named_parameters():
+            if param.requires_grad:
+                if param.grad is None:
+                    print(f"Module: backbone, Parameter: {name}, Gradient: None")
+        
+        for name, param in self.ori_backbone.named_parameters():
+            if param.requires_grad:
+                if param.grad is None:
+                    print(f"Module: ori_backbone, Parameter: {name}, Gradient: None")
+        
+        for name, param in self.proj.named_parameters():
+            if param.requires_grad:
+                if param.grad is None:
+                    print(f"Module: proj, Parameter: {name}, Gradient: None")
+        
+        for name, param in self.equi_layer.named_parameters():
+            if param.requires_grad:
+                if param.grad is None:
+                    print(f"Module: equi_layer, Parameter: {name}, Gradient: None")
+        
+        for name, param in self.shape_mlp.named_parameters():
+            if param.requires_grad:
+                if param.grad is None:
+                    print(f"Module: shape_mlp, Parameter: {name}, Gradient: None")
+    
     
     # @torch.no_grad()
     def forward_pass(self, in_dict, mode):
@@ -413,7 +439,7 @@ class EquiAssem(pl.LightningModule):
                 - pcd (torch.Tensor): (B, N+M, 3)
                 - pcd_t (torch.Tensor): (B, N+M, 3)
                 - gt_normals (torch.Tensor): (B, N+M, 3)
-                - pcd_batch_info (torch.Tensor): (B, N+M)
+                - pcd_batch_info (torch.Tensor): (B, num_of_objs)
 
                 - gt_correspondence (torch.Tensor): (total_Corr, 2) where total_Corr := Corr_1 + Corr_2 + ... + Corr_B
                 - gt_corr_offset_info (torch.Tensor): (B, ) where gt_corr_offset_info[i] shows size of Corr_i
@@ -483,12 +509,18 @@ class EquiAssem(pl.LightningModule):
         gt_normals = [extractd_gt_normals[0].unsqueeze(0), extractd_gt_normals[1].unsqueeze(0)]
         
         # 1. SO(3)-Equivariant Feature Extractor
-        src_equi_feats_backbone = self.backbone(src_pcd) # (1, C, 3, N)
-        trg_equi_feats_backbone = self.backbone(trg_pcd) # (1, C, 3, M)
+        equi_feats_backbone = self.backbone(in_dict['pcd_t'], in_dict['pcd_batch_info']) # (B, C, 3, N+M)
+        extractd_equi_feats_backbone = extract_all_objects(equi_feats_backbone[0].transpose(0,-1), in_dict['pcd_batch_info'][0])
+        src_equi_feats_backbone = extractd_equi_feats_backbone[0].transpose(0,-1).unsqueeze(0) # (1, C, 3, N)
+        trg_equi_feats_backbone = extractd_equi_feats_backbone[1].transpose(0,-1).unsqueeze(0) # (1, C, 3, M)
+
 
         # 2. Frame Prediction
-        src_equi_feats_ori_backbone = self.ori_backbone(src_pcd) if self.ori_backbone is not None else src_equi_feats_backbone
-        trg_equi_feats_ori_backbone = self.ori_backbone(trg_pcd) if self.ori_backbone is not None else trg_equi_feats_backbone
+        equi_feats_ori_backbone = self.ori_backbone(in_dict['pcd_t'], in_dict['pcd_batch_info'])
+        extractd_equi_feats_ori_backbone = extract_all_objects(equi_feats_ori_backbone[0].transpose(0,-1), in_dict['pcd_batch_info'][0])
+        src_equi_feats_ori_backbone = extractd_equi_feats_ori_backbone[0].transpose(0,-1).unsqueeze(0) # (1, C, 3, N)
+        trg_equi_feats_ori_backbone = extractd_equi_feats_ori_backbone[1].transpose(0,-1).unsqueeze(0) # (1, C, 3, M)
+
 
         # 2-1. Merge global information by averaging
         # (1, C, 3, N) -> (1, C, 3, 1) -> (1, C, 3, N)
