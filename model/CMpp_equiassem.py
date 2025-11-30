@@ -594,10 +594,9 @@ class EquiAssem(pl.LightningModule):
             else:
             """
             # loss['s_loss'], pos_neg_distribution = self.circle_loss(src_pcd_raw, trg_pcd_raw, src_shape_feats.transpose(-2,-1), trg_shape_feats.transpose(-2,-1), gt_corr, shape_matching_scores)
-            loss['s_loss'], pos_neg_distribution = self.circle_loss(pcd_raw, shape_feats.transpose(-2,-1), gt_corr, gt_corr_offset_info, shape_matching_scores, active_mask)
-            exit("stop")
-            loss['p_loss'] = self.matching_loss(matching_scores, src_pcd_raw, trg_pcd_raw).float()
-            loss['o_loss'] = self.orientation_loss(src_ori, trg_ori, gt_corr, gt_normals)
+            loss['s_loss'], coords_dist, pos_neg_distribution = self.circle_loss(pcd_raw, shape_feats.transpose(-2,-1), gt_corr, gt_corr_offset_info, shape_matching_scores, active_mask)
+            loss['p_loss'] = self.matching_loss(matching_scores, coords_dist, active_mask).float()
+            loss['o_loss'] = self.orientation_loss(oris, gt_normals, gt_corr, gt_corr_offset_info)
             loss['loss'] = self.o_loss_weight * loss['o_loss'] + self.s_loss_weight * loss['s_loss'] + self.p_loss_weight * loss['p_loss']
             out_dict.update(loss)
 
@@ -645,24 +644,6 @@ class EquiAssem(pl.LightningModule):
 
             loss.update(eval_dict)
         """
-        
-
-        if self.debug:
-            vis_dict = {}
-            vis_dict['src_vec'] = src_vecs.squeeze(0).cpu().detach()
-            vis_dict['trg_vec'] = trg_vecs.squeeze(0).cpu().detach()
-            vis_dict['src_ori'] = src_ori.squeeze(0).cpu().detach()
-            vis_dict['trg_ori'] = trg_ori.squeeze(0).cpu().detach()
-
-            vis_dict['src_pcd_raw'] = src_pcd_raw.squeeze(0).cpu().detach()
-            vis_dict['trg_pcd_raw'] = trg_pcd_raw.squeeze(0).cpu().detach()
-            vis_dict['src_gt_rot'] = in_dict['gt_rotat'][0].squeeze(0).cpu().detach()
-            vis_dict['trg_gt_rot'] = in_dict['gt_rotat'][1].squeeze(0).cpu().detach()
-
-            save_folder = './pickles/expanded_normal_reverse'
-            os.makedirs(save_folder, exist_ok=True)
-            with open(f'{save_folder}/{in_dict["eval_idx"].item()}_debug.pickle', 'wb') as f:
-                pickle.dump(vis_dict, f)
 
 
         # in training we log for every step

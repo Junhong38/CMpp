@@ -74,18 +74,16 @@ class CircleLoss(nn.Module):
             num_of_pos = pos_mask.reshape(batch_size, -1).sum(dim=-1) # (B, N+M, N+M) -> (B, (N+M)*(N+M)) -> (B, )
             num_of_hard_negs = hard_neg_mask.reshape(batch_size, -1).sum(dim=-1) # (B, N+M, N+M) -> (B, (N+M)*(N+M)) -> (B, )
 
-            if num_of_hard_negs < num_of_pos // 2: 
-                # If hard negatives are less than half of positive samples, we should sample more negative samples.
-                num_of_sampled_negs = num_of_pos - num_of_hard_negs
-                num_of_sampled_hards = num_of_hard_negs
-            
-            else:
-                # If hard negatives are greater than half of positive samples, we should sample equal ratio from negative and hard negative samples.
-                num_of_sampled_negs = num_of_pos - num_of_pos // 2
-                num_of_sampled_hards = num_of_pos // 2
+            # If hard negatives are less than half of positive samples, we should sample more negative samples.
+            # If hard negatives are greater than half of positive samples, we should sample equal ratio from negative and hard negative samples.
+            not_enough_hard_negs_part = num_of_hard_negs < num_of_pos // 2
+            num_of_sampled_negs = (num_of_pos - num_of_hard_negs) * not_enough_hard_negs_part + (num_of_pos - num_of_pos // 2) * (~not_enough_hard_negs_part) # (B, )
+            num_of_sampled_hards = num_of_hard_negs * not_enough_hard_negs_part + (num_of_pos // 2) * (~not_enough_hard_negs_part) # (B, )
 
             # Sample the hard negatives
             hard_neg_indices = hard_neg_mask.nonzero(as_tuple=False) # (B, N+M, N+M) -> (num_of_true_parts, 3), where 3 is (batch_index, row_index, col_index)
+            print(f"hard_neg_indices[:,0].shape: {hard_neg_indices[:,0].shape}, \n{hard_neg_indices[:,0]}")
+            exit("stop")
             hard_neg_nonsampled = hard_neg_indices[torch.randperm(hard_neg_indices.size(0))[num_of_sampled_hards:]]
             hard_neg_mask[hard_neg_nonsampled[:,0], hard_neg_nonsampled[:,1], hard_neg_nonsampled[:,2]] = False
 
@@ -236,7 +234,7 @@ class CircleLoss(nn.Module):
         if torch.isnan(circle_loss):
             assert False, "Circle loss is nan"
         
-        return circle_loss, pos_neg_distribution
+        return circle_loss, coords_dist, pos_neg_distribution
 
 
 class PointMatchingLoss(nn.Module):
@@ -244,31 +242,32 @@ class PointMatchingLoss(nn.Module):
         super(PointMatchingLoss, self).__init__()
         self.positive_radius = pos_radius
 
-    def forward(self, matching_scores, src_pcd, trg_pcd):
+    def forward(self, matching_scores, coords_dist, active_mask):
         """
         Args:
-            matching_scores (torch.Tensor): (1, N, M)
-            src_pcd (torch.Tensor): (N, 3)
-            trg_pcd (torch.Tensor): (M, 3)
+            matching_scores (torch.Tensor): (B, N+M+1, N+M+1)
+            coords_dist (torch.Tensor): (B, N+M, N+M)
+            active_mask (torch.Tensor): (B, N+M, N+M), True if the point is active
 
         Returns:
             torch.Tensor: (1, ), point matching loss
         """
 
-        coords_dist = torch.sqrt(torch.sum((src_pcd[:, None, :] - trg_pcd[None, :, :]) ** 2, dim=-1))
-        gt_corr_map = coords_dist < self.positive_radius
+        gt_corr_map = torch.logical_and(coords_dist < self.positive_radius, active_mask) # (B, N+M, N+M)
 
         # Initialize labels for the loss calculation
-        labels = torch.zeros_like(matching_scores, dtype=torch.bool)
+        labels = torch.zeros_like(matching_scores, dtype=torch.bool) # (B, N+M+1, N+M+1)
         
         # Handle slack rows and columns
-        slack_row_labels = torch.sum(gt_corr_map, dim=1) == 0
-        slack_col_labels = torch.sum(gt_corr_map, dim=0) == 0
+        # torch.sum(gt_corr_map, dim=-1) == 0 -> True if there is no matching parts
+        # active_mask.any(dim=-1) -> True if the row is active
+        slack_row_labels = torch.logical_and(torch.sum(gt_corr_map, dim=-1) == 0, active_mask.any(dim=-1)) # (B, N+M)
+        slack_col_labels = torch.logical_and(torch.sum(gt_corr_map, dim=-2) == 0, active_mask.any(dim=-2)) # (B, N+M)
 
         labels[:, :-1, :-1] = gt_corr_map
         labels[:, :-1, -1] = slack_row_labels
         labels[:, -1, :-1] = slack_col_labels
-        
+
         # Calculate the loss
         loss = - matching_scores[labels].mean()
 
@@ -281,36 +280,37 @@ class OrientationLoss(nn.Module):
         self.consistency_loss = consistency_loss
         self.loss_fn = nn.SmoothL1Loss(beta=1.0, reduction='mean')
     
-    def forward(self, src_ori, trg_ori, correspondence, gt_normals):
+    def forward(self, oris, gt_normals, gt_corr, gt_corr_offset_info):
         """
         Args:
-            src_ori (torch.Tensor): (1, N, 3, 3), first basis should be aligned with gt_normals[0]
-            trg_ori (torch.Tensor): (1, M, 3, 3), first basis should be aligned with gt_normals[1]
-            correspondence (torch.Tensor): (P, 2)
-            gt_normals (list): length is 2, only for two pieces
-                - gt_normals[0]: (1, N, 3)
-                - gt_normals[1]: (1, M, 3)
+            oris (torch.Tensor): (B, N+M, 3, 3), first basis should be aligned with gt_normals[0]
+            gt_normals (torch.Tensor): (B, N+M, 3)
+            gt_corr (torch.Tensor): (total_Corr, 2) where total_Corr := Corr_1 + Corr_2 + ... + Corr_B
+            gt_corr_offset_info (torch.Tensor): (B, ) where gt_corr_offset_info[i] shows size of Corr_i
 
         Returns:
             torch.Tensor: (1, ), orientation loss
         """
+        pred_normal = oris[:, :, 0, :] # (B, N+M, 3)
+        normal_loss = self.loss_fn(pred_normal, gt_normals)
+
+        if self.consistency_loss and (not torch.all(gt_corr_offset_info == 0)): # Make frame from src and trg be consistent with each other
+            zero_padded_gt_corr_offset = torch.cat([torch.tensor([0]).to(gt_corr_offset_info.device), gt_corr_offset_info], dim=0) # (B+1, )
+            zero_padded_gt_corr_offset = torch.cumsum(zero_padded_gt_corr_offset, dim=0) # (B+1, )
+
+            batch_scaled_gt_corr = gt_corr + zero_padded_gt_corr_offset[:-1].repeat_interleave(gt_corr_offset_info)[:, None] # (total_Corr, 2)
+
+            src_from_mating_surface = oris[:, batch_scaled_gt_corr[:,0], :, :] # (B, total_Corr, 3, 3)
+            trg_from_mating_surface = oris[:, batch_scaled_gt_corr[:,1], :, :] # (B, total_Corr, 3, 3)
+
+            consistency_loss_2nd = self.loss_fn(src_from_mating_surface[:, :, 1, :], trg_from_mating_surface[:, :, 2, :])
+            consistency_loss_3rd = self.loss_fn(src_from_mating_surface[:, :, 2, :], trg_from_mating_surface[:, :, 1, :])
+            consistency_loss = (consistency_loss_2nd + consistency_loss_3rd) / 2 
         
-        src_normal_basis = src_ori[:, :, 0, :] # (1, N, 3)
-        trg_normal_basis = trg_ori[:, :, 0, :] # (1, M, 3)
-
-        src_normal_basis_loss = self.loss_fn(src_normal_basis, gt_normals[0])
-        trg_normal_basis_loss = self.loss_fn(trg_normal_basis, gt_normals[1])
-
-        final_loss = (src_normal_basis_loss + trg_normal_basis_loss) / 2
-
-        if self.consistency_loss and (len(correspondence) > 0): # Make frame from src and trg be consistent with each other
-            src_from_mating_surface = src_ori[:, correspondence[:,0], :, :] # (1, P, 3, 3)
-            trg_from_mating_surface = trg_ori[:, correspondence[:,1], :, :] # (1, P, 3, 3)
-
-            consistency_loss_2nd = self.loss_fn(src_from_mating_surface[:, :, 1, :], trg_from_mating_surface[:, :, 2, :]) # 2nd <-> 3rd
-            consistency_loss_3rd = self.loss_fn(src_from_mating_surface[:, :, 2, :], trg_from_mating_surface[:, :, 1, :]) # 3rd <-> 2nd
-            consistency_loss = (consistency_loss_2nd + consistency_loss_3rd) / 2
-            final_loss = final_loss + consistency_loss
+        else:
+            consistency_loss = torch.tensor(0.).to(pred_normal.device)
+        
+        final_loss = normal_loss + consistency_loss
 
         return final_loss
 
