@@ -504,7 +504,7 @@ class EquiAssem(pl.LightningModule):
         trg_pcd_raw = extractd_pcd_raw[1] # (M, 3)
         src_pcd = extractd_pcd_t[0].unsqueeze(0) # (N, 3) -> (1, N ,3)
         trg_pcd = extractd_pcd_t[1].unsqueeze(0) # (M, 3) -> (1, M ,3)
-        gt_corr = in_dict['gt_correspondence'] # (total_Corr, 2) where total_Corr := Corr_1 + Corr_2 + ... + Corr_B
+        
         gt_normals = [extractd_gt_normals[0].unsqueeze(0), extractd_gt_normals[1].unsqueeze(0)]
 
 
@@ -513,6 +513,9 @@ class EquiAssem(pl.LightningModule):
         pcd_input = in_dict['pcd_t']
         gt_normals = in_dict['gt_normals']
         pcd_batch_info = in_dict['pcd_batch_info']
+        gt_corr = in_dict['gt_correspondence'] # (total_Corr, 2) where total_Corr := Corr_1 + Corr_2 + ... + Corr_B
+        gt_corr_offset_info = in_dict['gt_corr_offset_info'] # (B, ) where gt_corr_offset_info[i] shows size of Corr_i
+
 
         # 1. SO(3)-Equivariant Feature Extractor
         equi_feats_backbone = self.backbone(pcd_input, pcd_batch_info) # (B, C, 3, N+M)
@@ -574,13 +577,10 @@ class EquiAssem(pl.LightningModule):
         if self.flip_normal and mode in ['train', 'val']:
             symmetric_matching_scores = self.optimal_transport(symmetric_matching_scores) # (B, N+M+1, N+M+1)
         
-        print(f"matching_scores.shape: {matching_scores.shape}")
-        print(f"matching_scores_drop.shape: {matching_scores_drop.shape}")
-        exit("stop")
-
 
         if mode in ['train', 'val']: # Do not calculate for test
             # 8. Calculate Loss
+            """
             if self.flip_normal:
                 src_move_circle_loss, pos_neg_distribution = self.circle_loss(src_pcd_raw, trg_pcd_raw, src_shape_feats.transpose(-2,-1), trg_shape_feats.transpose(-2,-1), gt_corr, shape_matching_scores)
                 trg_move_circle_loss, _ = self.circle_loss(src_pcd_raw, trg_pcd_raw, symmetric_src_shape_feats.transpose(-2,-1), symmetric_trg_shape_feats.transpose(-2,-1), gt_corr, symmetric_matching_scores)
@@ -592,9 +592,11 @@ class EquiAssem(pl.LightningModule):
                 loss['p_loss'] = (src_move_matching_scores + trg_move_matching_scores) / 2
             
             else:
-                loss['s_loss'], pos_neg_distribution = self.circle_loss(src_pcd_raw, trg_pcd_raw, src_shape_feats.transpose(-2,-1), trg_shape_feats.transpose(-2,-1), gt_corr, shape_matching_scores)
-                loss['p_loss'] = self.matching_loss(matching_scores, src_pcd_raw, trg_pcd_raw).float()
-            
+            """
+            # loss['s_loss'], pos_neg_distribution = self.circle_loss(src_pcd_raw, trg_pcd_raw, src_shape_feats.transpose(-2,-1), trg_shape_feats.transpose(-2,-1), gt_corr, shape_matching_scores)
+            loss['s_loss'], pos_neg_distribution = self.circle_loss(pcd_raw, shape_feats.transpose(-2,-1), gt_corr, gt_corr_offset_info, shape_matching_scores, active_mask)
+            exit("stop")
+            loss['p_loss'] = self.matching_loss(matching_scores, src_pcd_raw, trg_pcd_raw).float()
             loss['o_loss'] = self.orientation_loss(src_ori, trg_ori, gt_corr, gt_normals)
             loss['loss'] = self.o_loss_weight * loss['o_loss'] + self.s_loss_weight * loss['s_loss'] + self.p_loss_weight * loss['p_loss']
             out_dict.update(loss)
