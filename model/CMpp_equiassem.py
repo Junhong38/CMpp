@@ -494,20 +494,7 @@ class EquiAssem(pl.LightningModule):
         assert in_dict['pcd_batch_info'].max() == 1, f"We assume there are two objects in the batch, but got {in_dict['pcd_batch_info'].max()}"
 
         out_dict, loss = {}, {}
-
-        # 0. Get Point Clouds and Ground Truth Correspondence
-        extractd_pcd_raw = extract_all_objects(in_dict['pcd'][0], in_dict['pcd_batch_info'][0])
-        extractd_pcd_t = extract_all_objects(in_dict['pcd_t'][0], in_dict['pcd_batch_info'][0])
-        extractd_gt_normals = extract_all_objects(in_dict['gt_normals'][0], in_dict['pcd_batch_info'][0])
-
-        src_pcd_raw = extractd_pcd_raw[0] # (N, 3)
-        trg_pcd_raw = extractd_pcd_raw[1] # (M, 3)
-        src_pcd = extractd_pcd_t[0].unsqueeze(0) # (N, 3) -> (1, N ,3)
-        trg_pcd = extractd_pcd_t[1].unsqueeze(0) # (M, 3) -> (1, M ,3)
         
-        gt_normals = [extractd_gt_normals[0].unsqueeze(0), extractd_gt_normals[1].unsqueeze(0)]
-
-
         # 0. Get Point Clouds and Ground Truth Correspondence
         pcd_raw = in_dict['pcd']
         pcd_input = in_dict['pcd_t']
@@ -538,27 +525,26 @@ class EquiAssem(pl.LightningModule):
         oris = ortho2rotation(vecs) # (B, N+M, 2, 3) -> (B, N+M, 3, 3)
         out_dict['oris'] = oris
 
-        """
+        
+        # Only train the normal vector
         if self.only_train_normal:
-            # Only train the normal vector
-            loss['o_loss'] = self.orientation_loss(src_ori, trg_ori, gt_corr, gt_normals)
+            loss['o_loss'] = self.orientation_loss(oris, gt_normals, gt_corr, gt_corr_offset_info)
             loss['loss'] = loss['o_loss']
 
             # Compute Normal Error
-            # with torch.no_grad():
-            #     # (d) Compute Normal Error
-            #     loss['n_error'], _, loss['n_suc_rate'] = self._normal_error(in_dict, out_dict, success_criterion_in_degree=self.success_criterion_in_degree)
+            with torch.no_grad():
+                # (d) Compute Normal Error
+                loss['n_error'], _, loss['n_suc_rate'] = self._normal_error(in_dict, out_dict, success_criterion_in_degree=self.success_criterion_in_degree)
             
             if mode == 'train':
                 self.log_for_training(loss=loss, pos_neg_distribution=None, mode=mode)
             return out_dict, loss
-        """
+        
 
         # 5. Invariant Features
         inv_feats = self.make_inv_feats(oris, pcd_batch_info, equi_feats, src_flip=True) # (B, C*3, N+M)
         if self.flip_normal and mode in ['train', 'val']:
             symmetric_inv_feats = self.make_inv_feats(oris, pcd_batch_info, equi_feats, src_flip=False) # (B, C*3, N+M)
-        
 
         # 6. SHAPE DESCRIPTOR 
         shape_feats = self.shape_mlp(inv_feats) # (B, C*3, N+M) -> (B, D, N+M)
@@ -568,42 +554,41 @@ class EquiAssem(pl.LightningModule):
         # 7. Calculate Matching Scores
         shape_matching_scores, active_mask = self.calculate_matching_score(shape_feats, pcd_batch_info, eps=1e-8)
         if self.flip_normal and mode in ['train', 'val']:
-            symmetric_matching_scores, symmetric_active_mask = self.calculate_matching_score(symmetric_shape_feats, pcd_batch_info, eps=1e-8)
+            symmetric_shape_matching_scores, symmetric_active_mask = self.calculate_matching_score(symmetric_shape_feats, pcd_batch_info, eps=1e-8)
 
         # 8. Optimal Transport
         # Optimal Transport is in log space, so inside registration, there is exp operation
         matching_scores = self.optimal_transport(shape_matching_scores, row_masks=(pcd_batch_info == 0), col_masks=(pcd_batch_info == 1)) # (B, N+M+1, N+M+1)
         matching_scores_drop = matching_scores[:,:-1,:-1] # (B, N+M, N+M)
         if self.flip_normal and mode in ['train', 'val']:
-            symmetric_matching_scores = self.optimal_transport(symmetric_matching_scores) # (B, N+M+1, N+M+1)
+            symmetric_matching_scores = self.optimal_transport(symmetric_shape_matching_scores) # (B, N+M+1, N+M+1)
         
 
         if mode in ['train', 'val']: # Do not calculate for test
             # 8. Calculate Loss
-            """
             if self.flip_normal:
-                src_move_circle_loss, pos_neg_distribution = self.circle_loss(src_pcd_raw, trg_pcd_raw, src_shape_feats.transpose(-2,-1), trg_shape_feats.transpose(-2,-1), gt_corr, shape_matching_scores)
-                trg_move_circle_loss, _ = self.circle_loss(src_pcd_raw, trg_pcd_raw, symmetric_src_shape_feats.transpose(-2,-1), symmetric_trg_shape_feats.transpose(-2,-1), gt_corr, symmetric_matching_scores)
+                src_move_circle_loss, src_coords_dist, pos_neg_distribution = self.circle_loss(pcd_raw, shape_feats.transpose(-2,-1), gt_corr, gt_corr_offset_info, shape_matching_scores, active_mask)
+                trg_move_circle_loss, _, _ = self.circle_loss(pcd_raw, symmetric_shape_feats.transpose(-2,-1), gt_corr, gt_corr_offset_info, symmetric_shape_matching_scores, active_mask)
 
-                src_move_matching_scores = self.matching_loss(matching_scores, src_pcd_raw, trg_pcd_raw).float()
-                trg_move_matching_scores = self.matching_loss(symmetric_matching_scores, src_pcd_raw, trg_pcd_raw).float()
+                src_move_matching_scores = self.matching_loss(matching_scores, src_coords_dist, active_mask).float()
+                trg_move_matching_scores = self.matching_loss(symmetric_matching_scores, src_coords_dist, active_mask).float()
 
                 loss['s_loss'] = (src_move_circle_loss + trg_move_circle_loss) / 2
                 loss['p_loss'] = (src_move_matching_scores + trg_move_matching_scores) / 2
             
             else:
-            """
-            # loss['s_loss'], pos_neg_distribution = self.circle_loss(src_pcd_raw, trg_pcd_raw, src_shape_feats.transpose(-2,-1), trg_shape_feats.transpose(-2,-1), gt_corr, shape_matching_scores)
-            loss['s_loss'], coords_dist, pos_neg_distribution = self.circle_loss(pcd_raw, shape_feats.transpose(-2,-1), gt_corr, gt_corr_offset_info, shape_matching_scores, active_mask)
-            loss['p_loss'] = self.matching_loss(matching_scores, coords_dist, active_mask).float()
+                loss['s_loss'], coords_dist, pos_neg_distribution = self.circle_loss(pcd_raw, shape_feats.transpose(-2,-1), gt_corr, gt_corr_offset_info, shape_matching_scores, active_mask)
+                loss['p_loss'] = self.matching_loss(matching_scores, coords_dist, active_mask).float()
+            
             loss['o_loss'] = self.orientation_loss(oris, gt_normals, gt_corr, gt_corr_offset_info)
             loss['loss'] = self.o_loss_weight * loss['o_loss'] + self.s_loss_weight * loss['s_loss'] + self.p_loss_weight * loss['p_loss']
+            
             out_dict.update(loss)
 
-            # if mode == 'train':
-                # with torch.no_grad():
-                #     # This is for checking the normal error
-                #     loss['n_error'], _, loss['n_suc_rate'] = self._normal_error(in_dict, out_dict, success_criterion_in_degree=self.success_criterion_in_degree)
+            if mode == 'train':
+                with torch.no_grad():
+                    # This is for checking the normal error
+                    loss['n_error'], _, loss['n_suc_rate'] = self._normal_error(in_dict, out_dict, success_criterion_in_degree=self.success_criterion_in_degree)
         
         """
         # 9. Evaluation
@@ -1040,21 +1025,20 @@ class EquiAssem(pl.LightningModule):
     def _normal_error(self, in_dict, out_dict, success_criterion_in_degree=10):
         """
         Args:
-            in_dict (dict): it is same as forward_pass
-            out_dict (dict): it is same as forward_pass
+            in_dict (dict): it is same as forward_pass. From in_dict, only need gt_normals, which is torch.Tensor: (B, N+M, 3)
+            out_dict (dict): it is same as forward_pass. From out_dict, only need src_ori and trg_ori, which are torch.Tensor: (B, N+M, 3, 3) and torch.Tensor: (B, M, 3, 3)
             success_criterion_in_degree (int, optional): Success criterion in degree. Defaults to 10.
 
         Returns:
             normal_error (torch.Tensor): (1)
         """
-        output_src_ori, output_trg_ori = out_dict['src_ori'][0], out_dict['trg_ori'][0] # (1,N,3,3) -> (N,3,3), (1,M,3,3) -> (M,3,3)
-        gt_src_normals, gt_trg_normals = in_dict['gt_normals'][0][0].float(), in_dict['gt_normals'][1][0].float() # (1,N,3) -> (N,3), (1,M,3) -> (M,3)
+        pred_oris = out_dict['oris'] #  (B, N+M, 3, 3)
+        gt_normals = in_dict['gt_normals'] # (B, N+M, 3)
 
-        pred_normals = torch.cat([output_src_ori[:,0,:], output_trg_ori[:,0,:]], dim=0) # (N,3) concat (M,3) -> (N+M, 3)
-        gt_normals = torch.cat([gt_src_normals, gt_trg_normals], dim=0) # (N,3) concat (M,3) -> (N+M, 3)
+        pred_normals = pred_oris[:,:,0,:] # (B, N+M, 3)
 
-        cosine_similarity = torch.clamp(torch.nn.functional.cosine_similarity(pred_normals, gt_normals, dim=-1), min=-1, max=1) # (N+M, )
-        theta_deg = torch.rad2deg(torch.acos(cosine_similarity)) # (N+M, )
+        cosine_similarity = torch.clamp(torch.nn.functional.cosine_similarity(pred_normals, gt_normals, dim=-1), min=-1, max=1) # (B, N+M, )
+        theta_deg = torch.rad2deg(torch.acos(cosine_similarity)).reshape(-1) # (B, N+M, ) -> (B*N+M, )
         
         normal_error = theta_deg.mean()
         normal_error_hist = torch.histogram(theta_deg.cpu(), bins=90, range=(0, 180)) # Total 180 degrees, so we choose 90 bins
