@@ -604,8 +604,8 @@ class EquiAssem(pl.LightningModule):
             out_dict['shape_matching_scores'] = shape_matching_scores
             out_dict['matching_scores_drop'] = matching_scores_drop
             out_dict['active_mask'] = active_mask
-            # out_dict, eval_dict = self.progress_evaluation(in_dict, out_dict, mode)
-            # loss.update(eval_dict)
+            out_dict, eval_dict = self.progress_evaluation(in_dict, out_dict, mode)
+            loss.update(eval_dict)
 
         # in training we log for every step
         if mode == 'train':
