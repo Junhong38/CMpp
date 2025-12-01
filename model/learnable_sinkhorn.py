@@ -11,12 +11,11 @@ class LearnableLogOptimalTransport(nn.Module):
         self.inf = inf
 
     def log_sinkhorn_normalization(self, scores, log_mu, log_nu):
-        u, v = torch.zeros_like(log_mu), torch.zeros_like(log_nu)
-        for _ in range(self.num_iterations):
-            u = log_mu - torch.logsumexp(scores + v.unsqueeze(1), dim=2)
-            v = log_nu - torch.logsumexp(scores + u.unsqueeze(2), dim=1)
-
-            print(f"torch.cuda.memory_allocated(): {torch.cuda.memory_allocated() / 1024**2:.2f} MB")
+        with torch.no_grad():
+            u, v = torch.zeros_like(log_mu), torch.zeros_like(log_nu)
+            for _ in range(self.num_iterations):
+                u = log_mu - torch.logsumexp(scores + v.unsqueeze(1), dim=2)
+                v = log_nu - torch.logsumexp(scores + u.unsqueeze(2), dim=1)
         return scores + u.unsqueeze(2) + v.unsqueeze(1)
 
     def forward(self, scores, row_masks=None, col_masks=None):

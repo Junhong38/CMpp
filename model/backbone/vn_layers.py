@@ -33,7 +33,7 @@ def knn(x, batch_info, k):
     reshaped_batch_info_offset = batch2offset(batch_info.reshape(batch_size*num_points,)).int()
 
     idx = pointops.knnquery(k, reshaped_x, reshaped_x, reshaped_batch_info_offset, reshaped_batch_info_offset)[0] # (B*num_points, k)
-    idx = idx.reshape(batch_size, num_points, k)
+    idx = idx.reshape(-1) # (B*num_points*k, )
     return idx
 
 
@@ -54,12 +54,9 @@ def get_graph_feature(x, batch_info, k=20):
     num_points = x.size(3)
     x = x.view(batch_size, -1, num_points)
 
-    idx = knn(x.transpose(-1, -2), batch_info, k=k)   # (B, N+M, k)
-
-    device = torch.device('cuda')
-    idx_base = torch.arange(0, batch_size, device=device).view(-1, 1, 1)*num_points
-    idx = idx + idx_base
-    idx = idx.view(-1)
+    idx = knn(x.transpose(-1, -2), batch_info, k=k)   # (B*(N+M)*k)
+    print(f"idx: \n{idx},\n{idx.shape}")
+    exit("stop")
  
     _, num_dims, _ = x.size()
     num_dims = num_dims // 3
@@ -161,7 +158,6 @@ class VNBatchNorm(nn.Module):
         norm = norm.unsqueeze(2)
         norm_bn = norm_bn.unsqueeze(2)
         x = x / norm * norm_bn
-        
         return x
 
 class VNInstanceNorm(nn.Module):

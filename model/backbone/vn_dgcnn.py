@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from model.backbone.vn_layers import knn, get_graph_feature, mean_pool
+from model.backbone.vn_layers import get_graph_feature, mean_pool
 from model.backbone.vn_layers import VNLinearLeakyReLU, VNMaxPool
 
 # from lib.pointops.functions import pointops
@@ -173,7 +173,7 @@ class EQCNN_equi_unet(nn.Module):
         o1 = batch2offset(batch_scaled_batch.reshape(-1)).int() # (B*num_of_objs, ) 
         
         ### ENCODER 1
-        x1 = get_graph_feature(x1, batch_info, k=self.k) # (B, 2, 3, N+M, k) 
+        x1 = get_graph_feature(x1, batch_info=b1, k=self.k) # (B, 2, 3, N+M, k) 
         x1 = self.conv1(x1) # (B, 2, 3, N+M, k)  -> (B, C', 3, N+M, k)
         x1 = self.pool1(x1) # (B, C', 3, N+M, k) -> (B, C', 3, N+M)
 

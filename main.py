@@ -232,9 +232,9 @@ if __name__ == '__main__':
     parser.add_argument('--multiplicity', type=int, default=1, help='Multiplicity of the dataset')
     parser.add_argument('--min_part', type=int, default=2)
     parser.add_argument('--max_part', type=int, default=2)
-    parser.add_argument('--min_n_pts', type=int, default=256)
-    parser.add_argument('--n_pts', type=int, default=5000)
-    parser.add_argument('--overlap_radius', type=float, default=0.018)
+    parser.add_argument('--min_n_pts', type=int, default=16)
+    parser.add_argument('--n_pts', type=int, default=32)
+    parser.add_argument('--overlap_radius', type=float, default=1.0)
     
 
     # Training arguments
@@ -267,8 +267,8 @@ if __name__ == '__main__':
 
 
     # Margin arguments which are used in circle loss
-    parser.add_argument('--pos_radius', type=float, default=0.018, help='Radius for positive samples in Circle loss computation and point matching loss')
-    parser.add_argument('--safe_radius', type=float, default=0.03, help='Radius for safe samples in Circle loss computation')
+    parser.add_argument('--pos_radius', type=float, default=1.0, help='Radius for positive samples in Circle loss computation and point matching loss')
+    parser.add_argument('--safe_radius', type=float, default=1.0, help='Radius for safe samples in Circle loss computation')
     parser.add_argument('--pos_margin', type=float, default=0.1, help='Margin for positive samples in Circle loss computation')
     parser.add_argument('--neg_margin', type=float, default=1.4, help='Margin for negative samples in Circle loss computation')
     parser.add_argument('--log_scale', type=float, default=24, help='Log scale for Circle loss computation')
