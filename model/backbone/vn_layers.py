@@ -21,19 +21,25 @@ def knn(x, batch_info, k):
     """KNN
 
     Args:
-        x (torch.Tensor): (B, N+M, C*3), point features
-        batch_info (torch.Tensor): (B, N+M), batch index of the point cloud, This must be scaled version of batch info
+        x (torch.Tensor): (B, C*3, N+M), point features
+        batch_info (torch.Tensor): (B, N+M), batch index of the point cloud
         k (int): k
 
     Returns:
         idx (torch.Tensor): (B, num_points, k), index of the k nearest neighbors
     """
-    batch_size, num_points, _ = x.shape
-    reshaped_x = x.reshape(batch_size*num_points, -1).contiguous()
-    reshaped_batch_info_offset = batch2offset(batch_info.reshape(batch_size*num_points,)).int()
+    transposed_x = x.transpose(2, 1)
+    pairwise_distance = - torch.cdist(transposed_x, transposed_x)
 
-    idx = pointops.knnquery(k, reshaped_x, reshaped_x, reshaped_batch_info_offset, reshaped_batch_info_offset)[0] # (B*num_points, k)
-    idx = idx.reshape(-1) # (B*num_points*k, )
+    # To prevent neighboring points in different objects from being considered as neighbors
+    num_of_points = batch_info.size(1)
+    repeated_batch_info_row = batch_info[:,None,:].expand(-1, num_of_points, -1)
+    repeated_batch_info_col = batch_info[:,:,None].expand(-1, -1, num_of_points)
+    matrix_batch_info = torch.stack([repeated_batch_info_row, repeated_batch_info_col], dim=-1) # (B, N+M, N+M, 2)
+    matrix_batch_info = matrix_batch_info[:,:,:,0] == matrix_batch_info[:,:,:,1] # (B, N+M, N+M) -> True if the point is included in same obj
+    pairwise_distance = pairwise_distance * matrix_batch_info + (- 1e9) * ( ~ matrix_batch_info)
+
+    idx = pairwise_distance.topk(k=k, dim=-1)[1]   # (B, N+M, k)
     return idx
 
 
@@ -52,11 +58,13 @@ def get_graph_feature(x, batch_info, k=20):
     """
     batch_size = x.size(0)
     num_points = x.size(3)
-    x = x.view(batch_size, -1, num_points)
+    x = x.view(batch_size, -1, num_points) 
+    idx = knn(x, batch_info, k=k)   # (B, N+M, k)
 
-    idx = knn(x.transpose(-1, -2), batch_info, k=k)   # (B*(N+M)*k)
-    print(f"idx: \n{idx},\n{idx.shape}")
-    exit("stop")
+    device = torch.device('cuda')
+    idx_base = torch.arange(0, batch_size, device=device).view(-1, 1, 1)*num_points
+    idx = idx + idx_base
+    idx = idx.view(-1)
  
     _, num_dims, _ = x.size()
     num_dims = num_dims // 3
@@ -69,6 +77,7 @@ def get_graph_feature(x, batch_info, k=20):
     feature = torch.cat((feature-x, x), dim=3).permute(0, 3, 4, 1, 2).contiguous()
   
     return feature
+
 
 
 class VNLinear(nn.Module):
