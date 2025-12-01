@@ -529,6 +529,9 @@ class EquiAssem(pl.LightningModule):
         oris = ortho2rotation(vecs) # (B, N+M, 2, 3) -> (B, N+M, 3, 3)
         out_dict['oris'] = oris
 
+        print(f"oris.shape: {oris.shape}")
+        print(f"torch.cuda.memory_allocated(): {torch.cuda.memory_allocated()}")
+
 
         # Only train the normal vector
         if self.only_train_normal:
@@ -550,18 +553,25 @@ class EquiAssem(pl.LightningModule):
         if self.flip_normal and mode in ['train', 'val']:
             symmetric_inv_feats = self.make_inv_feats(oris, pcd_batch_info, equi_feats, src_flip=False) # (B, C*3, N+M)
         
+        print(f"inv_feats.shape: {inv_feats.shape}")
+        print(f"torch.cuda.memory_allocated(): {torch.cuda.memory_allocated()}")
+        
 
         # 6. SHAPE DESCRIPTOR 
         shape_feats = self.shape_mlp(inv_feats) # (B, C*3, N+M) -> (B, D, N+M)
         if self.flip_normal and mode in ['train', 'val']:
             symmetric_shape_feats = self.shape_mlp(symmetric_inv_feats) # (B, C*3, N+M) -> (B, D, N+M)
         
+        print(f"shape_feats.shape: {shape_feats.shape}")
+        print(f"torch.cuda.memory_allocated(): {torch.cuda.memory_allocated()}")
 
         # 7. Calculate Matching Scores
         shape_matching_scores, active_mask = self.calculate_matching_score(shape_feats, pcd_batch_info, eps=1e-8)
         if self.flip_normal and mode in ['train', 'val']:
             symmetric_shape_matching_scores, symmetric_active_mask = self.calculate_matching_score(symmetric_shape_feats, pcd_batch_info, eps=1e-8)
         
+        print(f"shape_matching_scores.shape: {shape_matching_scores.shape}")
+        print(f"torch.cuda.memory_allocated(): {torch.cuda.memory_allocated()}")
 
         # 8. Optimal Transport
         # Optimal Transport is in log space, so inside registration, there is exp operation
@@ -569,6 +579,9 @@ class EquiAssem(pl.LightningModule):
         matching_scores_drop = matching_scores[:,:-1,:-1] # (B, N+M, N+M)
         if self.flip_normal and mode in ['train', 'val']:
             symmetric_matching_scores = self.optimal_transport(symmetric_shape_matching_scores) # (B, N+M+1, N+M+1)
+        
+        print(f"matching_scores.shape: {matching_scores.shape}")
+        print(f"torch.cuda.memory_allocated(): {torch.cuda.memory_allocated()}")
         
 
         if mode in ['train', 'val']: # Do not calculate for test
@@ -716,6 +729,12 @@ class EquiAssem(pl.LightningModule):
         out_matching_scores_drop = out_dict['matching_scores_drop'][0] # (N+M, N+M)
         out_active_mask = out_dict['active_mask'][0] # (N+M, N+M)
 
+        # Postprocess matching scores to make its shape (N, M)
+        postprocessed_shape_matching_scores = out_shape_matching_scores[out_active_mask] # (N*M)
+        postprocessed_matching_scores_drop = out_matching_scores_drop[out_active_mask] # (N*M)
+        postprocessed_shape_matching_scores = postprocessed_shape_matching_scores.reshape(num_src_pcd, num_trg_pcd) # (N, M)
+        postprocessed_matching_scores_drop = postprocessed_matching_scores_drop.reshape(num_src_pcd, num_trg_pcd) # (N, M)
+
         # Save split tensors for evaluating prediction
         split_input_dict = {
             'src_pcd': src_pcd, # (N, 3)
@@ -732,10 +751,6 @@ class EquiAssem(pl.LightningModule):
         trg_predicted_frame = trg_ori if self.use_predicted_normal else None # (M, 3, 3)
 
         if self.use_RANSAC:
-            # Postprocess matching scores to make its shape (N, M)
-            postprocessed_shape_matching_scores = out_shape_matching_scores[out_active_mask] # (N*M)
-            postprocessed_shape_matching_scores = postprocessed_shape_matching_scores.reshape(num_src_pcd, num_trg_pcd) # (N, M)
-
             estimated_transform = _RANSAC(in_dict=in_dict, 
                                           shape_matching_scores=postprocessed_shape_matching_scores, 
                                           src_pcd=src_pcd, 
@@ -746,10 +761,6 @@ class EquiAssem(pl.LightningModule):
                                           RANSAC_type=self.RANSAC_type, 
                                           topk=self.infer_topk)
         else:
-            # Postprocess matching scores to make its shape (N, M)
-            postprocessed_matching_scores_drop = out_matching_scores_drop[out_active_mask] # (N*M)
-            postprocessed_matching_scores_drop = postprocessed_matching_scores_drop.reshape(num_src_pcd, num_trg_pcd) # (N, M)
-
             # fine_matching predict Rt to move points from src_points to ref_points
             estimated_transform = self.fine_matching(src_pcd.unsqueeze(0), trg_pcd.unsqueeze(0), postprocessed_matching_scores_drop.unsqueeze(0))
 
@@ -761,7 +772,7 @@ class EquiAssem(pl.LightningModule):
         eval_dict = self.evaluate_prediction(in_dict, split_input_dict, out_dict, mode)
 
         # Matching Recall
-        eval_dict.update(self._calculate_recall(out_dict['matching_scores_drop'], gt_corr))
+        eval_dict.update(self._calculate_recall(postprocessed_matching_scores_drop, gt_corr))
 
         return out_dict, eval_dict
     
@@ -829,7 +840,7 @@ class EquiAssem(pl.LightningModule):
         # (d) Compute Normal Error
         eval_result['n_error'], normal_error_hist, eval_result['n_suc_rate'] = self._normal_error(in_dict, out_dict, success_criterion_in_degree=self.success_criterion_in_degree)
 
-        if (mode=='val' and (self.trainer.sanity_checking) and \
+        if (mode=='val' and (not self.trainer.sanity_checking) and \
             self.trainer.global_rank == 0 and \
             self.visualize and \
             (self.current_epoch % self.viz_epoch == 0 or self.current_epoch == self.trainer.max_epochs-1) and \
@@ -1110,16 +1121,21 @@ class EquiAssem(pl.LightningModule):
         Calculate recall of matching scores
 
         Args:
-            matching_scores_drop (torch.Tensor): (1, N, M)
+            matching_scores_drop (torch.Tensor): (N, M)
             gt_corr (torch.Tensor): (P, 2)
             topks (list, optional): Recall@1, Recall@5, Recall@10, Recall@20.
 
         Returns:
             matching_recall (torch.Tensor): (1)
         """
-        _, _N, _M = matching_scores_drop.shape # (1, N, M) -> M
+        _N, _M = matching_scores_drop.shape # (N, M)
 
         result_dict = dict()
+
+        if len(gt_corr) == 0:
+            for topk in topks:
+                result_dict[f"recall@{str(topk)}"] = 0.0
+            return result_dict
 
         correspondence_mask = torch.zeros((_N, _M), device=matching_scores_drop.device)
         correspondence_mask[gt_corr[:,0], gt_corr[:,1]] = True
@@ -1128,22 +1144,22 @@ class EquiAssem(pl.LightningModule):
         
         for topk in topks:
             ## Recall from src
-            _, topk_inds_src = torch.topk(matching_scores_drop[:, correspondence_mask_src], k=topk, dim=-1) # (1, N, M) -> (1, gt_N, M) -> (1, gt_N, topk)
+            _, topk_inds_src = torch.topk(matching_scores_drop[correspondence_mask_src, :], k=topk, dim=-1) # (N, M) -> (gt_N, M) -> (gt_N, topk)
             topk_mask_src = torch.zeros((_N, _M), device=matching_scores_drop.device) # (N, M)
             for i, _ in enumerate(range(topk_inds_src.shape[-1])): # for i in range(topk)
                 # [all gt_N, ith topk from gt_src]
-                topk_mask_src[torch.nonzero(correspondence_mask_src)[:, 0], topk_inds_src[0, :, i]] = True
+                topk_mask_src[torch.nonzero(correspondence_mask_src)[:, 0], topk_inds_src[:, i]] = True
 
             # (N, M) -> N
             is_success_src = (topk_mask_src * correspondence_mask).sum(dim=-1) > 0
             recall_src = is_success_src[correspondence_mask_src].sum() / correspondence_mask_src.sum()
 
             ## Recall from trg
-            _, topk_inds_trg = torch.topk(matching_scores_drop[:, :, correspondence_mask_trg], k=topk, dim=-2) # (1, N, M) -> (1, N, gt_M) -> (1, topk, gt_M)
+            _, topk_inds_trg = torch.topk(matching_scores_drop[:, correspondence_mask_trg], k=topk, dim=-2) # (N, M) -> (N, gt_M) -> (topk, gt_M)
             topk_mask_trg = torch.zeros((_N, _M), device=matching_scores_drop.device) # (N, M)
             for i, _ in enumerate(range(topk_inds_trg.shape[-2])): # for i in range(topk)
                 # [ith topk from gt_trg, all gt_N]
-                topk_mask_trg[topk_inds_trg[0, i, :], torch.nonzero(correspondence_mask_trg)[:, 0]] = True
+                topk_mask_trg[topk_inds_trg[i, :], torch.nonzero(correspondence_mask_trg)[:, 0]] = True
 
             # (N, M) -> M
             is_success_trg = (topk_mask_trg * correspondence_mask).sum(dim=-2) > 0
