@@ -530,7 +530,7 @@ class EquiAssem(pl.LightningModule):
         out_dict['oris'] = oris
 
         print(f"oris.shape: {oris.shape}")
-        print(f"torch.cuda.memory_allocated(): {torch.cuda.memory_allocated()}")
+        print(f"torch.cuda.memory_allocated(): {torch.cuda.memory_allocated() / 1024**2:.2f} MB")
 
 
         # Only train the normal vector
@@ -554,7 +554,7 @@ class EquiAssem(pl.LightningModule):
             symmetric_inv_feats = self.make_inv_feats(oris, pcd_batch_info, equi_feats, src_flip=False) # (B, C*3, N+M)
         
         print(f"inv_feats.shape: {inv_feats.shape}")
-        print(f"torch.cuda.memory_allocated(): {torch.cuda.memory_allocated()}")
+        print(f"torch.cuda.memory_allocated(): {torch.cuda.memory_allocated() / 1024**2:.2f} MB")
         
 
         # 6. SHAPE DESCRIPTOR 
@@ -563,7 +563,7 @@ class EquiAssem(pl.LightningModule):
             symmetric_shape_feats = self.shape_mlp(symmetric_inv_feats) # (B, C*3, N+M) -> (B, D, N+M)
         
         print(f"shape_feats.shape: {shape_feats.shape}")
-        print(f"torch.cuda.memory_allocated(): {torch.cuda.memory_allocated()}")
+        print(f"torch.cuda.memory_allocated(): {torch.cuda.memory_allocated() / 1024**2:.2f} MB")
 
         # 7. Calculate Matching Scores
         shape_matching_scores, active_mask = self.calculate_matching_score(shape_feats, pcd_batch_info, eps=1e-8)
@@ -571,7 +571,7 @@ class EquiAssem(pl.LightningModule):
             symmetric_shape_matching_scores, symmetric_active_mask = self.calculate_matching_score(symmetric_shape_feats, pcd_batch_info, eps=1e-8)
         
         print(f"shape_matching_scores.shape: {shape_matching_scores.shape}")
-        print(f"torch.cuda.memory_allocated(): {torch.cuda.memory_allocated()}")
+        print(f"torch.cuda.memory_allocated(): {torch.cuda.memory_allocated() / 1024**2:.2f} MB")
 
         # 8. Optimal Transport
         # Optimal Transport is in log space, so inside registration, there is exp operation
@@ -581,7 +581,7 @@ class EquiAssem(pl.LightningModule):
             symmetric_matching_scores = self.optimal_transport(symmetric_shape_matching_scores) # (B, N+M+1, N+M+1)
         
         print(f"matching_scores.shape: {matching_scores.shape}")
-        print(f"torch.cuda.memory_allocated(): {torch.cuda.memory_allocated()}")
+        print(f"torch.cuda.memory_allocated(): {torch.cuda.memory_allocated() / 1024**2:.2f} MB")
         
 
         if mode in ['train', 'val']: # Do not calculate for test

@@ -15,6 +15,8 @@ class LearnableLogOptimalTransport(nn.Module):
         for _ in range(self.num_iterations):
             u = log_mu - torch.logsumexp(scores + v.unsqueeze(1), dim=2)
             v = log_nu - torch.logsumexp(scores + u.unsqueeze(2), dim=1)
+
+            print(f"torch.cuda.memory_allocated(): {torch.cuda.memory_allocated() / 1024**2:.2f} MB")
         return scores + u.unsqueeze(2) + v.unsqueeze(1)
 
     def forward(self, scores, row_masks=None, col_masks=None):
