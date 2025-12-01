@@ -71,7 +71,11 @@ class CircleLoss(nn.Module):
         
 
         if not self.no_balance:
+            # Do not overlap with hard negatives
+            neg_mask = torch.logical_and(neg_mask, ~hard_neg_mask)
+
             num_of_pos = pos_mask.reshape(batch_size, -1).sum(dim=-1) # (B, N+M, N+M) -> (B, (N+M)*(N+M)) -> (B, )
+            num_of_negs = neg_mask.reshape(batch_size, -1).sum(dim=-1) # (B, N+M, N+M) -> (B, (N+M)*(N+M)) -> (B, )
             num_of_hard_negs = hard_neg_mask.reshape(batch_size, -1).sum(dim=-1) # (B, N+M, N+M) -> (B, (N+M)*(N+M)) -> (B, )
 
             # If hard negatives are less than half of positive samples, we should sample more negative samples.
@@ -82,20 +86,24 @@ class CircleLoss(nn.Module):
 
             # Sample the hard negatives
             hard_neg_indices = hard_neg_mask.nonzero(as_tuple=False) # (B, N+M, N+M) -> (num_of_true_parts, 3), where 3 is (batch_index, row_index, col_index)
-            print(f"hard_neg_indices[:,0].shape: {hard_neg_indices[:,0].shape}, \n{hard_neg_indices[:,0]}")
-            exit("stop")
-            hard_neg_nonsampled = hard_neg_indices[torch.randperm(hard_neg_indices.size(0))[num_of_sampled_hards:]]
+            criteria_for_hard_negs = num_of_sampled_hards.repeat_interleave(num_of_hard_negs) # (num_of_true_parts, )
+            randperm_for_hard_negs = torch.cat([torch.randperm(num_of_hard_negs[i], device=hard_neg_indices.device) for i in range(len(num_of_hard_negs))], dim=0) # (num_of_true_parts, )
+            non_sampled_part_for_hard_negs = randperm_for_hard_negs >= criteria_for_hard_negs # (num_of_true_parts, )
+            hard_neg_nonsampled = hard_neg_indices[non_sampled_part_for_hard_negs] # (num_of_non_sampled_parts, 3)
             hard_neg_mask[hard_neg_nonsampled[:,0], hard_neg_nonsampled[:,1], hard_neg_nonsampled[:,2]] = False
 
             # Sample the neg_mask to match proportions, and do not overlap with hard negatives
-            neg_indices = torch.logical_and(neg_mask, ~hard_neg_mask).nonzero(as_tuple=False) # (B, N+M, N+M) -> (num_of_true_parts, 3), where 3 is (batch_index, row_index, col_index)
-            neg_nonsampled = neg_indices[torch.randperm(neg_indices.size(0))[num_of_sampled_negs:]]
+            neg_indices = neg_mask.nonzero(as_tuple=False) # (B, N+M, N+M) -> (num_of_true_parts, 3), where 3 is (batch_index, row_index, col_index)
+            criteria_for_negs = num_of_sampled_negs.repeat_interleave(num_of_negs) # (num_of_true_parts, )
+            randperm_for_negs = torch.cat([torch.randperm(num_of_negs[i], device=neg_indices.device) for i in range(len(num_of_negs))], dim=0) # (num_of_true_parts, )
+            non_sampled_part_for_negs = randperm_for_negs >= criteria_for_negs # (num_of_true_parts, )
+            neg_nonsampled = neg_indices[non_sampled_part_for_negs] # (num_of_non_sampled_parts, 3)
             neg_mask[neg_nonsampled[:,0], neg_nonsampled[:,1], neg_nonsampled[:,2]] = False
-
 
         neg_mask = torch.logical_or(neg_mask, hard_neg_mask) 
         avg_num_of_hard_negs = hard_neg_mask.reshape(batch_size, -1).sum(dim=-1).float().mean().item()
-        return neg_mask, avg_num_of_hard_negs
+        avg_num_of_negs = neg_mask.reshape(batch_size, -1).sum(dim=-1).float().mean().item()
+        return neg_mask, avg_num_of_hard_negs, avg_num_of_negs
     
     
     def get_circle_loss(self, coords_dist, feats_dist, matching_scores, active_mask):
@@ -113,6 +121,8 @@ class CircleLoss(nn.Module):
             torch.Tensor: (1, ), circle loss
             dict: (1, ), pos_neg_distribution
         """
+
+        # Masking the inactive points
         pos_mask = (coords_dist < self.pos_radius) * active_mask
         neg_mask = (coords_dist > self.safe_radius) * active_mask
         
@@ -136,11 +146,7 @@ class CircleLoss(nn.Module):
                 'neg_max': neg_dists.max().item() if does_neg_mask_exist else 0,
             }
         
-        neg_mask, pos_neg_distribution['num_of_hard_neg'] = self.negative_sampling(matching_scores, pos_mask, neg_mask)
-
-        # Masking the inactive points
-        maks_for_row = active_mask.any(dim=-1) # (B, N+M, N+M) -> (B, N+M)
-        maks_for_col = active_mask.any(dim=-2) # (B, N+M, N+M) -> (B, N+M)
+        neg_mask, pos_neg_distribution['num_of_hard_neg'], pos_neg_distribution['num_of_neg'] = self.negative_sampling(matching_scores, pos_mask, neg_mask)
             
         
         # get anchors that have both positive and negative pairs
@@ -177,7 +183,6 @@ class CircleLoss(nn.Module):
         # Prevent NaN
         anchor_loss_row = loss_row[row_sel].mean() if row_sel.sum() > 0 else torch.tensor(0.).to(loss_row.device)
         anchor_loss_col = loss_col[col_sel].mean() if col_sel.sum() > 0 else torch.tensor(0.).to(loss_col.device)
-        
 
         circle_loss = (anchor_loss_row + anchor_loss_col) / 2
         
