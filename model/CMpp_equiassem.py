@@ -494,7 +494,8 @@ class EquiAssem(pl.LightningModule):
         assert in_dict['pcd_batch_info'].max() == 1, f"We assume there are two objects in the batch, but got {in_dict['pcd_batch_info'].max()}"
 
         out_dict, loss = {}, {}
-        
+
+
         # 0. Get Point Clouds and Ground Truth Correspondence
         pcd_raw = in_dict['pcd']
         pcd_input = in_dict['pcd_t']
@@ -507,8 +508,10 @@ class EquiAssem(pl.LightningModule):
         # 1. SO(3)-Equivariant Feature Extractor
         equi_feats_backbone = self.backbone(pcd_input, pcd_batch_info) # (B, C, 3, N+M)
 
+
         # 2. Calculate equivariant shape features
         equi_feats = self.equi_layer(equi_feats_backbone.unsqueeze(-1)).squeeze(-1) # (B, C, 3, N+M)
+
 
         # 3. Frame Prediction
         equi_feats_ori_backbone = self.ori_backbone(pcd_input, pcd_batch_info) if self.ori_backbone is not None else equi_feats_backbone
@@ -521,11 +524,12 @@ class EquiAssem(pl.LightningModule):
         # (B, C, 3, N+M) concat (B, C, 3, N+M) ->  (B, 2C, 3, N+M) -> (B, 2C, 3, N+M, 1) -> (B, 2, 3, N+M, 1) -> (B, 2, 3, N+M) -> (B, N+M, 2, 3)
         vecs = self.proj(torch.cat((equi_feats_ori_backbone, equi_feats_ori_backbone_mean), dim=1).unsqueeze(-1)).squeeze(-1).permute(0, 3, 1, 2) 
 
+
         # 4. Gram Schmidt & Cross-product, this is for making three basis vectors by using two predicted vectors
         oris = ortho2rotation(vecs) # (B, N+M, 2, 3) -> (B, N+M, 3, 3)
         out_dict['oris'] = oris
 
-        
+
         # Only train the normal vector
         if self.only_train_normal:
             loss['o_loss'] = self.orientation_loss(oris, gt_normals, gt_corr, gt_corr_offset_info)
@@ -539,22 +543,25 @@ class EquiAssem(pl.LightningModule):
             if mode == 'train':
                 self.log_for_training(loss=loss, pos_neg_distribution=None, mode=mode)
             return out_dict, loss
-        
 
+        
         # 5. Invariant Features
         inv_feats = self.make_inv_feats(oris, pcd_batch_info, equi_feats, src_flip=True) # (B, C*3, N+M)
         if self.flip_normal and mode in ['train', 'val']:
             symmetric_inv_feats = self.make_inv_feats(oris, pcd_batch_info, equi_feats, src_flip=False) # (B, C*3, N+M)
+        
 
         # 6. SHAPE DESCRIPTOR 
         shape_feats = self.shape_mlp(inv_feats) # (B, C*3, N+M) -> (B, D, N+M)
         if self.flip_normal and mode in ['train', 'val']:
             symmetric_shape_feats = self.shape_mlp(symmetric_inv_feats) # (B, C*3, N+M) -> (B, D, N+M)
+        
 
         # 7. Calculate Matching Scores
         shape_matching_scores, active_mask = self.calculate_matching_score(shape_feats, pcd_batch_info, eps=1e-8)
         if self.flip_normal and mode in ['train', 'val']:
             symmetric_shape_matching_scores, symmetric_active_mask = self.calculate_matching_score(symmetric_shape_feats, pcd_batch_info, eps=1e-8)
+        
 
         # 8. Optimal Transport
         # Optimal Transport is in log space, so inside registration, there is exp operation
@@ -590,46 +597,15 @@ class EquiAssem(pl.LightningModule):
                     # This is for checking the normal error
                     loss['n_error'], _, loss['n_suc_rate'] = self._normal_error(in_dict, out_dict, success_criterion_in_degree=self.success_criterion_in_degree)
         
-        """
+
         # 9. Evaluation
         if mode in ['val', 'test']:
-            # Point cloud registration
-            src_predicted_frame = None
-            trg_predicted_frame = None
-            
-            if self.use_predicted_normal:
-                src_predicted_frame = src_ori.squeeze(0) # (1, N, 3, 3) -> (N, 3, 3)
-                trg_predicted_frame = trg_ori.squeeze(0) # (1, M, 3, 3) -> (M, 3, 3)
-           
-            with torch.no_grad():
-                if self.use_RANSAC:
-                    estimated_transform = _RANSAC(in_dict=in_dict, 
-                                                  shape_matching_scores=shape_matching_scores, 
-                                                  src_pcd=src_pcd, 
-                                                  trg_pcd=trg_pcd, 
-                                                  src_predicted_frame=src_predicted_frame,
-                                                  trg_predicted_frame=trg_predicted_frame,
-                                                  match_option=self.infer_match_option, 
-                                                  RANSAC_type=self.RANSAC_type, 
-                                                  topk=self.infer_topk)
-                else:
-                    # fine_matching predict Rt to move points from src_points to ref_points
-                    estimated_transform = self.fine_matching(src_pcd, trg_pcd, matching_scores_drop)
-
-            # estimated_transform: target_point = R * source_point + t
-            out_dict['estimated_rotat'] = estimated_transform[:3, :3] # R
-            out_dict['estimated_trans'] = estimated_transform[:3, 3] # t
-
-            # Evaluation
-            eval_dict = self.evaluate_prediction(in_dict, out_dict, gt_corr, mode)
-
-            ## Matching Recall
-            with torch.no_grad():
-                eval_dict.update(self._calculate_recall(matching_scores_drop, gt_corr))
-
+            # Save output for evaluation
+            out_dict['shape_matching_scores'] = shape_matching_scores
+            out_dict['matching_scores_drop'] = matching_scores_drop
+            out_dict['active_mask'] = active_mask
+            out_dict, eval_dict = self.progress_evaluation(in_dict, out_dict, mode)
             loss.update(eval_dict)
-        """
-
 
         # in training we log for every step
         if mode == 'train':
@@ -712,14 +688,91 @@ class EquiAssem(pl.LightningModule):
 
         return matching_scores, active_parts
     
-    
+
     @torch.no_grad()
-    def evaluate_prediction(self, in_dict, out_dict, gt_corr, mode, multi_part=False):
+    def progress_evaluation(self, in_dict, out_dict, mode):
         """
+        Evaluate the progress of the model
+        Batch size must be 1 for evaluation
+
         Args:
             in_dict (dict): it is same as forward_pass
             out_dict (dict): it is same as forward_pass
-            gt_corr (torch.Tensor): (P, 2)
+            mode (str): 'val' or 'test'
+        """
+        assert mode in ['val', 'test'], f"mode must be in ['val', 'test'], but got {mode}"
+        assert in_dict['pcd'].shape[0] == 1, f"in_dict['pcd'].shape[0]: {in_dict['pcd'].shape[0]}, must be 1"
+
+        # Postprocess input/output to fit the evaluation function
+        # Dataloader will returns (B, N+M, ....) format.
+        # However, batch size must be 1 for evaluation
+        # So, we will use src/trg individually for evaluation
+        src_pcd, trg_pcd = extract_all_objects(in_dict['pcd_t'][0], in_dict['pcd_batch_info'][0]) # (N, 3), (M, 3)
+        src_ori, trg_ori = extract_all_objects(out_dict['oris'][0], in_dict['pcd_batch_info'][0]) # (N, 3, 3), (M, 3, 3)
+        gt_src_normals, gt_trg_normals = extract_all_objects(in_dict['gt_normals'][0].float(), in_dict['pcd_batch_info'][0]) # (N, 3), (M, 3)
+        num_src_pcd, num_trg_pcd = src_pcd.shape[0], trg_pcd.shape[0] # (N), (M)
+        gt_corr = in_dict['gt_correspondence'] # (corr, 2)
+        out_shape_matching_scores = out_dict['shape_matching_scores'][0] # (N+M, N+M)
+        out_matching_scores_drop = out_dict['matching_scores_drop'][0] # (N+M, N+M)
+        out_active_mask = out_dict['active_mask'][0] # (N+M, N+M)
+
+        # Save split tensors for evaluating prediction
+        split_input_dict = {
+            'src_pcd': src_pcd, # (N, 3)
+            'trg_pcd': trg_pcd, # (M, 3)
+            'src_ori': src_ori, # (N, 3, 3)
+            'trg_ori': trg_ori, # (M, 3, 3)
+            'gt_src_normals': gt_src_normals, # (N, 3)
+            'gt_trg_normals': gt_trg_normals, # (M, 3)
+            'gt_corr': gt_corr, # (corr, 2)
+        }
+
+        # Point cloud registration
+        src_predicted_frame = src_ori if self.use_predicted_normal else None # (N, 3, 3)
+        trg_predicted_frame = trg_ori if self.use_predicted_normal else None # (M, 3, 3)
+
+        if self.use_RANSAC:
+            # Postprocess matching scores to make its shape (N, M)
+            postprocessed_shape_matching_scores = out_shape_matching_scores[out_active_mask] # (N*M)
+            postprocessed_shape_matching_scores = postprocessed_shape_matching_scores.reshape(num_src_pcd, num_trg_pcd) # (N, M)
+
+            estimated_transform = _RANSAC(in_dict=in_dict, 
+                                          shape_matching_scores=postprocessed_shape_matching_scores, 
+                                          src_pcd=src_pcd, 
+                                          trg_pcd=trg_pcd, 
+                                          src_predicted_frame=src_predicted_frame,
+                                          trg_predicted_frame=trg_predicted_frame,
+                                          match_option=self.infer_match_option, 
+                                          RANSAC_type=self.RANSAC_type, 
+                                          topk=self.infer_topk)
+        else:
+            # Postprocess matching scores to make its shape (N, M)
+            postprocessed_matching_scores_drop = out_matching_scores_drop[out_active_mask] # (N*M)
+            postprocessed_matching_scores_drop = postprocessed_matching_scores_drop.reshape(num_src_pcd, num_trg_pcd) # (N, M)
+
+            # fine_matching predict Rt to move points from src_points to ref_points
+            estimated_transform = self.fine_matching(src_pcd.unsqueeze(0), trg_pcd.unsqueeze(0), postprocessed_matching_scores_drop.unsqueeze(0))
+
+        # estimated_transform: target_point = R * source_point + t
+        out_dict['estimated_rotat'] = estimated_transform[:3, :3] # R, (3,3)
+        out_dict['estimated_trans'] = estimated_transform[:3, 3] # t, (3)
+
+        # Evaluation
+        eval_dict = self.evaluate_prediction(in_dict, split_input_dict, out_dict, mode)
+
+        # Matching Recall
+        eval_dict.update(self._calculate_recall(out_dict['matching_scores_drop'], gt_corr))
+
+        return out_dict, eval_dict
+    
+
+    @torch.no_grad()
+    def evaluate_prediction(self, in_dict, split_input_dict, out_dict, mode, multi_part=False):
+        """
+        Args:
+            in_dict (dict): it is same as forward_pass
+            split_input_dict (dict): split input dictionary for evaluation
+            out_dict (dict): it is same as forward_pass
             mode (str): 'val' or 'test'
             multi_part (bool, optional): _description_. Defaults to False.
 
@@ -736,8 +789,9 @@ class EquiAssem(pl.LightningModule):
         eval_result = {}
         
         pred_relative_trsfm = out_dict['estimated_rotat'].float(), out_dict['estimated_trans'].float() # (3, 3), (3)
-        grtr_relative_trsfm = [x.squeeze(0) for x in in_dict['relative_trsfm']['0-1']] # (1, 3, 3) -> (3, 3), (1, 3) -> (3)
-        src_pcd, trg_pcd = [x.squeeze(0) for x in in_dict['pcd_t']] # (1, N, 3) -> (N, 3), (1, M, 3) -> (M, 3)
+        grtr_relative_trsfm = [x for x in in_dict['relative_trsfm']['0-1']] # (3, 3), (3)
+        src_pcd, trg_pcd = split_input_dict['src_pcd'], split_input_dict['trg_pcd'] # (N, 3), (M, 3)
+        gt_corr = split_input_dict['gt_corr'] # (corr, 2)
 
 
         # Move larger point cloud
@@ -775,13 +829,12 @@ class EquiAssem(pl.LightningModule):
         # (d) Compute Normal Error
         eval_result['n_error'], normal_error_hist, eval_result['n_suc_rate'] = self._normal_error(in_dict, out_dict, success_criterion_in_degree=self.success_criterion_in_degree)
 
-
-        if (mode=='val' and (not self.trainer.sanity_checking) and \
+        if (mode=='val' and (self.trainer.sanity_checking) and \
             self.trainer.global_rank == 0 and \
             self.visualize and \
             (self.current_epoch % self.viz_epoch == 0 or self.current_epoch == self.trainer.max_epochs-1) and \
-            in_dict['eval_idx'].item() == 0) or \
-            (mode=='test' and self.visualize and in_dict['eval_idx'].item() == 0):
+            in_dict['eval_idx'][0].item() == 0) or \
+            (mode=='test' and self.visualize and in_dict['eval_idx'][0].item() == 0):
             # Do not visualize in sanity checking
             # Only rank 0 should do visualization to avoid file I/O conflicts in DDP
             # Visualize for every self.viz_epoch
@@ -800,14 +853,14 @@ class EquiAssem(pl.LightningModule):
             pcds_pred_for_viz.append(pcds_pred[1][gt_corr[:,1]])
             pcds_grtr_for_viz.append(pcds_grtr[0][gt_corr[:,0]])
             pcds_grtr_for_viz.append(pcds_grtr[1][gt_corr[:,1]])
-            save_pc(f'{vis_folder}/E{self.current_epoch}_{in_dict["eval_idx"].item()}_{in_dict["obj_class"][0]}_{round(eval_result["crd"].item(),3)}_pred.ply', pcds_pred_for_viz)
-            save_pc(f"{vis_folder}/E{self.current_epoch}_{in_dict['eval_idx'].item()}_{in_dict['obj_class'][0]}_{round(eval_result['crd'].item(),3)}_grtr.ply", pcds_grtr_for_viz)
+            save_pc(f'{vis_folder}/E{self.current_epoch}_{in_dict["eval_idx"][0].item()}_{in_dict["obj_class"][0]}_{round(eval_result["crd"].item(),3)}_pred.ply', pcds_pred_for_viz)
+            save_pc(f"{vis_folder}/E{self.current_epoch}_{in_dict['eval_idx'][0].item()}_{in_dict['obj_class'][0]}_{round(eval_result['crd'].item(),3)}_grtr.ply", pcds_grtr_for_viz)
 
             # MESH AND FRAME VISUALIZATION
-            output_src_ori, output_trg_ori = out_dict['src_ori'][0], out_dict['trg_ori'][0] # (1,N,3,3) -> (N,3,3), (1,M,3,3) -> (M,3,3)
-            gt_src_normals, gt_trg_normals = in_dict['gt_normals'][0][0].float(), in_dict['gt_normals'][1][0].float() # (1,N,3) -> (N,3), (1,M,3) -> (M,3)
-            src_mesh_verts, trg_mesh_verts = in_dict['mesh_t'][0][0].float(), in_dict['mesh_t'][1][0].float() # (1,N,3) -> (N,3), (1,M,3) -> (M,3)
-            src_mesh_faces, trg_mesh_faces = in_dict['mesh_faces'][0][0].float(), in_dict['mesh_faces'][1][0].float() # (1,F,3) -> (F,3), (1,F,3) -> (F,3)
+            output_src_ori, output_trg_ori = split_input_dict['src_ori'], split_input_dict['trg_ori'] # (N, 3, 3), (M, 3, 3)
+            gt_src_normals, gt_trg_normals = split_input_dict['gt_src_normals'], split_input_dict['gt_trg_normals'] # (N, 3), (M, 3)
+            src_mesh_verts, trg_mesh_verts = in_dict['mesh_t'][0].float(), in_dict['mesh_t'][1].float() # (N,3), (M,3)
+            src_mesh_faces, trg_mesh_faces = in_dict['mesh_faces'][0].float(), in_dict['mesh_faces'][1].float() # (F,3), (F',3)
             
             if is_swap_triggered: # To move smaller one, we swap src and trg in the above part
                 output_src_ori, output_trg_ori = output_trg_ori, output_src_ori
@@ -1013,6 +1066,7 @@ class EquiAssem(pl.LightningModule):
 
             # ICP algorithm
             error = iterative_closest_point(pcd_grtr, pcd_pred).RTs
+
             
             # tr(R) = 1 + 2cos(θ) -> θ = acos((tr(R) - 1) / 2), torch.acos is in radian, so we need to convert to degree
             rot_errors[p] = torch.rad2deg(torch.acos(torch.clamp(0.5 * (torch.trace(error.R[0]) - 1.0), -1.0, 1.0)))

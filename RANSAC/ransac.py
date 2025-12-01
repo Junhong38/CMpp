@@ -6,6 +6,7 @@ from RANSAC.match_selection import topk_matching, mutual_topk_matching, soft_top
 from RANSAC.default_ransac import ransac_rigid as ransac_rigid_original
 from RANSAC.score_dependent_ransac import ransac_rigid as score_dependent_ransac_rigid
 
+from common.misc import extract_all_objects
 
 
 def _RANSAC(in_dict, shape_matching_scores, src_pcd, trg_pcd, src_predicted_frame=None, trg_predicted_frame=None, match_option='topk', RANSAC_type='default', topk=128):
@@ -14,15 +15,15 @@ def _RANSAC(in_dict, shape_matching_scores, src_pcd, trg_pcd, src_predicted_fram
 
     Args:
         in_dict (dict): Input dictionary. Please refer CMpp_equiassem.py for more details.
-        shape_matching_scores (torch.Tensor): (1, N, M) shape matching scores
-        src_pcd (torch.Tensor): (1, M, 3) source point cloud
-        trg_pcd (torch.Tensor): (1, N, 3) target point cloud
+        shape_matching_scores (torch.Tensor): (N, M) shape matching scores
+        src_pcd (torch.Tensor): (M, 3) source point cloud
+        trg_pcd (torch.Tensor): (N, 3) target point cloud
         src_predicted_frame (torch.Tensor, optional): (N, 3, 3) source predicted frame. Defaults to None.
         trg_predicted_frame (torch.Tensor, optional): (M, 3, 3) target predicted frame. Defaults to None.
         match_option (str, optional): 'topk' or 'mutual_topk' or 'soft_topk'. Defaults to 'topk'.
         RANSAC_type (str, optional): 'default' or 'score_dependent'. Defaults to 'default'.
     """
-    matching_scores_before_Sinkhorn = shape_matching_scores.squeeze(0) # (N, M)
+    matching_scores_before_Sinkhorn = shape_matching_scores # (N, M)
                     
     # Initial matches for RANSAC
     if match_option == 'topk':
@@ -56,8 +57,8 @@ def _RANSAC(in_dict, shape_matching_scores, src_pcd, trg_pcd, src_predicted_fram
 
 
     # Prepare to run RANSAC
-    src_corr_pts = src_pcd[:, src_idx].squeeze(0) # (K_filtered, 3)
-    trg_corr_pts = trg_pcd[:, trg_idx].squeeze(0) # (K_filtered, 3)
+    src_corr_pts = src_pcd[:, src_idx] # (K_filtered, 3)
+    trg_corr_pts = trg_pcd[:, trg_idx] # (K_filtered, 3)
 
 
     # RANSAC
@@ -85,8 +86,8 @@ def _RANSAC(in_dict, shape_matching_scores, src_pcd, trg_pcd, src_predicted_fram
         ransac_function = ransac_rigid_original
 
     if src_predicted_frame == None:
-        src_normal = in_dict['gt_normals'][0].squeeze(0) # (1, N, 3) -> (N, 3)
-        trg_normal = in_dict['gt_normals'][1].squeeze(0) # (1, M, 3) -> (M, 3)
+        src_normal, trg_normal = extract_all_objects(in_dict['gt_normals'][0], in_dict['pcd_batch_info'][0]) # (N, 3), (M, 3)
+        
     else:
         src_normal = src_predicted_frame[:,0,:] # (N, 3, 3) -> (N, 3), select only predicted normal
         trg_normal = trg_predicted_frame[:,0,:] # (M, 3, 3) -> (M, 3), 

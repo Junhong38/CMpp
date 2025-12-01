@@ -315,7 +315,6 @@ class LocalGlobalRegistration(nn.Module):
             src_points (Tensor): (B, N, 3)
             ref_points (Tensor): (B, M, 3)
             score_mat (Tensor): (B, N, M), log likelihood
-            no_exp (bool): if True, do not exp the score_mat
 
         Returns:
             estimated_transform: torch.Tensor (4, 4)
