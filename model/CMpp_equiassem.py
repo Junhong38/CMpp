@@ -51,6 +51,8 @@ class EquiAssem(pl.LightningModule):
             n_avn=5,
             mlp_mode='CMpp',
             move_smaller=False,
+
+            matching_norm_mode='sinkhorn',
             
             # RANSAC arguments
             infer_match_option='topk',
@@ -100,6 +102,8 @@ class EquiAssem(pl.LightningModule):
             mlp_mode (str, optional): 'CMpp' or 'half' or 'deep'. Defaults to 'CMpp'.
             move_smaller (bool, optional): Whether to always move the smaller point cloud to the origin. Defaults to False.
 
+            matching_norm_mode (str, optional): 'sinkhorn' or 'sigmoid'. Defaults to 'sinkhorn'.
+
             # RANSAC arguments
             infer_match_option (str, optional): 'topk' or 'mutual_topk' or 'soft_topk' or 'unidirectional_topk' or 'injective' or 'bijective'. Defaults to 'topk'.
             infer_topk (int, optional): Topk value for matching. Defaults to 128.
@@ -140,6 +144,8 @@ class EquiAssem(pl.LightningModule):
         print(f"mlp_mode: {mlp_mode}")
         print(f"move_smaller: {move_smaller}")
 
+        print(f"matching_norm_mode: {matching_norm_mode}")
+
         # RANSAC arguments
         print(f"infer_match_option: {infer_match_option}")
         print(f"infer_topk: {infer_topk}")
@@ -161,6 +167,8 @@ class EquiAssem(pl.LightningModule):
         self.flip_normal = flip_normal
 
         self.move_smaller = move_smaller
+
+        self.matching_norm_mode = matching_norm_mode
 
         # Inference arguments
         self.infer_match_option = infer_match_option
@@ -301,7 +309,8 @@ class EquiAssem(pl.LightningModule):
                                            )
         
         # Optimal Transport
-        self.optimal_transport = LearnableLogOptimalTransport(num_iterations=100)
+        if self.matching_norm_mode == 'sinkhorn':
+            self.optimal_transport = LearnableLogOptimalTransport(num_iterations=100)
 
         if not self.use_RANSAC: # If not using RANSAC, use LGR for fine matching
             # LGR
@@ -565,11 +574,10 @@ class EquiAssem(pl.LightningModule):
 
         # 8. Optimal Transport
         # Optimal Transport is in log space, so inside registration, there is exp operation
-        matching_scores = self.multibatch_optimal_transport(shape_matching_scores, pcd_batch_info, active_mask) # (B, N+M+1, N+M+1)
-        # matching_scores = self.optimal_transport(shape_matching_scores, row_masks=(pcd_batch_info == 0), col_masks=(pcd_batch_info == 1)) # (B, N+M+1, N+M+1)
+        matching_scores = self.multibatch_optimal_transport(shape_matching_scores, pcd_batch_info, active_mask, mode=self.matching_norm_mode) # (B, N+M+1, N+M+1)
         matching_scores_drop = matching_scores[:,:-1,:-1] # (B, N+M, N+M)
         if self.flip_normal and mode in ['train', 'val']:
-            symmetric_matching_scores = self.optimal_transport(symmetric_shape_matching_scores) # (B, N+M+1, N+M+1)
+            symmetric_matching_scores = self.multibatch_optimal_transport(symmetric_shape_matching_scores, pcd_batch_info, symmetric_active_mask, mode=self.matching_norm_mode) # (B, N+M+1, N+M+1)
         
 
         if mode in ['train', 'val']: # Do not calculate for test
@@ -690,7 +698,7 @@ class EquiAssem(pl.LightningModule):
         return matching_scores, active_parts
     
     
-    def multibatch_optimal_transport(self, matching_scores, batch_info, active_mask):
+    def multibatch_optimal_transport(self, matching_scores, batch_info, active_mask, mode='sinkhorn'):
         """
         Calculate optimal transport between multiple batches
 
@@ -698,32 +706,56 @@ class EquiAssem(pl.LightningModule):
             matching_scores (torch.Tensor): (B, N+M, N+M)
             batch_info (torch.Tensor): (B, N+M, ), batch index of the point cloud
             active_mask (torch.Tensor): (B, N+M, N+M), True if the point is active
+            mode (str, optional): 'sinkhorn' or 'sigmoid'. Defaults to 'sinkhorn'.
         """
         batch_size, row_size, col_size = matching_scores.shape
 
-        result_list = []
+        if mode == 'sinkhorn':
+            result_list = []
 
-        for batch_idx in range(batch_size):
-            # Postprocess matching scores to make its shape (N, M)
-            pcd_num_info = batch_info[batch_idx].bincount() # (2, )
-            assert len(pcd_num_info) == 2, f"There must be two objects in the batch, but got {len(pcd_num_info)}"
+            for batch_idx in range(batch_size):
+                # Postprocess matching scores to make its shape (N, M)
+                pcd_num_info = batch_info[batch_idx].bincount() # (2, )
+                assert len(pcd_num_info) == 2, f"There must be two objects in the batch, but got {len(pcd_num_info)}"
+                
+                num_src_pcd, num_trg_pcd = pcd_num_info
+                postprocessed_matching_scores = matching_scores[batch_idx][active_mask[batch_idx]] # (N*M,)
+                postprocessed_matching_scores = postprocessed_matching_scores.reshape(1, num_src_pcd, num_trg_pcd) # (1, N, M)
+
+                normalized_matching_scores = self.optimal_transport(postprocessed_matching_scores).squeeze(0) # (1, N+1, M+1) -> (N+1, M+1)
+
+                # Recover shape
+                place_holder = torch.zeros(row_size+1, col_size+1, device=matching_scores.device)
+                place_holder[:num_src_pcd, (col_size-num_trg_pcd):-1] = normalized_matching_scores[:-1,:-1]
+                place_holder[:num_src_pcd,-1] = normalized_matching_scores[:-1,-1]
+                place_holder[-1,(col_size-num_trg_pcd):-1] = normalized_matching_scores[-1,:-1]
+                place_holder[-1,-1] = normalized_matching_scores[-1,-1]
+
+                result_list.append(place_holder)
             
-            num_src_pcd, num_trg_pcd = pcd_num_info
-            postprocessed_matching_scores = matching_scores[batch_idx][active_mask[batch_idx]] # (N*M,)
-            postprocessed_matching_scores = postprocessed_matching_scores.reshape(1, num_src_pcd, num_trg_pcd) # (1, N, M)
-
-            normalized_matching_scores = self.optimal_transport(postprocessed_matching_scores).squeeze(0) # (1, N+1, M+1) -> (N+1, M+1)
-
-            # Recover shape
-            place_holder = torch.zeros(row_size+1, col_size+1, device=matching_scores.device)
-            place_holder[:num_src_pcd, (col_size-num_trg_pcd):-1] = normalized_matching_scores[:-1,:-1]
-            place_holder[:num_src_pcd,-1] = normalized_matching_scores[:-1,-1]
-            place_holder[-1,(col_size-num_trg_pcd):-1] = normalized_matching_scores[-1,:-1]
-            place_holder[-1,-1] = normalized_matching_scores[-1,-1]
-
-            result_list.append(place_holder)
+            result = torch.stack(result_list, dim=0) # (B, N+M+1, N+M+1)
         
-        result = torch.stack(result_list, dim=0) # (B, N+M+1, N+M+1)
+        else:
+            matching_scores_row_sum = torch.sum(matching_scores, dim=-1) # (B, N+M)
+            matching_scores_col_sum = torch.sum(matching_scores, dim=-2) # (B, N+M)
+
+            matching_scores_row_num = torch.sum(active_mask, dim=-1) # (B, N+M)
+            matching_scores_col_num = torch.sum(active_mask, dim=-2) # (B, N+M)
+
+            matching_scores_row_num = torch.where(matching_scores_row_num == 0.0, 1.0, matching_scores_row_num)
+            matching_scores_col_num = torch.where(matching_scores_col_num == 0.0, 1.0, matching_scores_col_num)
+            matching_scores_mean_for_slack_row = matching_scores_row_sum / matching_scores_row_num # (B, N+M)
+            matching_scores_mean_for_slack_col = matching_scores_col_sum / matching_scores_col_num # (B, N+M)
+
+            corner_slack = (matching_scores_mean_for_slack_row.mean(dim=1) + matching_scores_mean_for_slack_col.mean(dim=1)) / 2 # (B, )
+
+            place_holder = torch.zeros(batch_size, row_size+1, col_size+1, device=matching_scores.device) # (B, N+M+1, N+M+1)
+            place_holder[:, :-1, :-1] = matching_scores
+            place_holder[:, :-1, -1] = matching_scores_mean_for_slack_row
+            place_holder[:, -1, :-1] = matching_scores_mean_for_slack_col
+            place_holder[:, -1, -1] = corner_slack
+
+            result = torch.sigmoid(place_holder) # (B, N+M+1, N+M+1)
         return result
     
     @torch.no_grad()

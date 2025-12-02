@@ -71,6 +71,8 @@ def main(args):
                         n_avn=args.n_avn,
                         mlp_mode=args.mlp_mode,
                         move_smaller=args.move_smaller,
+
+                        matching_norm_mode=args.matching_norm_mode,
                         
                         infer_match_option='topk', # Fix match option value during training
                         infer_topk=128, # Fix topk value during training
@@ -283,6 +285,10 @@ if __name__ == '__main__':
     parser.add_argument('--flip_normal', action='store_true', help='If True, flip the normal vector of the point cloud')
     parser.add_argument('--consistency_loss', action='store_true', help='')
     parser.add_argument('--move_smaller', action='store_true', help='If True, always move the smaller point cloud to the origin')
+
+
+    # Sinkhorn experments
+    parser.add_argument('--matching_norm_mode', type=str, default='sinkhorn', choices=['sinkhorn', 'sigmoid'])
 
 
     # Visualization arguments
