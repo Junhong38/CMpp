@@ -565,7 +565,8 @@ class EquiAssem(pl.LightningModule):
 
         # 8. Optimal Transport
         # Optimal Transport is in log space, so inside registration, there is exp operation
-        matching_scores = self.optimal_transport(shape_matching_scores, row_masks=(pcd_batch_info == 0), col_masks=(pcd_batch_info == 1)) # (B, N+M+1, N+M+1)
+        matching_scores = self.multibatch_optimal_transport(shape_matching_scores, pcd_batch_info, active_mask) # (B, N+M+1, N+M+1)
+        # matching_scores = self.optimal_transport(shape_matching_scores, row_masks=(pcd_batch_info == 0), col_masks=(pcd_batch_info == 1)) # (B, N+M+1, N+M+1)
         matching_scores_drop = matching_scores[:,:-1,:-1] # (B, N+M, N+M)
         if self.flip_normal and mode in ['train', 'val']:
             symmetric_matching_scores = self.optimal_transport(symmetric_shape_matching_scores) # (B, N+M+1, N+M+1)
@@ -688,6 +689,42 @@ class EquiAssem(pl.LightningModule):
 
         return matching_scores, active_parts
     
+    
+    def multibatch_optimal_transport(self, matching_scores, batch_info, active_mask):
+        """
+        Calculate optimal transport between multiple batches
+
+        Args:
+            matching_scores (torch.Tensor): (B, N+M, N+M)
+            batch_info (torch.Tensor): (B, N+M, ), batch index of the point cloud
+            active_mask (torch.Tensor): (B, N+M, N+M), True if the point is active
+        """
+        batch_size, row_size, col_size = matching_scores.shape
+
+        result_list = []
+
+        for batch_idx in range(batch_size):
+            # Postprocess matching scores to make its shape (N, M)
+            pcd_num_info = batch_info[batch_idx].bincount() # (2, )
+            assert len(pcd_num_info) == 2, f"There must be two objects in the batch, but got {len(pcd_num_info)}"
+            
+            num_src_pcd, num_trg_pcd = pcd_num_info
+            postprocessed_matching_scores = matching_scores[batch_idx][active_mask[batch_idx]] # (N*M,)
+            postprocessed_matching_scores = postprocessed_matching_scores.reshape(1, num_src_pcd, num_trg_pcd) # (1, N, M)
+
+            normalized_matching_scores = self.optimal_transport(postprocessed_matching_scores).squeeze(0) # (1, N+1, M+1) -> (N+1, M+1)
+
+            # Recover shape
+            place_holder = torch.zeros(row_size+1, col_size+1, device=matching_scores.device)
+            place_holder[:num_src_pcd, (col_size-num_trg_pcd):-1] = normalized_matching_scores[:-1,:-1]
+            place_holder[:num_src_pcd,-1] = normalized_matching_scores[:-1,-1]
+            place_holder[-1,(col_size-num_trg_pcd):-1] = normalized_matching_scores[-1,:-1]
+            place_holder[-1,-1] = normalized_matching_scores[-1,-1]
+
+            result_list.append(place_holder)
+        
+        result = torch.stack(result_list, dim=0) # (B, N+M+1, N+M+1)
+        return result
     
     @torch.no_grad()
     def progress_evaluation(self, in_dict, out_dict, mode):
