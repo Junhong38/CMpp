@@ -20,9 +20,7 @@ class GADataset:
 
     @classmethod
     def build_dataloader(cls, batch_size, nworker, split):
-        training = split == 'train'
-        shuffle = training
+        shuffle = split == 'train'
         dataset = DatasetBreakingBad(cls.datapath, cls.data_category, cls.sub_category, split, cls.scale, cls.multiplicity, cls.min_part, cls.max_part, cls.min_n_pts, cls.n_pts, cls.overlap_radius)
         dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=shuffle, num_workers=nworker, pin_memory=False, collate_fn=collate_fn)
-
         return dataloader

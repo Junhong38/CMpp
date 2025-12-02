@@ -241,9 +241,9 @@ if __name__ == '__main__':
 
     # Training arguments
     parser.add_argument('--logpath', type=str, default='default_logpath', help='Log path and name for project')
-    parser.add_argument('--batch_size', type=int, default=1, help='Batch size. DO NOT CHANGE THIS VALUE. WE ASSUME THAT BATCH SIZE IS 1')
+    parser.add_argument('--batch_size', type=int, default=1, help='Batch size.')
     parser.add_argument('--lr', type=float, default=1e-2, help='Learning rate. If you use multi-GPU training, the learning rate is multiplied by the number of GPUs.')
-    parser.add_argument('--epochs', type=int, default=0, help='Number of epochs. If 0, it is automatically set to 200 for everyday dataset and 300 for other datasets.')
+    parser.add_argument('--epochs', type=int, default=0, help='Number of epochs. If 0, it is automatically set to 90 for everyday dataset and 300 for other datasets.')
     parser.add_argument('--n_worker', type=int, default=4, help='Number of workers. If you use multi-GPU training, the number of workers is multiplied by the number of GPUs.')
     parser.add_argument('--load', type=str, default='', help='Load checkpoint for training')
     parser.add_argument('--load_ori', type=str, default='', help='Only load the orientation backbone network, this is only allowed when double_backbone, and stage 2')
@@ -254,8 +254,8 @@ if __name__ == '__main__':
 
     # Model arguments
     parser.add_argument('--model', type=str, default='CMpp_equiassem', choices=['CM_equiassem', 'CMpp_equiassem'])
-    parser.add_argument('--backbone', type=str, default='vn_unet', choices=['vn_unet', 'vn_unet_deep', 'vn_unet_deep_v2', 'vn_unet_deep_v3', 'vn_unet_deep_v4', 'vn_dgcnn', 'unet', 'dgcnn'])
-    parser.add_argument('--double_bacbone', type=str, default='none', choices=['none', 'vn_unet', 'vn_unet_deep', 'vn_unet_deep_v2', 'vn_unet_deep_v3', 'vn_unet_deep_v4', 'vn_dgcnn', 'unet', 'dgcnn'])
+    parser.add_argument('--backbone', type=str, default='vn_unet', choices=['vn_unet'])
+    parser.add_argument('--double_bacbone', type=str, default='none', choices=['none', 'vn_unet'])
     parser.add_argument('--n_knn', type=int, default=20, help='Number of nearest neighbors for KNN')
     parser.add_argument('--only_one_norm', action='store_true', help='If True, use only one Normalization layer for the equivariant shape feature')
     parser.add_argument('--n_avn', type=int, default=5, help='Number of AVN layers for the equivariant shape feature')

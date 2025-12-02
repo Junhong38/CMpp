@@ -20,7 +20,7 @@ class DatasetBreakingBad(Dataset):
         Args:
             datapath (str): path to the dataset
             data_category (str): ['everyday', 'artifact'], candidates are fixed by argparse
-            sub_category (str): ['all', 'xxx', ...]
+            sub_category (str): ['all']
             split (str): ['train', 'val', 'test']
             scale (str): ['full', 'small', 'overfitting', 'tiny'], candidates are fixed by argparse
             multiplicity (int): multiplicity of the dataset
@@ -309,31 +309,6 @@ class DatasetBreakingBad(Dataset):
 
 
 def collate_fn(batch):
-    """_summary_
-    batch = {
-            'eval_idx': idx, # integer e.g. 0
-            'filepath': filepath, # string e.g. 'everyday/BeerBottle/2927d6c8438f6e24fe6460d8d9bd16c6/fractured_37'
-            'obj_class': filepath.split('/')[1], # string e.g. 'BeerBottle'
-            'n_frac': n_frac, # integer e.g. 2
-            'anchor_idx': anchor_idx, # integer e.g. 0
-
-            'pcd': concat_pcd, # torch.Tensor, (total_N, 3)
-            'pcd_t': concat_pcd_t, # torch.Tensor, (total_N, 3)
-            'gt_normals': concat_gt_normals, # torch.Tensor, (total_N, 3)
-            'pcd_batch_info': pcd_batch_info, # torch.Tensor, (total_N, ), batch index of the point cloud
-            'gt_correspondence': matching_inds, # if test then dict, key: string e.g. '0-1', value: torch.Tensor, (Corr, 2) else torch.Tensor, (Corr, 2)
-            }
-
-    if self.split in ['val', 'test']:
-        eval_dict = {
-            # Eval
-            'mesh': [torch.tensor(_mesh.vertices).float() for _mesh in mesh], # list of torch.Tensor, (N', 3)
-            'mesh_t': [torch.tensor(_mesh.vertices).float() for _mesh in mesh_t], # list of torch.Tensor, (N', 3)
-            'mesh_faces': [torch.tensor(_mesh.faces) for _mesh in mesh], # list of torch.Tensor, (F, 3)
-            'relative_trsfm': gt_relative_trsfm, # dict, key: string e.g. '0-1', value: tuple of (torch.Tensor (3, 3), torch.Tensor (3, ))
-        }
-    """
-
     result_batch = {}
 
     for batch_key in batch[0].keys():

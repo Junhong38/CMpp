@@ -8,20 +8,18 @@ Please cite our work if the code is helpful to you.
 import torch
 
 
-
 def offset2bincount(offset):
     return torch.diff(offset, prepend=torch.tensor([0], device=offset.device, dtype=torch.long))
-
 
 
 def bincount2offset(bincount):
     return torch.cumsum(bincount, dim=0)
 
 
-
 def offset2batch(offset):
     bincount = offset
     return torch.arange(len(bincount), device=offset.device, dtype=torch.long).repeat_interleave(bincount)
+
 
 
 
