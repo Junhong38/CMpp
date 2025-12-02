@@ -27,8 +27,8 @@ class TransitionDown(nn.Module):
             o (torch.Tensor): (batch_size*num_parts, ), which is resposible for point offset
 
         Returns:
-            n_p (torch.Tensor): (batch_size*sampled_points, 3)
-            x (torch.Tensor): (batch_size, channel', 3, sampled_points)
+            n_p (torch.Tensor): (batch_size*num_of_sampled_points, 3)
+            x (torch.Tensor): (batch_size, channel', 3, num_of_sampled_points)
             n_b (torch.Tensor): (batch_size, num_of_sampled_points), which is resposible for sampled point batch index
             n_o (torch.Tensor): (batch_size*num_parts, ), which is resposible for sampled point offset
         """
@@ -41,19 +41,19 @@ class TransitionDown(nn.Module):
         n_o = batch2offset(n_b.reshape(-1)).int() # (batch_size*num_parts, )
 
         # FPS
-        idx = pointops.furthestsampling(p, o, n_o)  # (batch_size*sampled_points, )
-        n_p = p[idx.long(), :]  # (batch_size*sampled_points, 3)
+        idx = pointops.furthestsampling(p, o, n_o)  # (batch_size*num_of_sampled_points, )
+        n_p = p[idx.long(), :]  # (batch_size*num_of_sampled_points, 3)
 
         # kNN-MLP
         reshaped_x = x.permute(0,3,1,2).reshape(batch_size*num_points, -1).contiguous() # (batch_size, channel, 3, num_points) -> (batch_size, num_points, channel, 3) -> (batch_size*num_points, channel*3)
-        x = pointops.queryandgroup(self.nsample, p, n_p, reshaped_x, None, o, n_o, use_xyz=False) # (batch_size*sampled_points, nsample, channel*3)
-        x = x.reshape(batch_size, num_of_sampled_points, self.nsample, -1, 3) # (batch_size*sampled_points, nsample, channel*3) -> (batch_size, sampled_points, nsample, channel, 3)
+        x = pointops.queryandgroup(self.nsample, p, n_p, reshaped_x, None, o, n_o, use_xyz=False) # (batch_size*num_of_sampled_points, nsample, channel*3)
+        x = x.reshape(batch_size, num_of_sampled_points, self.nsample, -1, 3) # (batch_size*num_of_sampled_points, nsample, channel*3) -> (batch_size, num_of_sampled_points, nsample, channel, 3)
 
-        # (batch_size, sampled_points, nsample, channel, 3) -> (batch_size, channel, 3, sampled_points, nsample) -> (batch_size, channel', 3, sampled_points, nsample)
+        # (batch_size, num_of_sampled_points, nsample, channel, 3) -> (batch_size, channel, 3, num_of_sampled_points, nsample) -> (batch_size, channel', 3, num_of_sampled_points, nsample)
         x = self.mlp(x.permute(0,3,4,1,2))
 
         # Mean Pooling
-        x = x.mean(dim=-1)  # (batch_size, channel', 3, sampled_points)
+        x = x.mean(dim=-1)  # (batch_size, channel', 3, num_of_sampled_points)
 
         return n_p, x, n_b, n_o
 
@@ -159,7 +159,7 @@ class EQCNN_equi_unet(nn.Module):
 
         Args:
             x (torch.Tensor): (B, N+M, 3)
-            batch_info (torch.Tensor): (B, num_of_objs)
+            batch_info (torch.Tensor): (B, N+M)
 
         Returns:
             equi_feat (torch.Tensor): (B, feat_dim//3, 3, N+M)

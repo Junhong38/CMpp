@@ -17,11 +17,12 @@ def bincount2offset(bincount):
 
 
 def offset2batch(offset):
-    bincount = offset
+    bincount = offset2bincount(offset)
     return torch.arange(len(bincount), device=offset.device, dtype=torch.long).repeat_interleave(bincount)
 
 
-
+def bincount2batch(bincount):
+    return torch.arange(len(bincount), device=bincount.device, dtype=torch.long).repeat_interleave(bincount)
 
 
 def batch2offset(batch):
@@ -47,29 +48,6 @@ def batch_scaling(batch):
     return batch_scaled_batch
 
 
-
-def extract_by_offset_info(tensor, offset_info, target_idx):
-    """
-    Args:
-        tensor (torch.Tensor): (N, ...)
-        offset_info (torch.Tensor): (B, )
-        target_idx (int): target_idx
-    Returns:
-        tensor (torch.Tensor): (target offset size, ...)
-    """
-    print(f"[extract_by_offset_info] tensor: {tensor.shape}, offset_info: {offset_info.shape}, target_idx: {target_idx}")
-
-    # offset info is like [0, 1, 3, 6, 10, ...]
-    size_cumsum = torch.cat([torch.tensor([0]).to(tensor.device), torch.cumsum(offset_info, dim=0)], dim=0) # (B + 1, )
-    print(f"[extract_by_offset_info] size_cumsum: {size_cumsum.shape}, size_cumsum: {size_cumsum}")
-    start_idx = size_cumsum[target_idx]
-    end_idx = size_cumsum[target_idx + 1]
-    selected_part = tensor[start_idx:end_idx]
-    print(f"[extract_by_offset_info] selected_part: {selected_part.shape}")
-    return tensor[start_idx:end_idx]
-
-
-
 def extract_by_batch_index(tensor_value, batch_info, target_batch_idx):
     """
     Args:
@@ -83,7 +61,6 @@ def extract_by_batch_index(tensor_value, batch_info, target_batch_idx):
     assert target_batch_idx <= batch_info.max(), f"target_batch_idx: {target_batch_idx}, batch_info.max(): {batch_info.max()}"
     selected_part = tensor_value[batch_info == target_batch_idx]
     return selected_part
-
 
 
 def extract_all_objects(tensor, batch_info):

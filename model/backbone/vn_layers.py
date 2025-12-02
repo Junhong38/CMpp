@@ -28,16 +28,16 @@ def knn(x, batch_info, k):
     Returns:
         idx (torch.Tensor): (B, num_points, k), index of the k nearest neighbors
     """
-    transposed_x = x.transpose(2, 1)
-    pairwise_distance = - torch.cdist(transposed_x, transposed_x)
+    transposed_x = x.transpose(2, 1) # (B, N+M, C*3)
+    pairwise_distance = - torch.cdist(transposed_x, transposed_x) # (B, N+M, N+M)
 
     # To prevent neighboring points in different objects from being considered as neighbors
     num_of_points = batch_info.size(1)
-    repeated_batch_info_row = batch_info[:,None,:].expand(-1, num_of_points, -1)
-    repeated_batch_info_col = batch_info[:,:,None].expand(-1, -1, num_of_points)
+    repeated_batch_info_row = batch_info[:,:,None].expand(-1, -1, num_of_points)
+    repeated_batch_info_col = batch_info[:,None,:].expand(-1, num_of_points, -1)
     matrix_batch_info = torch.stack([repeated_batch_info_row, repeated_batch_info_col], dim=-1) # (B, N+M, N+M, 2)
     matrix_batch_info = matrix_batch_info[:,:,:,0] == matrix_batch_info[:,:,:,1] # (B, N+M, N+M) -> True if the point is included in same obj
-    pairwise_distance = pairwise_distance * matrix_batch_info + (- 1e9) * ( ~ matrix_batch_info)
+    pairwise_distance = pairwise_distance * matrix_batch_info + (- 1e9) * ( ~ matrix_batch_info) # (B, N+M, N+M)
 
     idx = pairwise_distance.topk(k=k, dim=-1)[1]   # (B, N+M, k)
     return idx
@@ -50,8 +50,6 @@ def get_graph_feature(x, batch_info, k=20):
         x (torch.Tensor): (B, C, 3, N+M), point features
         batch_info (torch.Tensor): (B, N+M), batch index of the point cloud
         k (int, optional): k. Defaults to 20.
-        idx (torch.Tensor, optional): idx. Defaults to None.
-        x_coord (torch.Tensor, optional): x_coord. Defaults to None.
 
     Returns:
         feature (torch.Tensor): (B, 2C, 3, N+M, k)

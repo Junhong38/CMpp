@@ -10,7 +10,7 @@ import torch
 from torch.utils.data import Dataset
 
 from data.utils import to_o3d_pcd, get_correspondences
-from common.misc import offset2batch
+from common.misc import bincount2batch
 
 class DatasetBreakingBad(Dataset):
     def __init__(self, datapath, data_category, sub_category, split, scale='full', multiplicity=1,
@@ -225,7 +225,7 @@ class DatasetBreakingBad(Dataset):
         concat_pcd = torch.cat(pcd, dim=0) # (total_N, 3)
         concat_pcd_t = torch.cat(pcd_t, dim=0) # (total_N, 3)
         concat_gt_normals = torch.cat(gt_normals, dim=0) # (total_N, 3)
-        pcd_batch_info = offset2batch(torch.tensor([len(pcd_) for pcd_ in pcd])) # (total_N, )
+        pcd_batch_info = bincount2batch(torch.tensor([len(pcd_) for pcd_ in pcd])) # (total_N, )
 
         batch = {
                 'eval_idx': idx, # integer e.g. 0
@@ -327,9 +327,9 @@ def collate_fn(batch):
                 result_batch[batch_key] = batch[0][batch_key] # (Corr, 2)
             else:
                 list_of_gt_correspondence = [a_batch[batch_key] for a_batch in batch]
-                gt_corr_offset_info = torch.tensor([len(gt_corr) for gt_corr in list_of_gt_correspondence]) # (B, )
+                gt_corr_bincount_info = torch.tensor([len(gt_corr) for gt_corr in list_of_gt_correspondence]) # (B, )
                 result_batch[batch_key] = torch.cat(list_of_gt_correspondence, dim=0) # (total_Corr, 2)
-                result_batch['gt_corr_offset_info'] = gt_corr_offset_info
+                result_batch['gt_corr_bincount_info'] = gt_corr_bincount_info
         
         elif batch_key in ['mesh', 'mesh_t', 'mesh_faces', 'relative_trsfm']: # Only for evaluation, So batch size must be 1
             assert len(batch) == 1, f"len(batch): {len(batch)}, batch size must be 1 for evaluation"
