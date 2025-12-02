@@ -36,51 +36,51 @@ def main(args):
 
     # Model initialization        
     model = EquiAssem(lr=args.lr,
-                        scheduler_mode=args.scheduler_mode,
-                        backbone=args.backbone,
-                        double_bacbone=args.double_bacbone,
+                      scheduler_mode=args.scheduler_mode,
+                      backbone=args.backbone,
+                      double_bacbone=args.double_bacbone,
 
-                        # Circle loss and point matching loss arguments
-                        pos_radius=args.pos_radius,
-                        safe_radius=args.safe_radius,
+                      # Circle loss and point matching loss arguments
+                      pos_radius=args.pos_radius,
+                      safe_radius=args.safe_radius,
 
-                        # Circle loss arguments
-                        pos_margin=args.pos_margin,
-                        neg_margin=args.neg_margin,
-                        log_scale=args.log_scale,
-                        same_opt=args.same_opt,
-                        no_balance=args.no_balance,
-                        hard_negative=args.hard_negative,
+                      # Circle loss arguments
+                      pos_margin=args.pos_margin,
+                      neg_margin=args.neg_margin,
+                      log_scale=args.log_scale,
+                      same_opt=args.same_opt,
+                      no_balance=args.no_balance,
+                      hard_negative=args.hard_negative,
 
-                        s_loss_weight=args.s_loss_weight,
-                        p_loss_weight=args.p_loss_weight,
-                        o_loss_weight=args.o_loss_weight,
+                      s_loss_weight=args.s_loss_weight,
+                      p_loss_weight=args.p_loss_weight,
+                      o_loss_weight=args.o_loss_weight,
 
-                        visualize=args.visualize,
-                        viz_epoch=args.viz_epoch,
-                        viz_max_arrow_num=args.viz_max_arrow_num,
-                        ckp_dir=ckp_dir,
-                        debug=args.debug,
-                        success_criterion_in_degree=args.success_criterion_in_degree,
-                        only_train_normal=args.only_train_normal,
-                        flip_normal=args.flip_normal,
-                        consistency_loss=args.consistency_loss,
+                      visualize=args.visualize,
+                      viz_epoch=args.viz_epoch,
+                      viz_max_arrow_num=args.viz_max_arrow_num,
+                      ckp_dir=ckp_dir,
+                      debug=args.debug,
+                      success_criterion_in_degree=args.success_criterion_in_degree,
+                      only_train_normal=args.only_train_normal,
+                      flip_normal=args.flip_normal,
+                      consistency_loss=args.consistency_loss,
 
-                        n_knn=args.n_knn,
-                        only_one_norm=args.only_one_norm,
-                        n_avn=args.n_avn,
-                        mlp_mode=args.mlp_mode,
-                        move_smaller=args.move_smaller,
+                      n_knn=args.n_knn,
+                      only_one_norm=args.only_one_norm,
+                      n_avn=args.n_avn,
+                      mlp_mode=args.mlp_mode,
+                      move_smaller=args.move_smaller,
 
-                        matching_norm_mode=args.matching_norm_mode,
+                      matching_norm_mode=args.matching_norm_mode,
                         
-                        infer_match_option='topk', # Fix match option value during training
-                        infer_topk=128, # Fix topk value during training
-                        infer_score_threshold_ratio=0.0, # Block filtering correspondences during training
-                        use_RANSAC=False, # RANSAC is not used for training
-                        RANSAC_type='default', # RANSAC is not used for training
-                        use_predicted_normal=False # RANSAC is not used for training
-                        )
+                      infer_match_option='topk', # Fix match option value during training
+                      infer_topk=128, # Fix topk value during training
+                      infer_score_threshold_ratio=0.0, # Block filtering correspondences during training
+                      use_RANSAC=False, # RANSAC is not used for training
+                      RANSAC_type='default', # RANSAC is not used for training
+                      use_predicted_normal=False # RANSAC is not used for training
+                      )
 
     
     
