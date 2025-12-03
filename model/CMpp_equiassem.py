@@ -70,6 +70,7 @@ class EquiAssem(pl.LightningModule):
             move_smaller=False,
 
             matching_norm_mode='sinkhorn',
+            no_slack_variable=False,
             
             # RANSAC arguments
             infer_match_option='topk',
@@ -120,6 +121,7 @@ class EquiAssem(pl.LightningModule):
             move_smaller (bool, optional): Whether to always move the smaller point cloud to the origin. Defaults to False.
 
             matching_norm_mode (str, optional): 'sinkhorn' or 'sigmoid'. Defaults to 'sinkhorn'.
+            no_slack_variable (bool, optional): Whether to not use slack variable for Sinkhorn algorithm. Defaults to False.
 
             # RANSAC arguments
             infer_match_option (str, optional): 'topk' or 'mutual_topk' or 'soft_topk' or 'unidirectional_topk' or 'injective' or 'bijective'. Defaults to 'topk'.
@@ -162,6 +164,7 @@ class EquiAssem(pl.LightningModule):
         print(f"move_smaller: {move_smaller}")
 
         print(f"matching_norm_mode: {matching_norm_mode}")
+        print(f"no_slack_variable: {no_slack_variable}")
 
         # RANSAC arguments
         print(f"infer_match_option: {infer_match_option}")
@@ -186,6 +189,7 @@ class EquiAssem(pl.LightningModule):
         self.move_smaller = move_smaller
 
         self.matching_norm_mode = matching_norm_mode
+        self.no_slack_variable = no_slack_variable
 
         # Inference arguments
         self.infer_match_option = infer_match_option
@@ -203,7 +207,7 @@ class EquiAssem(pl.LightningModule):
                                       log_scale=log_scale, pos_optimal=pos_margin, neg_optimal=neg_margin, 
                                       same_opt=same_opt, no_balance=no_balance, hard_negative=hard_negative)
         self.orientation_loss = OrientationLoss(consistency_loss=consistency_loss)
-        self.matching_loss = PointMatchingLoss(pos_radius=pos_radius)
+        self.matching_loss = PointMatchingLoss(pos_radius=pos_radius, no_slack_variable=no_slack_variable)
         
 
         # Weights for losses
@@ -546,8 +550,8 @@ class EquiAssem(pl.LightningModule):
 
         # 8. Optimal Transport
         # Optimal Transport is in log space, so inside registration, there is exp operation
-        matching_scores = self.multibatch_optimal_transport(shape_matching_scores, pcd_batch_info, active_mask, mode=self.matching_norm_mode) # (B, N+M+1, N+M+1)
-        matching_scores_drop = matching_scores[:,:-1,:-1] # (B, N+M, N+M)
+        matching_scores = self.multibatch_optimal_transport(shape_matching_scores, pcd_batch_info, active_mask, mode=self.matching_norm_mode) # (B, N+M+1, N+M+1) if self.no_slack_variable is False, otherwise (B, N+M, N+M)
+        matching_scores_drop = matching_scores[:,:-1,:-1] if not self.no_slack_variable else matching_scores # (B, N+M, N+M)
         if self.flip_normal and mode in ['train', 'val']:
             symmetric_matching_scores = self.multibatch_optimal_transport(symmetric_shape_matching_scores, pcd_batch_info, active_mask, mode=self.matching_norm_mode) # (B, N+M+1, N+M+1)
         
@@ -682,6 +686,9 @@ class EquiAssem(pl.LightningModule):
             batch_info (torch.Tensor): (B, N+M, ), batch index of the point cloud
             active_mask (torch.Tensor): (B, N+M, N+M), True if the point is active
             mode (str, optional): 'sinkhorn' or 'sigmoid'. Defaults to 'sinkhorn'.
+        
+        Returns:
+            result (torch.Tensor): (B, N+M+1, N+M+1) if self.no_slack_variable is False, otherwise (B, N+M, N+M)
         """
         batch_size, row_size, col_size = matching_scores.shape
 
@@ -710,7 +717,8 @@ class EquiAssem(pl.LightningModule):
             
             result = torch.stack(result_list, dim=0) # (B, N+M+1, N+M+1)
         
-        else:
+        elif mode in ['sigmoid', 'softmax'] and not self.no_slack_variable:
+            # Calculate slack variables for rows and columns
             matching_scores_row_sum = torch.sum(matching_scores, dim=-1) # (B, N+M)
             matching_scores_col_sum = torch.sum(matching_scores, dim=-2) # (B, N+M)
 
@@ -731,7 +739,33 @@ class EquiAssem(pl.LightningModule):
             place_holder[:, -1, :-1] = matching_scores_mean_for_slack_col
             place_holder[:, -1, -1] = corner_slack
 
-            result = torch.sigmoid(place_holder) # (B, N+M+1, N+M+1)
+            # Remove inactive parts
+            padded_active_mask = torch.zeros(batch_size, row_size+1, col_size+1, device=matching_scores.device, dtype=torch.bool)
+            padded_active_mask[:,:-1,:-1] = active_mask
+            padded_active_mask[:, :-1, -1] = torch.logical_and(~ padded_active_mask[:, :-1, -1], active_mask.any(dim=-1))
+            padded_active_mask[:, -1, :-1] = torch.logical_and(~ padded_active_mask[:, -1, :-1], active_mask.any(dim=-2))
+            padded_active_mask[:, -1, -1] = ~ padded_active_mask[:, -1, -1]
+
+            if mode == 'sigmoid':
+                result = torch.sigmoid(place_holder)
+            
+            else: # 'softmax'
+                place_holder = place_holder * padded_active_mask + -1e12 * (~ padded_active_mask)
+                result = nn.functional.softmax(place_holder.reshape(batch_size, -1), dim=-1).reshape(batch_size, row_size+1, col_size+1)
+            
+            # Remove inactive parts
+            result = result * padded_active_mask
+        
+        elif mode in ['sigmoid', 'softmax'] and self.no_slack_variable:
+            if mode == 'sigmoid':
+                result = torch.sigmoid(matching_scores) # (B, N+M, N+M)
+            
+            else: # 'softmax'
+                result = matching_scores * active_mask + -1e12 * (~ active_mask)
+                result = nn.functional.softmax(result.reshape(batch_size, -1), dim=-1).reshape(batch_size, row_size, col_size) # (B, N+M, N+M)
+            
+            # Remove inactive parts
+            result = result * active_mask
         
         return result
     
@@ -805,7 +839,7 @@ class EquiAssem(pl.LightningModule):
         eval_dict = self.evaluate_prediction(in_dict, split_input_dict, out_dict, mode)
 
         # Matching Recall
-        # eval_dict.update(self._calculate_recall(postprocessed_matching_scores_drop, gt_corr))
+        eval_dict.update(self._calculate_recall(postprocessed_matching_scores_drop, gt_corr))
 
         return out_dict, eval_dict
     

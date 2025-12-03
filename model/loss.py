@@ -237,14 +237,15 @@ class CircleLoss(nn.Module):
 
 
 class PointMatchingLoss(nn.Module):
-    def __init__(self, pos_radius=0.018):
+    def __init__(self, pos_radius=0.018, no_slack_variable=False):
         super(PointMatchingLoss, self).__init__()
         self.positive_radius = pos_radius
+        self.no_slack_variable = no_slack_variable
 
     def forward(self, matching_scores, coords_dist, active_mask):
         """
         Args:
-            matching_scores (torch.Tensor): (B, N+M+1, N+M+1), This already removed inactive points
+            matching_scores (torch.Tensor): (B, N+M+1, N+M+1) if self.no_slack_variable is False, otherwise (B, N+M, N+M) (This already removed inactive points)
             coords_dist (torch.Tensor): (B, N+M, N+M)
             active_mask (torch.Tensor): (B, N+M, N+M), True if the point is active
 
@@ -254,21 +255,36 @@ class PointMatchingLoss(nn.Module):
 
         gt_corr_map = torch.logical_and(coords_dist < self.positive_radius, active_mask) # (B, N+M, N+M)
 
-        # Initialize labels for the loss calculation
-        labels = torch.zeros_like(matching_scores, dtype=torch.bool) # (B, N+M+1, N+M+1)
         
-        # Handle slack rows and columns
-        # torch.sum(gt_corr_map, dim=-1) == 0 -> True if there is no matching parts
-        # active_mask.any(dim=-1) -> True if the row is active
-        slack_row_labels = torch.logical_and(torch.sum(gt_corr_map, dim=-1) == 0, active_mask.any(dim=-1)) # (B, N+M)
-        slack_col_labels = torch.logical_and(torch.sum(gt_corr_map, dim=-2) == 0, active_mask.any(dim=-2)) # (B, N+M)
+        
+        if self.no_slack_variable:
+            # Mating Surface Part
+            # This makes matching_scores[gt_corr_map] to be larger
+            loss_for_mating_surface = - matching_scores[gt_corr_map].mean()
 
-        labels[:, :-1, :-1] = gt_corr_map
-        labels[:, :-1, -1] = slack_row_labels
-        labels[:, -1, :-1] = slack_col_labels
+            # Non-Mating Surface Part
+            # This makes matching_scores[~gt_corr_map] to be smaller
+            loss_for_non_mating_surface = matching_scores[torch.logical_and(~gt_corr_map, active_mask)].mean()
 
-        # Calculate the loss
-        loss = - matching_scores[labels].mean()
+            loss = (loss_for_mating_surface + loss_for_non_mating_surface) / 2
+
+        
+        else: # Use slack variables
+            # Initialize labels for the loss calculation
+            labels = torch.zeros_like(matching_scores, dtype=torch.bool) # (B, N+M+1, N+M+1)
+
+            # Handle slack rows and columns
+            # torch.sum(gt_corr_map, dim=-1) == 0 -> True if there is no matching parts
+            # active_mask.any(dim=-1) -> True if the row is active
+            slack_row_labels = torch.logical_and(torch.sum(gt_corr_map, dim=-1) == 0, active_mask.any(dim=-1)) # (B, N+M)
+            slack_col_labels = torch.logical_and(torch.sum(gt_corr_map, dim=-2) == 0, active_mask.any(dim=-2)) # (B, N+M)
+
+            labels[:, :-1, :-1] = gt_corr_map
+            labels[:, :-1, -1] = slack_row_labels
+            labels[:, -1, :-1] = slack_col_labels
+
+            # Calculate the loss
+            loss = - matching_scores[labels].mean()
 
         return loss
 

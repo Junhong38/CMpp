@@ -70,6 +70,7 @@ def test(args):
                       move_smaller=args.move_smaller,
 
                       matching_norm_mode=args.matching_norm_mode,
+                      no_slack_variable=args.no_slack_variable,
                         
                       infer_match_option=args.infer_match_option,
                       infer_topk=args.infer_topk,
@@ -166,7 +167,8 @@ if __name__ == '__main__':
 
 
     # Sinkhorn experments
-    parser.add_argument('--matching_norm_mode', type=str, default='sinkhorn', choices=['sinkhorn', 'sigmoid'])
+    parser.add_argument('--matching_norm_mode', type=str, default='sinkhorn', choices=['sinkhorn', 'sigmoid', 'softmax'])
+    parser.add_argument('--no_slack_variable', action='store_true', help='If True, do not use slack variable for Sinkhorn algorithm')
 
 
     # Inference arguments
@@ -209,6 +211,9 @@ if __name__ == '__main__':
     
     else: # Single-GPU training
         args.parallel_strategy = 'auto'
+    
+    if args.no_slack_variable:
+        assert args.matching_norm_mode in ['sigmoid', 'softmax'], f"no_slack_variable is only allowed when matching_norm_mode is sigmoid or softmax, but got {args.matching_norm_mode}"
     
 
     print("================================================")

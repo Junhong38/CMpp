@@ -73,6 +73,7 @@ def main(args):
                       move_smaller=args.move_smaller,
 
                       matching_norm_mode=args.matching_norm_mode,
+                      no_slack_variable=args.no_slack_variable,
                         
                       infer_match_option='topk', # Fix match option value during training
                       infer_topk=128, # Fix topk value during training
@@ -289,7 +290,8 @@ if __name__ == '__main__':
 
 
     # Sinkhorn experments
-    parser.add_argument('--matching_norm_mode', type=str, default='sinkhorn', choices=['sinkhorn', 'sigmoid'])
+    parser.add_argument('--matching_norm_mode', type=str, default='sinkhorn', choices=['sinkhorn', 'sigmoid', 'softmax'])
+    parser.add_argument('--no_slack_variable', action='store_true', help='')
 
 
     # Visualization arguments
@@ -347,6 +349,10 @@ if __name__ == '__main__':
     
     if args.load_ori != '':
         assert args.double_bacbone != 'none', "load_ori is only allowed when double_bacbone is not none"
+    
+
+    if args.no_slack_variable:
+        assert args.matching_norm_mode in ['sigmoid', 'softmax'], f"no_slack_variable is only allowed when matching_norm_mode is sigmoid or softmax, but got {args.matching_norm_mode}"
 
 
     main(args)
