@@ -214,6 +214,7 @@ def main(args):
     
     else: # No checkpoint
         ckp_path = None
+    
 
     print(f"ckp_path: {ckp_path}")
     trainer.fit(model, dataloader_trn, dataloader_val, ckpt_path=ckp_path)

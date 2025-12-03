@@ -36,23 +36,3 @@ def get_correspondences(src_pcd, tgt_pcd, search_voxel_size, K=None):
     correspondences = torch.from_numpy(correspondences)
     return correspondences
 
-def to_array(tensor):
-    """
-    Conver tensor to array
-    """
-    if(not isinstance(tensor,np.ndarray)):
-        if(tensor.device == torch.device('cpu')):
-            return tensor.numpy()
-        else:
-            return tensor.cpu().numpy()
-    else:
-        return tensor
-
-def to_o3d_feats(embedding):
-    """
-    Convert tensor/array to open3d features
-    embedding:  [N, 3]
-    """
-    feats = o3d.pipelines.registration.Feature()
-    feats.data = to_array(embedding).T
-    return feats
