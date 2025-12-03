@@ -29,7 +29,7 @@ end
 
 
 
-
+:<<end
 rm -rf checkpoint/IMPLE/ && CUDA_VISIBLE_DEVICES=0 python main.py --logpath IMPLE --model CMpp_equiassem --backbone vn_unet --double_bacbone vn_unet --n_avn 1 --mlp_mode half --scale full --multiplicity 1 --epochs 0 --gpus 0 --n_worker 1 --hard_negative --batch_size 1
 rm -rf checkpoint/IMPLE/ && CUDA_VISIBLE_DEVICES=0,1 python main.py --logpath IMPLE --model CMpp_equiassem --backbone vn_unet --double_bacbone vn_unet --n_avn 1 --mlp_mode half --scale full --multiplicity 1 --epochs 0 --gpus 0 1 --n_worker 1 --hard_negative --batch_size 1
 
@@ -39,6 +39,13 @@ rm -rf checkpoint/IMPLE/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py 
 
 
 # rm -rf checkpoint/IMPLE_TEST/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python test.py --load checkpoint/IMPLE/models/last.ckpt --logpath IMPLE_TEST --model CMpp_equiassem --backbone vn_unet --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale small --gpus 0 1 2 3 4 5 6 7 --n_worker 6
+end
+
+
+
+rm -rf checkpoint/G8NDB2_F_BV0V0_MH_HN_SINK_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --logpath G8NDB2_F_BV0V0_MH_HN_SINK_6 --backbone vn_unet --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale full --epochs 0 --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --hard_negative --batch_size 2 --wandb --wandb_entity CMppProject --wandb_project CMpp
+rm -rf checkpoint/G8NDB2_F_BV0V0_MH_HN_SIG_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --logpath G8NDB2_F_BV0V0_MH_HN_SIG_6 --backbone vn_unet --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale full --epochs 0 --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --hard_negative --batch_size 2 --matching_norm_mode sigmoid --wandb --wandb_entity CMppProject --wandb_project CMpp
+
 
 
 

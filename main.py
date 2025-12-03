@@ -254,7 +254,7 @@ if __name__ == '__main__':
 
 
     # Model arguments
-    parser.add_argument('--model', type=str, default='CMpp_equiassem', choices=['CM_equiassem', 'CMpp_equiassem'])
+    parser.add_argument('--model', type=str, default='CMpp_equiassem', choices=['CMpp_equiassem'])
     parser.add_argument('--backbone', type=str, default='vn_unet', choices=['vn_unet'])
     parser.add_argument('--double_bacbone', type=str, default='none', choices=['none', 'vn_unet'])
     parser.add_argument('--n_knn', type=int, default=20, help='Number of nearest neighbors for KNN')
