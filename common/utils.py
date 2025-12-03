@@ -1,11 +1,7 @@
 r""" Helper functions """
 import random
 import numpy as np
-from scipy.spatial.transform import Rotation as R
 import open3d as o3d
-from functools import reduce
-import plotly.graph_objects as go
-
 import torch
 
 from common.viz import global_colors_for_objs

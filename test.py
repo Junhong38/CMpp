@@ -33,7 +33,7 @@ def test(args):
 
     # Model initialization
     model = EquiAssem(lr=0, # We don't need to use learning rate for testing
-                      scheduler_mode=None,
+                      scheduler_mode=None, # We don't need to use this parameter for testing
                       backbone=args.backbone,
                       double_bacbone=args.double_bacbone,
 
@@ -151,8 +151,8 @@ if __name__ == '__main__':
 
     # Model arguments
     parser.add_argument('--model', type=str, default='CMpp_equiassem', choices=['CM_equiassem', 'CMpp_equiassem'])
-    parser.add_argument('--backbone', type=str, default='vn_unet', choices=['vn_unet', 'vn_unet_deep', 'vn_unet_deep_v2', 'vn_unet_deep_v3', 'vn_unet_deep_v4', 'vn_dgcnn', 'unet', 'dgcnn'])
-    parser.add_argument('--double_bacbone', type=str, default='none', choices=['none', 'vn_unet', 'vn_unet_deep', 'vn_unet_deep_v2', 'vn_unet_deep_v3', 'vn_unet_deep_v4', 'vn_dgcnn', 'unet', 'dgcnn'])
+    parser.add_argument('--backbone', type=str, default='vn_unet', choices=['vn_unet'])
+    parser.add_argument('--double_bacbone', type=str, default='none', choices=['none', 'vn_unet'])
     parser.add_argument('--n_knn', type=int, default=20, help='Number of nearest neighbors for KNN')
     parser.add_argument('--only_one_norm', action='store_true', help='If True, use only one Normalization layer for the equivariant shape feature')
     parser.add_argument('--n_avn', type=int, default=5, help='Number of AVN layers for the equivariant shape feature')
