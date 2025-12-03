@@ -6,7 +6,7 @@ from model.backbone.vn_layers import VNLinearLeakyReLU, VNMaxPool
 # from lib.pointops.functions import pointops
 from pointcept_libs.pointops2.functions import pointops2 as pointops
 
-from common.misc import batch_scaling, batch2offset
+from common.misc import batch2offset
 
 class TransitionDown(nn.Module):
     def __init__(self, in_planes, out_planes, stride=1, nsample=4):
@@ -154,7 +154,7 @@ class EQCNN_equi_unet(nn.Module):
         # Proj
         self.conv9 = VNLinearLeakyReLU(64//3, feat_dim//3, dim=4, share_nonlinearity=True)
     
-    def forward(self, x, batch_info):
+    def forward(self, x, batch_scaled_batch_info):
         """EQCNN_equi_unet
 
         Args:
@@ -165,12 +165,10 @@ class EQCNN_equi_unet(nn.Module):
             equi_feat (torch.Tensor): (B, feat_dim//3, 3, N+M)
         """
 
-        batch_scaled_batch = batch_scaling(batch_info) # (batch_size, num_points)
-
         p1 = x.reshape(-1, 3) # (B*(N+M), 3)
         x1 = x.transpose(2, 1).unsqueeze(1) # (B, 1, 3, N+M)
-        b1 = batch_scaled_batch # (B, N+M)
-        o1 = batch2offset(batch_scaled_batch.reshape(-1)).int() # (B*num_of_objs, ) 
+        b1 = batch_scaled_batch_info # (B, N+M)
+        o1 = batch2offset(batch_scaled_batch_info.reshape(-1)).int() # (B*num_of_objs, ) 
         
         ### ENCODER 1
         x1 = get_graph_feature(x1, batch_info=b1, k=self.k) # (B, 2, 3, N+M, k) 

@@ -71,15 +71,11 @@ def draw_frames(mesh_verts, mesh_faces,
     # vector -> arrow meshes
     arrow_meshes_gt_normals = make_arrows_from_vector_tensors(pcds=pcds_list, vectors=gt_normals, colors=['red'], cylinder_radius=cylinder_radius, cone_radius=cone_radius, arrow_scale=arrow_scale, viz_max_arrow_num=viz_max_arrow_num, reshape=False)
     arrow_meshes_pred_frame_ori = make_arrows_from_vector_tensors(pcds=pcds_list, vectors=frame_ori, colors=['orange', 'green', 'purple'], cylinder_radius=cylinder_radius, cone_radius=cone_radius, arrow_scale=arrow_scale, viz_max_arrow_num=viz_max_arrow_num, reshape=True)
-    arrows = arrow_meshes_gt_normals + arrow_meshes_pred_frame_ori
-
 
     assert len(recovered_meshes) == len(arrow_meshes_gt_normals) == len(arrow_meshes_pred_frame_ori), \
     f"must have same length, recovered_meshes: {len(recovered_meshes)}, arrow_meshes_gt_normals: {len(arrow_meshes_gt_normals)}, arrow_meshes_pred_frame_ori: {len(arrow_meshes_pred_frame_ori)}"
 
-
     if viz_piece:
-        # save meshes
         # save each piece of mesh
         for ith, (a_mesh, a_arrow_gt_normals, a_arrow_pred_frame_ori) in enumerate(zip(recovered_meshes, arrow_meshes_gt_normals, arrow_meshes_pred_frame_ori)):
             save_meshes_as_ply(meshes=([a_mesh, a_arrow_gt_normals, a_arrow_pred_frame_ori]), dir_path=dir_path, filename=f"{filename}_piece_{ith}")

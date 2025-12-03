@@ -26,7 +26,7 @@ from common.viz import draw_frames, draw_normal_error_histogram
 from pytorch3d.ops import iterative_closest_point
 
 
-from common.misc import extract_all_objects
+from common.misc import extract_all_objects, batch_scaling
 
 
 class EquiAssem(pl.LightningModule):
@@ -480,12 +480,13 @@ class EquiAssem(pl.LightningModule):
         pcd_input = in_dict['pcd_t'] # (B, N+M, 3)
         gt_normals = in_dict['gt_normals'] # (B, N+M, 3)
         pcd_batch_info = in_dict['pcd_batch_info'] # (B, N+M, )
+        batch_scaled_pcd_batch_info = batch_scaling(pcd_batch_info) # (B, N+M, )
         gt_corr = in_dict['gt_correspondence'] # (total_Corr, 2) where total_Corr := Corr_1 + Corr_2 + ... + Corr_B
         gt_corr_bincount_info = in_dict['gt_corr_bincount_info'] # (B, ) where gt_corr_bincount_info[i] shows size of Corr_i
 
 
         # 1. SO(3)-Equivariant Feature Extractor
-        equi_feats_backbone = self.backbone(pcd_input, pcd_batch_info) # (B, C, 3, N+M)
+        equi_feats_backbone = self.backbone(pcd_input, batch_scaled_pcd_batch_info) # (B, C, 3, N+M)
 
 
         # 2. Calculate equivariant shape features
@@ -493,7 +494,7 @@ class EquiAssem(pl.LightningModule):
 
 
         # 3. Frame Prediction
-        equi_feats_ori_backbone = self.ori_backbone(pcd_input, pcd_batch_info) if self.ori_backbone is not None else equi_feats_backbone
+        equi_feats_ori_backbone = self.ori_backbone(pcd_input, batch_scaled_pcd_batch_info) if self.ori_backbone is not None else equi_feats_backbone
 
         # 3-1. Merge global information by averaging
         # (B, C, 3, N+M) -> (B, C, 3, 1) -> (B, C, 3, N+M)
@@ -511,7 +512,7 @@ class EquiAssem(pl.LightningModule):
 
         # Only train the normal vector
         if self.only_train_normal:
-            loss['o_loss'] = self.orientation_loss(oris, gt_normals, gt_corr, gt_corr_bincount_info)
+            loss['o_loss'] = self.orientation_loss(oris, gt_normals, batch_scaled_pcd_batch_info, gt_corr, gt_corr_bincount_info)
             loss['loss'] = loss['o_loss']
 
             # Compute Normal Error
@@ -534,13 +535,13 @@ class EquiAssem(pl.LightningModule):
         shape_feats = self.shape_mlp(inv_feats) # (B, C*3, N+M) -> (B, D, N+M)
         if self.flip_normal and mode in ['train', 'val']:
             symmetric_shape_feats = self.shape_mlp(symmetric_inv_feats) # (B, C*3, N+M) -> (B, D, N+M)
-
-        exit("stop")
+        
 
         # 7. Calculate Matching Scores
         shape_matching_scores, active_mask = self.calculate_matching_score(shape_feats, pcd_batch_info, eps=1e-8)
         if self.flip_normal and mode in ['train', 'val']:
             symmetric_shape_matching_scores, symmetric_active_mask = self.calculate_matching_score(symmetric_shape_feats, pcd_batch_info, eps=1e-8)
+            assert torch.all(symmetric_active_mask == active_mask), "Symmetric active mask is not the same as active mask"
         
 
         # 8. Optimal Transport
@@ -548,14 +549,14 @@ class EquiAssem(pl.LightningModule):
         matching_scores = self.multibatch_optimal_transport(shape_matching_scores, pcd_batch_info, active_mask, mode=self.matching_norm_mode) # (B, N+M+1, N+M+1)
         matching_scores_drop = matching_scores[:,:-1,:-1] # (B, N+M, N+M)
         if self.flip_normal and mode in ['train', 'val']:
-            symmetric_matching_scores = self.multibatch_optimal_transport(symmetric_shape_matching_scores, pcd_batch_info, symmetric_active_mask, mode=self.matching_norm_mode) # (B, N+M+1, N+M+1)
+            symmetric_matching_scores = self.multibatch_optimal_transport(symmetric_shape_matching_scores, pcd_batch_info, active_mask, mode=self.matching_norm_mode) # (B, N+M+1, N+M+1)
         
 
         if mode in ['train', 'val']: # Do not calculate for test
             # 8. Calculate Loss
             if self.flip_normal:
-                src_move_circle_loss, src_coords_dist, pos_neg_distribution = self.circle_loss(pcd_raw, shape_feats.transpose(-2,-1), gt_corr, gt_corr_bincount_info, shape_matching_scores, active_mask)
-                trg_move_circle_loss, _, _ = self.circle_loss(pcd_raw, symmetric_shape_feats.transpose(-2,-1), gt_corr, gt_corr_bincount_info, symmetric_shape_matching_scores, active_mask)
+                src_move_circle_loss, src_coords_dist, pos_neg_distribution = self.circle_loss(pcd_raw, shape_feats.transpose(-2,-1), shape_matching_scores, active_mask)
+                trg_move_circle_loss, _, _ = self.circle_loss(pcd_raw, symmetric_shape_feats.transpose(-2,-1), symmetric_shape_matching_scores, active_mask)
 
                 src_move_matching_scores = self.matching_loss(matching_scores, src_coords_dist, active_mask).float()
                 trg_move_matching_scores = self.matching_loss(symmetric_matching_scores, src_coords_dist, active_mask).float()
@@ -564,10 +565,10 @@ class EquiAssem(pl.LightningModule):
                 loss['p_loss'] = (src_move_matching_scores + trg_move_matching_scores) / 2
             
             else:
-                loss['s_loss'], coords_dist, pos_neg_distribution = self.circle_loss(pcd_raw, shape_feats.transpose(-2,-1), gt_corr, gt_corr_bincount_info, shape_matching_scores, active_mask)
+                loss['s_loss'], coords_dist, pos_neg_distribution = self.circle_loss(pcd_raw, shape_feats.transpose(-2,-1), shape_matching_scores, active_mask)
                 loss['p_loss'] = self.matching_loss(matching_scores, coords_dist, active_mask).float()
             
-            loss['o_loss'] = self.orientation_loss(oris, gt_normals, gt_corr, gt_corr_bincount_info)
+            loss['o_loss'] = self.orientation_loss(oris, gt_normals, batch_scaled_pcd_batch_info, gt_corr, gt_corr_bincount_info)
             loss['loss'] = self.o_loss_weight * loss['o_loss'] + self.s_loss_weight * loss['s_loss'] + self.p_loss_weight * loss['p_loss']
             
             out_dict.update(loss)
@@ -669,7 +670,6 @@ class EquiAssem(pl.LightningModule):
 
         # Remove the matching scores between the same objects
         matching_scores = matching_scores * active_parts
-
         return matching_scores, active_parts
     
     
@@ -716,14 +716,15 @@ class EquiAssem(pl.LightningModule):
 
             matching_scores_row_num = torch.sum(active_mask, dim=-1) # (B, N+M)
             matching_scores_col_num = torch.sum(active_mask, dim=-2) # (B, N+M)
-
             matching_scores_row_num = torch.where(matching_scores_row_num == 0.0, 1.0, matching_scores_row_num)
             matching_scores_col_num = torch.where(matching_scores_col_num == 0.0, 1.0, matching_scores_col_num)
+            
             matching_scores_mean_for_slack_row = matching_scores_row_sum / matching_scores_row_num # (B, N+M)
             matching_scores_mean_for_slack_col = matching_scores_col_sum / matching_scores_col_num # (B, N+M)
 
             corner_slack = (matching_scores_mean_for_slack_row.mean(dim=1) + matching_scores_mean_for_slack_col.mean(dim=1)) / 2 # (B, )
 
+            # Recover shape
             place_holder = torch.zeros(batch_size, row_size+1, col_size+1, device=matching_scores.device) # (B, N+M+1, N+M+1)
             place_holder[:, :-1, :-1] = matching_scores
             place_holder[:, :-1, -1] = matching_scores_mean_for_slack_row
@@ -731,6 +732,7 @@ class EquiAssem(pl.LightningModule):
             place_holder[:, -1, -1] = corner_slack
 
             result = torch.sigmoid(place_holder) # (B, N+M+1, N+M+1)
+        
         return result
     
     @torch.no_grad()
@@ -809,14 +811,13 @@ class EquiAssem(pl.LightningModule):
     
 
     @torch.no_grad()
-    def evaluate_prediction(self, in_dict, split_input_dict, out_dict, mode, multi_part=False):
+    def evaluate_prediction(self, in_dict, split_input_dict, out_dict, mode,):
         """
         Args:
             in_dict (dict): it is same as forward_pass
             split_input_dict (dict): split input dictionary for evaluation
             out_dict (dict): it is same as forward_pass
             mode (str): 'val' or 'test'
-            multi_part (bool, optional): _description_. Defaults to False.
 
         Returns:
             eval_result (dict):
@@ -862,8 +863,8 @@ class EquiAssem(pl.LightningModule):
         eval_result['cd'] = self._chamfer_distance(assm_pred, assm_grtr)
 
         # (b) Compute MSE between prediction & ground-truth for rotation (in degree) and translation
-        eval_result['rrmse_rpf'], eval_result['trmse_rpf'] = self._transformation_error_RPFver(pcds_pred, pcds_grtr, multi_part)
-        eval_result['rrmse'], eval_result['trmse'] = self._transformation_error(pred_relative_trsfm, grtr_relative_trsfm, multi_part)
+        eval_result['rrmse_rpf'], eval_result['trmse_rpf'] = self._transformation_error_RPFver(pcds_pred, pcds_grtr)
+        eval_result['rrmse'], eval_result['trmse'] = self._transformation_error(pred_relative_trsfm, grtr_relative_trsfm)
 
         # (c) Compute CoRrespondence Distance (CRD) betwween prediction & ground-truth
         eval_result['crd'] = self._correspondence_distance(assm_pred, assm_grtr)
@@ -871,12 +872,12 @@ class EquiAssem(pl.LightningModule):
         # (d) Compute Normal Error
         eval_result['n_error'], normal_error_hist, eval_result['n_suc_rate'] = self._normal_error(in_dict, out_dict, success_criterion_in_degree=self.success_criterion_in_degree)
 
-        if (mode=='val' and (not self.trainer.sanity_checking) and \
+        if (mode =='val' and (not self.trainer.sanity_checking) and \
             self.trainer.global_rank == 0 and \
             self.visualize and \
             (self.current_epoch % self.viz_epoch == 0 or self.current_epoch == self.trainer.max_epochs-1) and \
             in_dict['eval_idx'][0].item() == 0) or \
-            (mode=='test' and self.visualize and in_dict['eval_idx'][0].item() == 0):
+            (mode =='test' and self.visualize and in_dict['eval_idx'][0].item() == 0):
             # Do not visualize in sanity checking
             # Only rank 0 should do visualization to avoid file I/O conflicts in DDP
             # Visualize for every self.viz_epoch
@@ -1052,24 +1053,19 @@ class EquiAssem(pl.LightningModule):
         return cd
     
 
-    def _transformation_error(self, trnsf1, trnsf2, multi_part, trmse_scaling=100):
+    def _transformation_error(self, trnsf1, trnsf2, trmse_scaling=100):
         """
         Args:
             trnsf1 (tuple): (3, 3), (3)
             trnsf2 (tuple): (3, 3), (3)
-            multi_part (bool): True if multi-part
             trmse_scaling (int, optional): Scaling factor for TRMSE. Defaults to 100.
 
         Returns:
             rrmse (torch.Tensor): (1)
             trmse (torch.Tensor): (1)
         """
-        if multi_part:
-            rotat1, trans1 = trnsf1
-            rotat2, trans2 = trnsf2
-        else:
-            rotat1, trans1 = [trnsf1[0]], [trnsf1[1]]
-            rotat2, trans2 = [trnsf2[0]], [trnsf2[1]]
+        rotat1, trans1 = [trnsf1[0]], [trnsf1[1]]
+        rotat2, trans2 = [trnsf2[0]], [trnsf2[1]]
         
         rrmse, trmse = 0., 0.
         for r1, r2, t1, t2 in zip(rotat1, rotat2, trans1, trans2):
@@ -1080,16 +1076,17 @@ class EquiAssem(pl.LightningModule):
             diff = torch.minimum(diff1, diff2)
             rrmse += diff.pow(2).mean().pow(0.5)
             trmse += (t1 - t2).pow(2).mean().pow(0.5) * trmse_scaling
-        div = len(rotat1) if multi_part else 1
+        
+        # div = len(rotat1) if multi_part else 1
+        div = 1
         return (rrmse / div).to(trmse.device), trmse / div
 
 
-    def _transformation_error_RPFver(self, pcds_pred, pcds_grtr, multi_part, scaling=100):
+    def _transformation_error_RPFver(self, pcds_pred, pcds_grtr, scaling=100):
         """
         Args:
             pcds_pred (list): [(N, 3), (M, 3)]
             pcds_grtr (list): [(N, 3), (M, 3)]
-            multi_part (bool): True if multi-part
             scaling (int, optional): Scaling factor for TRMSE. Defaults to 100. 
 
         Returns:
@@ -1122,7 +1119,7 @@ class EquiAssem(pl.LightningModule):
         """
         Args:
             in_dict (dict): it is same as forward_pass. From in_dict, only need gt_normals, which is torch.Tensor: (B, N+M, 3)
-            out_dict (dict): it is same as forward_pass. From out_dict, only need src_ori and trg_ori, which are torch.Tensor: (B, N+M, 3, 3) and torch.Tensor: (B, M, 3, 3)
+            out_dict (dict): it is same as forward_pass. From out_dict, only need src_ori and trg_ori, which are torch.Tensor: (B, N+M, 3, 3) and torch.Tensor: (B, N+M, 3, 3)
             success_criterion_in_degree (int, optional): Success criterion in degree. Defaults to 10.
 
         Returns:
@@ -1134,7 +1131,7 @@ class EquiAssem(pl.LightningModule):
         pred_normals = pred_oris[:,:,0,:] # (B, N+M, 3)
 
         cosine_similarity = torch.clamp(torch.nn.functional.cosine_similarity(pred_normals, gt_normals, dim=-1), min=-1, max=1) # (B, N+M, )
-        theta_deg = torch.rad2deg(torch.acos(cosine_similarity)).reshape(-1) # (B, N+M, ) -> (B*N+M, )
+        theta_deg = torch.rad2deg(torch.acos(cosine_similarity)).reshape(-1) # (B, N+M, ) -> (B*(N+M), )
         
         normal_error = theta_deg.mean()
         normal_error_hist = torch.histogram(theta_deg.cpu(), bins=90, range=(0, 180)) # Total 180 degrees, so we choose 90 bins

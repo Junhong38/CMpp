@@ -42,7 +42,7 @@ class CircleLoss(nn.Module):
     def negative_sampling(self, matching_scores, pos_mask, neg_mask):
         """
         Args:
-            matching_scores (torch.Tensor): (B, N+M, N+M)
+            matching_scores (torch.Tensor): (B, N+M, N+M), This already removed inactive points
             pos_mask (torch.Tensor): (B, N+M, N+M)
             neg_mask (torch.Tensor): (B, N+M, N+M)
         
@@ -51,8 +51,6 @@ class CircleLoss(nn.Module):
             hard_neg_mask (torch.Tensor): (B, N+M, N+M)
         """
         batch_size, num_row, num_col = matching_scores.shape
-        torch.set_printoptions(threshold=torch.inf, linewidth=1000, precision=5)
-
 
         if self.hard_negative: # Hard negative sampling
             # To find smallest pos score from each batch, we need to fill redundant scores with maximum score.
@@ -114,7 +112,7 @@ class CircleLoss(nn.Module):
         Args:
             coords_dist (torch.Tensor): (B, N+M, N+M)
             feats_dist (torch.Tensor): (B, N+M, N+M)
-            matching_scores (torch.Tensor): (B, N+M, N+M)
+            matching_scores (torch.Tensor): (B, N+M, N+M), This already removed inactive points
             active_mask (torch.Tensor): (B, N+M, N+M), True if the point is active
 
         Returns:
@@ -189,14 +187,12 @@ class CircleLoss(nn.Module):
         return circle_loss, pos_neg_distribution
 
 
-    def forward(self, pcd_raw, feats, gt_corr, gt_corr_offset_info, matching_scores, active_mask):
+    def forward(self, pcd_raw, feats, matching_scores, active_mask):
         """
         Args:
             pcd_raw (torch.Tensor): (B, N+M, 3)
             feats (torch.Tensor): (B, N+M, D )
-            gt_corr (torch.Tensor): (total_Corr, 2) where total_Corr := Corr_1 + Corr_2 + ... + Corr_B
-            gt_corr_offset_info (torch.Tensor): (B, ) where gt_corr_offset_info[i] shows size of Corr_i
-            matching_scores (torch.Tensor): (B, N+M, N+M)
+            matching_scores (torch.Tensor): (B, N+M, N+M), This already removed inactive points
             active_mask (torch.Tensor): (B, N+M, N+M), True if the point is active
 
         Returns:
@@ -208,8 +204,7 @@ class CircleLoss(nn.Module):
             assert False, "[Circle Loss] Input features are nan\n pcd_raw: {}\n feats: {}".format(pcd_raw, feats)
         
         # Get coordinate distance
-        # (B, N+M, 1, 3) - (B, 1 , N+M, 3) -> (B, N+M, N+M, 3) -> (B, N+M, N+M)
-        coords_dist = torch.sqrt(torch.clamp(torch.sum((pcd_raw[:, :, None, :] - pcd_raw[:, None, :, :]) ** 2, dim=-1), min=0.0)) # (B, N+M, N+M)
+        coords_dist = torch.cdist(pcd_raw, pcd_raw, p=2) # (B, N+M, N+M)
         coords_dist = coords_dist * active_mask # Remove inactive points
         
         # Get feature distance (from GeoTransformer Implementation)
@@ -250,7 +245,7 @@ class PointMatchingLoss(nn.Module):
     def forward(self, matching_scores, coords_dist, active_mask):
         """
         Args:
-            matching_scores (torch.Tensor): (B, N+M+1, N+M+1)
+            matching_scores (torch.Tensor): (B, N+M+1, N+M+1), This already removed inactive points
             coords_dist (torch.Tensor): (B, N+M, N+M)
             active_mask (torch.Tensor): (B, N+M, N+M), True if the point is active
 
@@ -285,13 +280,14 @@ class OrientationLoss(nn.Module):
         self.consistency_loss = consistency_loss
         self.loss_fn = nn.SmoothL1Loss(beta=1.0, reduction='mean')
     
-    def forward(self, oris, gt_normals, gt_corr, gt_corr_offset_info):
+    def forward(self, oris, gt_normals, batch_scaled_batch_info, gt_corr, gt_corr_bincount_info):
         """
         Args:
             oris (torch.Tensor): (B, N+M, 3, 3), first basis should be aligned with gt_normals[0]
             gt_normals (torch.Tensor): (B, N+M, 3)
+            batch_scaled_batch_info (torch.Tensor): (B, N+M), batch index of the point cloud
             gt_corr (torch.Tensor): (total_Corr, 2) where total_Corr := Corr_1 + Corr_2 + ... + Corr_B
-            gt_corr_offset_info (torch.Tensor): (B, ) where gt_corr_offset_info[i] shows size of Corr_i
+            gt_corr_bincount_info (torch.Tensor): (B, ) where gt_corr_bincount_info[i] shows size of Corr_i
 
         Returns:
             torch.Tensor: (1, ), orientation loss
@@ -299,17 +295,29 @@ class OrientationLoss(nn.Module):
         pred_normal = oris[:, :, 0, :] # (B, N+M, 3)
         normal_loss = self.loss_fn(pred_normal, gt_normals)
 
-        if self.consistency_loss and (not torch.all(gt_corr_offset_info == 0)): # Make frame from src and trg be consistent with each other
-            zero_padded_gt_corr_offset = torch.cat([torch.tensor([0]).to(gt_corr_offset_info.device), gt_corr_offset_info], dim=0) # (B+1, )
-            zero_padded_gt_corr_offset = torch.cumsum(zero_padded_gt_corr_offset, dim=0) # (B+1, )
+        if self.consistency_loss and (not torch.all(gt_corr_bincount_info == 0)): # Make frame from src and trg be consistent with each other
+            batch_size, num_points = oris.shape[:2]
+            obj_bincounts = batch_scaled_batch_info.reshape(-1).bincount().reshape(batch_size, 2) # (B*num_of_objs, ) -> (B, 2), num_of_objs = 2
 
-            batch_scaled_gt_corr = gt_corr + zero_padded_gt_corr_offset[:-1].repeat_interleave(gt_corr_offset_info)[:, None] # (total_Corr, 2)
+            # Distinguish between src and trg
+            obj_idx_base = obj_bincounts[:,0] # (B, )
+            obj_idx_base = obj_idx_base.repeat_interleave(gt_corr_bincount_info) # (B,) -> (total_Corr,)
+            obj_idx_base = torch.stack([torch.zeros_like(obj_idx_base), obj_idx_base], dim=-1) # (total_Corr, 2)
 
-            src_from_mating_surface = oris[:, batch_scaled_gt_corr[:,0], :, :] # (B, total_Corr, 3, 3)
-            trg_from_mating_surface = oris[:, batch_scaled_gt_corr[:,1], :, :] # (B, total_Corr, 3, 3)
+            # Distinguish between batch index
+            idx_base = torch.arange(0, batch_size, device=oris.device) * num_points # (B, )
+            idx_base = idx_base.repeat_interleave(gt_corr_bincount_info) # (total_Corr, )
 
-            consistency_loss_2nd = self.loss_fn(src_from_mating_surface[:, :, 1, :], trg_from_mating_surface[:, :, 2, :])
-            consistency_loss_3rd = self.loss_fn(src_from_mating_surface[:, :, 2, :], trg_from_mating_surface[:, :, 1, :])
+            # Final batch scaled gt_corr
+            batch_scaled_gt_corr = gt_corr + obj_idx_base + idx_base[:, None] # (total_Corr, 2)
+
+            reshaped_oris = oris.reshape(-1, 3, 3) # (B, N+M, 3, 3) -> (B*(N+M), 3, 3)
+
+            src_from_mating_surface = reshaped_oris[batch_scaled_gt_corr[:,0], :, :] # (total_Corr, 3, 3)
+            trg_from_mating_surface = reshaped_oris[batch_scaled_gt_corr[:,1], :, :] # (total_Corr, 3, 3)
+
+            consistency_loss_2nd = self.loss_fn(src_from_mating_surface[:, 1, :], trg_from_mating_surface[:, 2, :])
+            consistency_loss_3rd = self.loss_fn(src_from_mating_surface[:, 2, :], trg_from_mating_surface[:, 1, :])
             consistency_loss = (consistency_loss_2nd + consistency_loss_3rd) / 2 
         
         else:
