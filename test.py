@@ -136,7 +136,7 @@ if __name__ == '__main__':
     # ../data/temp_breaking_bad/breaking_bad/volume_constrained , ../../../../../hdd/junhong/temp_data/breaking_bad/volume_constrained
     parser.add_argument('--data_category', type=str, default='everyday', choices=['everyday', 'artifact'])
     parser.add_argument('--sub_category', type=str, default='all')
-    parser.add_argument('--scale', type=str, default='overfitting', choices=['overfitting', 'tiny', 'small', 'full'])
+    parser.add_argument('--scale', type=str, default='full', choices=['overfitting', 'tiny', 'small', 'full'])
     parser.add_argument('--min_part', type=int, default=2)
     parser.add_argument('--max_part', type=int, default=2)
     parser.add_argument('--min_n_pts', type=int, default=256)

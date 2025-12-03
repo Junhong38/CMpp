@@ -161,13 +161,15 @@ class CircleLoss(nn.Module):
 
         # log(Σ exp(γ * (d - m_pos) * w_pos))
         # If the point is inactive, set the loss to -1e12 to prevent it from affecting the loss
-        lse_pos_row = torch.logsumexp(self.log_scale * (feats_dist - self.pos_margin) * pos_weight * active_mask + -1e12 * (~active_mask), dim=-1) # (B, N+M, N+M) -> (B, N+M)
-        lse_pos_col = torch.logsumexp(self.log_scale * (feats_dist - self.pos_margin) * pos_weight * active_mask + -1e12 * (~active_mask), dim=-2) # (B, N+M, N+M) -> (B, N+M)
+        lse_pos_part = self.log_scale * (feats_dist - self.pos_margin) * pos_weight * active_mask + -1e12 * (~active_mask)
+        lse_pos_row = torch.logsumexp(lse_pos_part, dim=-1) # (B, N+M, N+M) -> (B, N+M)
+        lse_pos_col = torch.logsumexp(lse_pos_part, dim=-2) # (B, N+M, N+M) -> (B, N+M)
 
         # log(Σ exp(γ * (m_neg - d) * w_neg))
         # If the point is inactive, set the loss to -1e12 to prevent it from affecting the loss
-        lse_neg_row = torch.logsumexp(self.log_scale * (self.neg_margin - feats_dist) * neg_weight * active_mask + -1e12 * (~active_mask), dim=-1) # (B, N+M, N+M) -> (B, N+M)
-        lse_neg_col = torch.logsumexp(self.log_scale * (self.neg_margin - feats_dist) * neg_weight * active_mask + -1e12 * (~active_mask), dim=-2) # (B, N+M, N+M) -> (B, N+M)
+        lse_neg_part = self.log_scale * (self.neg_margin - feats_dist) * neg_weight * active_mask + -1e12 * (~active_mask)
+        lse_neg_row = torch.logsumexp(lse_neg_part, dim=-1) # (B, N+M, N+M) -> (B, N+M)
+        lse_neg_col = torch.logsumexp(lse_neg_part, dim=-2) # (B, N+M, N+M) -> (B, N+M)
 
         # Softplus = log(1+exp(x))
         # So, log(1+exp(x)) / log_scale -> log(1 + Σ exp(γ * (d - m_pos) * w_pos) + Σ exp(γ * (m_neg - d) * w_neg)) / log_scale
@@ -190,7 +192,7 @@ class CircleLoss(nn.Module):
         """
         Args:
             pcd_raw (torch.Tensor): (B, N+M, 3)
-            feats (torch.Tensor): (B, N+M, D )
+            feats (torch.Tensor): (B, D, N+M)
             matching_scores (torch.Tensor): (B, N+M, N+M), This already removed inactive points
             active_mask (torch.Tensor): (B, N+M, N+M), True if the point is active
 
@@ -207,14 +209,14 @@ class CircleLoss(nn.Module):
         coords_dist = coords_dist * active_mask # Remove inactive points
         
         # Get feature distance (from GeoTransformer Implementation)
-        normalized_feats = F.normalize(feats, p=2, dim=-1) # (B, N+M, D)
+        normalized_feats = F.normalize(feats, p=2, dim=-2) # (B, D, N+M)
 
         # Check NaN
         if torch.isnan(normalized_feats).any():
             assert False, "[Circle Loss] Normalized features are nan\n feats: {}".format(normalized_feats)
         
         # Get feature distance
-        dot = torch.einsum('b x d, b y d -> b x y', normalized_feats, normalized_feats)
+        dot = torch.einsum('b d x, b d y -> b x y', normalized_feats, normalized_feats)
         dot = torch.clamp(dot, min=-1.0, max=1.0)
         value = 2.0 - 2.0 * dot
         assert (value >= 0).all(), f"Negative value detected in sqrt input: min={value.min()}"
@@ -256,7 +258,6 @@ class PointMatchingLoss(nn.Module):
         gt_corr_map = torch.logical_and(coords_dist < self.positive_radius, active_mask) # (B, N+M, N+M)
 
         
-        
         if self.no_slack_variable:
             # Mating Surface Part
             # This makes matching_scores[gt_corr_map] to be larger
@@ -297,6 +298,8 @@ class OrientationLoss(nn.Module):
     
     def forward(self, oris, gt_normals, batch_scaled_batch_info, gt_corr, gt_corr_bincount_info):
         """
+        Assume there are two objects in the batch
+
         Args:
             oris (torch.Tensor): (B, N+M, 3, 3), first basis should be aligned with gt_normals[0]
             gt_normals (torch.Tensor): (B, N+M, 3)
@@ -312,6 +315,8 @@ class OrientationLoss(nn.Module):
 
         if self.consistency_loss and (not torch.all(gt_corr_bincount_info == 0)): # Make frame from src and trg be consistent with each other
             batch_size, num_points = oris.shape[:2]
+
+            # We assume there are two objects in the batch
             obj_bincounts = batch_scaled_batch_info.reshape(-1).bincount().reshape(batch_size, 2) # (B*num_of_objs, ) -> (B, 2), num_of_objs = 2
 
             # Distinguish between src and trg

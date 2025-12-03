@@ -66,8 +66,6 @@ class DatasetBreakingBad(Dataset):
         self.filepaths = [x.split()[1] for x in self.filepaths]
         self.len_filepaths = len(self.filepaths)
         
-        
-
         print("================================================")
         print(f"DATASET INITIALIZATION for {self.split}")
         print(f"datapath: {self.datapath} | data_category: {self.data_category} | sub_category: {self.sub_category}")
@@ -184,9 +182,8 @@ class DatasetBreakingBad(Dataset):
             gt_normals.append(torch.tensor(mesh_.face_normals[face[i]]))
 
         return gt_normals
-
-
-
+    
+    
     def __getitem__(self, idx):
         """
         [TODO] After finishing debugging, we should remove this comment

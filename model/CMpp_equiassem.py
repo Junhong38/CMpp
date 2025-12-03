@@ -1,5 +1,4 @@
 import os
-import pickle
 from scipy.spatial.transform import Rotation
 
 import pytorch_lightning as pl
@@ -22,11 +21,9 @@ from RANSAC.ransac import _RANSAC
 from common.rotation import ortho2rotation
 from common.utils import save_pc
 from common.viz import draw_frames, draw_normal_error_histogram
+from common.misc import extract_all_objects, batch_scaling
 
 from pytorch3d.ops import iterative_closest_point
-
-
-from common.misc import extract_all_objects, batch_scaling
 
 
 class EquiAssem(pl.LightningModule):
@@ -526,6 +523,7 @@ class EquiAssem(pl.LightningModule):
             
             if mode == 'train':
                 self.log_for_training(loss=loss, pos_neg_distribution=None, mode=mode)
+            
             return out_dict, loss
 
         
@@ -553,14 +551,14 @@ class EquiAssem(pl.LightningModule):
         matching_scores = self.multibatch_optimal_transport(shape_matching_scores, pcd_batch_info, active_mask, mode=self.matching_norm_mode) # (B, N+M+1, N+M+1) if self.no_slack_variable is False, otherwise (B, N+M, N+M)
         matching_scores_drop = matching_scores[:,:-1,:-1] if not self.no_slack_variable else matching_scores # (B, N+M, N+M)
         if self.flip_normal and mode in ['train', 'val']:
-            symmetric_matching_scores = self.multibatch_optimal_transport(symmetric_shape_matching_scores, pcd_batch_info, active_mask, mode=self.matching_norm_mode) # (B, N+M+1, N+M+1)
+            symmetric_matching_scores = self.multibatch_optimal_transport(symmetric_shape_matching_scores, pcd_batch_info, active_mask, mode=self.matching_norm_mode) # (B, N+M+1, N+M+1) if self.no_slack_variable is False, otherwise (B, N+M, N+M)
         
 
         if mode in ['train', 'val']: # Do not calculate for test
             # 8. Calculate Loss
             if self.flip_normal:
-                src_move_circle_loss, src_coords_dist, pos_neg_distribution = self.circle_loss(pcd_raw, shape_feats.transpose(-2,-1), shape_matching_scores, active_mask)
-                trg_move_circle_loss, _, _ = self.circle_loss(pcd_raw, symmetric_shape_feats.transpose(-2,-1), symmetric_shape_matching_scores, active_mask)
+                src_move_circle_loss, src_coords_dist, pos_neg_distribution = self.circle_loss(pcd_raw, shape_feats, shape_matching_scores, active_mask)
+                trg_move_circle_loss, _, _ = self.circle_loss(pcd_raw, symmetric_shape_feats, symmetric_shape_matching_scores, active_mask)
 
                 src_move_matching_scores = self.matching_loss(matching_scores, src_coords_dist, active_mask).float()
                 trg_move_matching_scores = self.matching_loss(symmetric_matching_scores, src_coords_dist, active_mask).float()
@@ -569,7 +567,7 @@ class EquiAssem(pl.LightningModule):
                 loss['p_loss'] = (src_move_matching_scores + trg_move_matching_scores) / 2
             
             else:
-                loss['s_loss'], coords_dist, pos_neg_distribution = self.circle_loss(pcd_raw, shape_feats.transpose(-2,-1), shape_matching_scores, active_mask)
+                loss['s_loss'], coords_dist, pos_neg_distribution = self.circle_loss(pcd_raw, shape_feats, shape_matching_scores, active_mask)
                 loss['p_loss'] = self.matching_loss(matching_scores, coords_dist, active_mask).float()
             
             loss['o_loss'] = self.orientation_loss(oris, gt_normals, batch_scaled_pcd_batch_info, gt_corr, gt_corr_bincount_info)
@@ -618,7 +616,8 @@ class EquiAssem(pl.LightningModule):
 
     def make_inv_feats(self, oris, oris_batch_info, equi_feats, src_flip=True):
         """Make invariant features
-
+        Assume there are two objects in the batch
+        
         Args:
             oris (torch.Tensor): (B, N+M, 3, 3)
             oris_batch_info (torch.Tensor): (B, N+M, ), batch index of the point cloud
@@ -654,6 +653,7 @@ class EquiAssem(pl.LightningModule):
     def calculate_matching_score(self, shape_feats, batch_info, eps=1e-8):
         """
         Calculate matching score between src and trg features
+        Assume there are two objects in the batch
 
         Args:
             shape_feats (torch.Tensor): (B, D, N+M)
@@ -682,13 +682,14 @@ class EquiAssem(pl.LightningModule):
         Calculate optimal transport between multiple batches
 
         Args:
-            matching_scores (torch.Tensor): (B, N+M, N+M)
+            matching_scores (torch.Tensor): (B, N+M, N+M), inactive parts are already removed
             batch_info (torch.Tensor): (B, N+M, ), batch index of the point cloud
             active_mask (torch.Tensor): (B, N+M, N+M), True if the point is active
-            mode (str, optional): 'sinkhorn' or 'sigmoid'. Defaults to 'sinkhorn'.
+            mode (str, optional): 'sinkhorn', 'sigmoid', 'softmax'. Defaults to 'sinkhorn'.
         
         Returns:
             result (torch.Tensor): (B, N+M+1, N+M+1) if self.no_slack_variable is False, otherwise (B, N+M, N+M)
+                                   Also, we need to remove inactive parts from the result
         """
         batch_size, row_size, col_size = matching_scores.shape
 
@@ -829,7 +830,7 @@ class EquiAssem(pl.LightningModule):
                                           topk=self.infer_topk)
         else:
             # fine_matching predict Rt to move points from src_points to ref_points
-            estimated_transform = self.fine_matching(src_pcd.unsqueeze(0), trg_pcd.unsqueeze(0), postprocessed_matching_scores_drop.unsqueeze(0))
+            estimated_transform = self.fine_matching(src_pcd.unsqueeze(0), trg_pcd.unsqueeze(0), postprocessed_matching_scores_drop.unsqueeze(0), no_exp=(self.matching_norm_mode in ['sigmoid', 'softmax']))
 
         # estimated_transform: target_point = R * source_point + t
         out_dict['estimated_rotat'] = estimated_transform[:3, :3] # R, (3,3)
