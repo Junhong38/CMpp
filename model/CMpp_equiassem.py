@@ -68,6 +68,7 @@ class EquiAssem(pl.LightningModule):
 
             matching_norm_mode='sinkhorn',
             no_slack_variable=False,
+            no_matching_loss=False,
             
             # RANSAC arguments
             infer_match_option='topk',
@@ -117,8 +118,9 @@ class EquiAssem(pl.LightningModule):
             mlp_mode (str, optional): 'CMpp' or 'half' or 'deep'. Defaults to 'CMpp'.
             move_smaller (bool, optional): Whether to always move the smaller point cloud to the origin. Defaults to False.
 
-            matching_norm_mode (str, optional): 'sinkhorn' or 'sigmoid'. Defaults to 'sinkhorn'.
+            matching_norm_mode (str, optional): ['sinkhorn', 'sigmoid', 'softmax']. Defaults to 'sinkhorn'.
             no_slack_variable (bool, optional): Whether to not use slack variable for Sinkhorn algorithm. Defaults to False.
+            no_matching_loss (bool, optional): Whether to not use matching loss. Defaults to False.
 
             # RANSAC arguments
             infer_match_option (str, optional): 'topk' or 'mutual_topk' or 'soft_topk' or 'unidirectional_topk' or 'injective' or 'bijective'. Defaults to 'topk'.
@@ -162,6 +164,7 @@ class EquiAssem(pl.LightningModule):
 
         print(f"matching_norm_mode: {matching_norm_mode}")
         print(f"no_slack_variable: {no_slack_variable}")
+        print(f"no_matching_loss: {no_matching_loss}")
 
         # RANSAC arguments
         print(f"infer_match_option: {infer_match_option}")
@@ -187,6 +190,7 @@ class EquiAssem(pl.LightningModule):
 
         self.matching_norm_mode = matching_norm_mode
         self.no_slack_variable = no_slack_variable
+        self.no_matching_loss = no_matching_loss
 
         # Inference arguments
         self.infer_match_option = infer_match_option
@@ -204,7 +208,8 @@ class EquiAssem(pl.LightningModule):
                                       log_scale=log_scale, pos_optimal=pos_margin, neg_optimal=neg_margin, 
                                       same_opt=same_opt, no_balance=no_balance, hard_negative=hard_negative)
         self.orientation_loss = OrientationLoss(consistency_loss=consistency_loss)
-        self.matching_loss = PointMatchingLoss(pos_radius=pos_radius, no_slack_variable=no_slack_variable)
+        if not self.no_matching_loss:
+            self.matching_loss = PointMatchingLoss(pos_radius=pos_radius, no_slack_variable=no_slack_variable)
         
 
         # Weights for losses
@@ -307,7 +312,7 @@ class EquiAssem(pl.LightningModule):
                                            )
         
         # Optimal Transport
-        if self.matching_norm_mode == 'sinkhorn':
+        if self.matching_norm_mode == 'sinkhorn' and not self.no_matching_loss:
             self.optimal_transport = LearnableLogOptimalTransport(num_iterations=100)
 
         if not self.use_RANSAC: # If not using RANSAC, use LGR for fine matching
@@ -546,12 +551,13 @@ class EquiAssem(pl.LightningModule):
             assert torch.all(symmetric_active_mask == active_mask), "Symmetric active mask is not the same as active mask"
         
 
-        # 8. Optimal Transport
-        # Optimal Transport is in log space, so inside registration, there is exp operation
-        matching_scores = self.multibatch_optimal_transport(shape_matching_scores, pcd_batch_info, active_mask, mode=self.matching_norm_mode) # (B, N+M+1, N+M+1) if self.no_slack_variable is False, otherwise (B, N+M, N+M)
-        matching_scores_drop = matching_scores[:,:-1,:-1] if not self.no_slack_variable else matching_scores # (B, N+M, N+M)
-        if self.flip_normal and mode in ['train', 'val']:
-            symmetric_matching_scores = self.multibatch_optimal_transport(symmetric_shape_matching_scores, pcd_batch_info, active_mask, mode=self.matching_norm_mode) # (B, N+M+1, N+M+1) if self.no_slack_variable is False, otherwise (B, N+M, N+M)
+        if not self.no_matching_loss:
+            # 8. Optimal Transport
+            # Optimal Transport is in log space, so inside registration, there is exp operation
+            matching_scores = self.multibatch_optimal_transport(shape_matching_scores, pcd_batch_info, active_mask, mode=self.matching_norm_mode) # (B, N+M+1, N+M+1) if self.no_slack_variable is False, otherwise (B, N+M, N+M)
+            matching_scores_drop = matching_scores[:,:-1,:-1] if not self.no_slack_variable else matching_scores # (B, N+M, N+M)
+            if self.flip_normal and mode in ['train', 'val']:
+                symmetric_matching_scores = self.multibatch_optimal_transport(symmetric_shape_matching_scores, pcd_batch_info, active_mask, mode=self.matching_norm_mode) # (B, N+M+1, N+M+1) if self.no_slack_variable is False, otherwise (B, N+M, N+M)
         
 
         if mode in ['train', 'val']: # Do not calculate for test
@@ -560,15 +566,15 @@ class EquiAssem(pl.LightningModule):
                 src_move_circle_loss, src_coords_dist, pos_neg_distribution = self.circle_loss(pcd_raw, shape_feats, shape_matching_scores, active_mask)
                 trg_move_circle_loss, _, _ = self.circle_loss(pcd_raw, symmetric_shape_feats, symmetric_shape_matching_scores, active_mask)
 
-                src_move_matching_scores = self.matching_loss(matching_scores, src_coords_dist, active_mask).float()
-                trg_move_matching_scores = self.matching_loss(symmetric_matching_scores, src_coords_dist, active_mask).float()
+                src_move_matching_scores = self.matching_loss(matching_scores, src_coords_dist, active_mask).float() if not self.no_matching_loss else torch.tensor(0.).to(pcd_raw.device)
+                trg_move_matching_scores = self.matching_loss(symmetric_matching_scores, src_coords_dist, active_mask).float() if not self.no_matching_loss else torch.tensor(0.).to(pcd_raw.device)
 
                 loss['s_loss'] = (src_move_circle_loss + trg_move_circle_loss) / 2
                 loss['p_loss'] = (src_move_matching_scores + trg_move_matching_scores) / 2
             
             else:
                 loss['s_loss'], coords_dist, pos_neg_distribution = self.circle_loss(pcd_raw, shape_feats, shape_matching_scores, active_mask)
-                loss['p_loss'] = self.matching_loss(matching_scores, coords_dist, active_mask).float()
+                loss['p_loss'] = self.matching_loss(matching_scores, coords_dist, active_mask).float() if not self.no_matching_loss else torch.tensor(0.).to(pcd_raw.device)
             
             loss['o_loss'] = self.orientation_loss(oris, gt_normals, batch_scaled_pcd_batch_info, gt_corr, gt_corr_bincount_info)
             loss['loss'] = self.o_loss_weight * loss['o_loss'] + self.s_loss_weight * loss['s_loss'] + self.p_loss_weight * loss['p_loss']
@@ -583,6 +589,10 @@ class EquiAssem(pl.LightningModule):
 
         # 9. Evaluation
         if mode in ['val', 'test']:
+            if self.no_matching_loss:
+                # 8. Optimal Transport
+                matching_scores_drop = shape_matching_scores
+
             # Save output for evaluation
             out_dict['shape_matching_scores'] = shape_matching_scores
             out_dict['matching_scores_drop'] = matching_scores_drop
@@ -669,8 +679,14 @@ class EquiAssem(pl.LightningModule):
         active_parts = torch.logical_and(repeated_batch_info_row_for_src, repeated_batch_info_col_for_trg) # (B, N+M, N+M)
 
         # Calculate matching scores
+        if self.no_matching_loss:
+            # Normalize the features
+            shape_feats = nn.functional.normalize(shape_feats, p=2, dim=1) # (B, D, N+M)
+
         matching_scores = torch.einsum('b c n , b c m -> b n m', shape_feats, shape_feats) # (B, N+M, N+M)
-        matching_scores = matching_scores / (shape_feats.shape[1] ** 0.5 + eps) # 1e-8 is for avoiding division by zero
+        
+        if not self.no_matching_loss:
+            matching_scores = matching_scores / (shape_feats.shape[1] ** 0.5 + eps) # 1e-8 is for avoiding division by zero
 
         # Remove the matching scores between the same objects
         matching_scores = matching_scores * active_parts
