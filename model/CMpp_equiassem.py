@@ -728,8 +728,8 @@ class EquiAssem(pl.LightningModule):
             matching_scores_row_num = torch.where(matching_scores_row_num == 0.0, 1.0, matching_scores_row_num)
             matching_scores_col_num = torch.where(matching_scores_col_num == 0.0, 1.0, matching_scores_col_num)
             
-            matching_scores_mean_for_slack_row = matching_scores_row_sum / matching_scores_row_num # (B, N+M)
-            matching_scores_mean_for_slack_col = matching_scores_col_sum / matching_scores_col_num # (B, N+M)
+            matching_scores_mean_for_slack_row = - matching_scores_row_sum / matching_scores_row_num # (B, N+M)
+            matching_scores_mean_for_slack_col = - matching_scores_col_sum / matching_scores_col_num # (B, N+M)
 
             corner_slack = (matching_scores_mean_for_slack_row.mean(dim=1) + matching_scores_mean_for_slack_col.mean(dim=1)) / 2 # (B, )
 
