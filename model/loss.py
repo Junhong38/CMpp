@@ -66,12 +66,9 @@ class CircleLoss(nn.Module):
             hard_neg_mask = torch.logical_and(neg_mask, bigger_than_smallest_pos_score)
 
         elif self.hard_negative == 'topk':
-            
-
             # Only sample topk neg samples, topk is same as the number of positive samples
             num_of_pos = pos_mask.reshape(batch_size, -1).sum(dim=-1) # (B, N+M, N+M) -> (B, (N+M)*(N+M)) -> (B, )
             topk = num_of_pos.max()
-            print(f"num_of_pos: shape {num_of_pos.shape}, num_of_pos {num_of_pos}, topk: {topk}")
 
             if topk == 0:
                 neg_mask = torch.zeros_like(neg_mask, dtype=torch.bool)

@@ -47,7 +47,8 @@ def test(args):
                       log_scale=1, # We don't need to use this parameter for testing
                       same_opt=False, # We don't need to use this parameter for testing
                       no_balance=False, # We don't need to use this parameter for testing
-                      hard_negative=False, # We don't need to use this parameter for testing
+                      hard_negative='none', # We don't need to use this parameter for testing
+                      distance_type=args.distance_type, 
 
                       s_loss_weight=0.0, # We don't need to use this parameter for testing
                       p_loss_weight=0.0, # We don't need to use this parameter for testing
@@ -71,6 +72,7 @@ def test(args):
 
                       matching_norm_mode=args.matching_norm_mode,
                       no_slack_variable=args.no_slack_variable,
+                      no_matching_loss=args.no_matching_loss,
                         
                       infer_match_option=args.infer_match_option,
                       infer_topk=args.infer_topk,
@@ -160,6 +162,9 @@ if __name__ == '__main__':
     parser.add_argument('--mlp_mode', type=str, default='CMpp', choices=['CMpp', 'CMpp_half', 'half', 'deep'])
 
 
+    parser.add_argument('--distance_type', type=str, default='l2', choices=['l2', 'cossim'])
+
+
     # Additional experiments
     parser.add_argument('--success_criterion_in_degree', type=int, default=10, help='Success criterion in degree for normal error')
     parser.add_argument('--flip_normal', action='store_true', help='If True, flip the normal vector of the point cloud')
@@ -167,8 +172,9 @@ if __name__ == '__main__':
 
 
     # Sinkhorn experments
-    parser.add_argument('--matching_norm_mode', type=str, default='sinkhorn', choices=['sinkhorn', 'sigmoid', 'softmax'])
-    parser.add_argument('--no_slack_variable', action='store_true', help='If True, do not use slack variable for Sinkhorn algorithm')
+    parser.add_argument('--matching_norm_mode', type=str, default='sinkhorn', choices=['sinkhorn', 'sigmoid', 'softmax', 'none'])
+    parser.add_argument('--no_slack_variable', action='store_true', help='')
+    parser.add_argument('--no_matching_loss', action='store_true', help='')
 
 
     # Inference arguments
