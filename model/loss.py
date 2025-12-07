@@ -4,7 +4,7 @@ import torch.nn.functional as F
 
 class CircleLoss(nn.Module):
 
-    def __init__(self, pos_radius=0.018, safe_radius=0.03, log_scale=24, pos_optimal=0.1, neg_optimal=1.4, same_opt=False, no_balance=False, hard_negative=False):
+    def __init__(self, pos_radius=0.018, safe_radius=0.03, log_scale=24, pos_optimal=0.1, neg_optimal=1.4, same_opt=False, no_balance=False, hard_negative='none', distance_type='l2'):
 
 
         super(CircleLoss,self).__init__()
@@ -13,6 +13,7 @@ class CircleLoss(nn.Module):
         self.neg_optimal = neg_optimal
         self.no_balance = no_balance
         self.hard_negative = hard_negative
+        self.distance_type = distance_type
 
 
         if same_opt:
@@ -35,6 +36,7 @@ class CircleLoss(nn.Module):
         print(f"neg_optimal: {self.neg_optimal}, neg_margin: {self.neg_margin}")
         print(f"same_opt: {same_opt}, no_balance: {self.no_balance}")
         print(f"hard_negative: {self.hard_negative}")
+        print(f"distance_type: {self.distance_type}")
         print("------------------------------------------------------")
 
 
@@ -51,7 +53,7 @@ class CircleLoss(nn.Module):
         """
         batch_size, num_row, num_col = matching_scores.shape
 
-        if self.hard_negative: # Hard negative sampling
+        if self.hard_negative == 'mix': # Hard negative sampling
             # To find smallest pos score from each batch, we need to fill redundant scores with maximum score.
             postprocessed_for_pos = matching_scores * pos_mask + matching_scores.max() * (~pos_mask)
             smallest_pos_score = postprocessed_for_pos.reshape(batch_size, -1).min(dim=-1)[0] # (B, N+M, N+M) -> (B, (N+M)*(N+M)) -> (B, )
@@ -63,11 +65,39 @@ class CircleLoss(nn.Module):
             # So, if neg sample has bigger score than smallest pos sample, it is a hard negative.
             hard_neg_mask = torch.logical_and(neg_mask, bigger_than_smallest_pos_score)
 
-        else:
+        elif self.hard_negative == 'topk':
+            
+
+            # Only sample topk neg samples, topk is same as the number of positive samples
+            num_of_pos = pos_mask.reshape(batch_size, -1).sum(dim=-1) # (B, N+M, N+M) -> (B, (N+M)*(N+M)) -> (B, )
+            topk = num_of_pos.max()
+            print(f"num_of_pos: shape {num_of_pos.shape}, num_of_pos {num_of_pos}, topk: {topk}")
+
+            if topk == 0:
+                neg_mask = torch.zeros_like(neg_mask, dtype=torch.bool)
+                hard_neg_mask = torch.zeros_like(neg_mask, dtype=torch.bool)
+            
+            else:
+                # To find topk neg score from each batch, we need to fill redundant scores with minimum score.
+                postprocessed_for_neg = matching_scores * neg_mask + matching_scores.min() * (~neg_mask)
+                topk_neg_score = postprocessed_for_neg.reshape(batch_size, -1).topk(k=topk, dim=-1)[0] # (B, N+M, N+M) -> (B, (N+M)*(N+M)) -> (B, topk)
+                kth_selection_indices = (num_of_pos - 1) + torch.arange(batch_size, device=matching_scores.device) * topk # (B, )
+                kth_neg_score = topk_neg_score.reshape(-1)[kth_selection_indices].reshape(batch_size) # (B, topk) -> (B, )
+                propoper_part = num_of_pos > 0
+                kth_neg_score = kth_neg_score * propoper_part + (matching_scores.max() + 1) * (~propoper_part)
+
+                # Check if the score is bigger than the kth biggest neg score.
+                bigger_than_kth_neg_score = matching_scores >= kth_neg_score[:, None, None]
+
+                # We want to only sample topk neg samples.
+                neg_mask = torch.logical_and(neg_mask, bigger_than_kth_neg_score)
+                hard_neg_mask = torch.zeros_like(neg_mask, dtype=torch.bool)
+        
+        else: # 'none'
             hard_neg_mask = torch.zeros_like(neg_mask, dtype=torch.bool)
         
 
-        if not self.no_balance:
+        if not self.no_balance and (self.hard_negative in ['none', 'mix']):
             # Do not overlap with hard negatives
             neg_mask = torch.logical_and(neg_mask, ~hard_neg_mask)
 
@@ -144,7 +174,6 @@ class CircleLoss(nn.Module):
             }
         
         neg_mask, pos_neg_distribution['num_of_hard_neg'], pos_neg_distribution['num_of_neg'] = self.negative_sampling(matching_scores, pos_mask, neg_mask)
-            
         
         # get anchors that have both positive and negative pairs
         row_sel = ((pos_mask.sum(-1)>0) * (neg_mask.sum(-1)>0)).detach() # (B, N+M, N+M) -> (B, N+M)
@@ -218,19 +247,27 @@ class CircleLoss(nn.Module):
         # Get feature distance
         dot = torch.einsum('b d x, b d y -> b x y', normalized_feats, normalized_feats)
         dot = torch.clamp(dot, min=-1.0, max=1.0)
-        value = 2.0 - 2.0 * dot
+
+        if self.distance_type == 'l2':
+            value = 2.0 - 2.0 * dot
+            # (x - y)^2 = |x|^2 - 2<x, y> + |y|^2 where <x, y> = |x||y|cos(theta)
+            # Also, we already normalized the features, so |x| = |y| = 1
+            # so, |x|^2 - 2<x, y> + |y|^2 = 2 - 2<x, y> = 2 - 2cos(theta)
+            # By, triangle formula, 2 - 2 cos(theta) = 4 * sin(theta/2)^2
+            # Hence, feats_dist = 2 * sin(theta/2)
+            # Finally, to prevent NaN during backward, use minimum value 1e-8
+            
+        else: # Cosine similarity
+            value = 1 - dot # (B, N+M, N+M)
+        
         assert (value >= 0).all(), f"Negative value detected in sqrt input: min={value.min()}"
-        # (x - y)^2 = |x|^2 - 2<x, y> + |y|^2 where <x, y> = |x||y|cos(theta)
-        # Also, we already normalized the features, so |x| = |y| = 1
-        # so, |x|^2 - 2<x, y> + |y|^2 = 2 - 2<x, y> = 2 - 2cos(theta)
-        # By, triangle formula, 2 - 2 cos(theta) = 4 * sin(theta/2)^2
-        # Hence, feats_dist = 2 * sin(theta/2)
-        # Finally, to prevent NaN during backward, use minimum value 1e-8
-        feats_dist = torch.sqrt(torch.clamp(value, min=1e-8))
+        feats_dist = torch.sqrt(torch.clamp(value, min=1e-8)) if self.distance_type == 'l2' else torch.clamp(value, min=1e-8)
         feats_dist = feats_dist * active_mask # Remove inactive points
 
+        matching_scores_for_hard_negs = matching_scores if matching_scores is not None else dot
+
         # Calculate circle loss and feature matching recall (FMR)
-        circle_loss, pos_neg_distribution = self.get_circle_loss(coords_dist, feats_dist, matching_scores, active_mask)
+        circle_loss, pos_neg_distribution = self.get_circle_loss(coords_dist, feats_dist, matching_scores_for_hard_negs, active_mask)
 
         if torch.isnan(circle_loss):
             assert False, "Circle loss is nan"

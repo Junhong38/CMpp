@@ -51,6 +51,7 @@ def main(args):
                       same_opt=args.same_opt,
                       no_balance=args.no_balance,
                       hard_negative=args.hard_negative,
+                      distance_type=args.distance_type,
 
                       s_loss_weight=args.s_loss_weight,
                       p_loss_weight=args.p_loss_weight,
@@ -279,7 +280,8 @@ if __name__ == '__main__':
     parser.add_argument('--log_scale', type=float, default=24, help='Log scale for Circle loss computation')
     parser.add_argument('--same_opt', action='store_true', help='Make margin value be same with optimal value')
     parser.add_argument('--no_balance', action='store_true', help='Use positive and negative balance for Circle loss computation')
-    parser.add_argument('--hard_negative', action='store_true', help='')
+    parser.add_argument('--hard_negative', type=str, default='none', choices=['none', 'mix', 'topk'])
+    parser.add_argument('--distance_type', type=str, default='l2', choices=['l2', 'cossim'])
 
 
     # Additional experiments
@@ -355,5 +357,5 @@ if __name__ == '__main__':
 
     if args.no_slack_variable:
         assert args.matching_norm_mode in ['sigmoid', 'softmax'], f"no_slack_variable is only allowed when matching_norm_mode is sigmoid or softmax, but got {args.matching_norm_mode}"
-
+    
     main(args)

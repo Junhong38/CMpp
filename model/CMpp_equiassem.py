@@ -44,7 +44,8 @@ class EquiAssem(pl.LightningModule):
             log_scale=24, 
             same_opt=False, 
             no_balance=False, 
-            hard_negative=False,
+            hard_negative='none',
+            distance_type='l2',
             
             s_loss_weight=1.0, 
             p_loss_weight=1.0, 
@@ -96,7 +97,8 @@ class EquiAssem(pl.LightningModule):
             log_scale (int, optional): Log scaling factor for loss computation. Defaults to 24.
             same_opt (bool, optional): Whether to use the same optimal value as margin in loss computation. Defaults to False.
             no_balance (bool, optional): Whether to not use positive and negative balance for circle loss computation. Defaults to False.
-            hard_negative (bool, optional): Whether to use hard negative sampling for circle loss computation. Defaults to False.
+            hard_negative (str, optional): 'none' or 'mix' or 'topk'. Defaults to 'none'.
+            distance_type (str, optional): 'l2' or 'cossim'. Defaults to 'l2'.
             
             s_loss_weight (float, optional): Weight for shape loss. Defaults to 1.0.
             p_loss_weight (float, optional): Weight for point loss. Defaults to 1.0.
@@ -206,10 +208,15 @@ class EquiAssem(pl.LightningModule):
         # Objectives
         self.circle_loss = CircleLoss(pos_radius=pos_radius, safe_radius=safe_radius, 
                                       log_scale=log_scale, pos_optimal=pos_margin, neg_optimal=neg_margin, 
-                                      same_opt=same_opt, no_balance=no_balance, hard_negative=hard_negative)
+                                      same_opt=same_opt, no_balance=no_balance, hard_negative=hard_negative,
+                                      distance_type=distance_type)
         self.orientation_loss = OrientationLoss(consistency_loss=consistency_loss)
         if not self.no_matching_loss:
             self.matching_loss = PointMatchingLoss(pos_radius=pos_radius, no_slack_variable=no_slack_variable)
+
+
+        # Temp
+        self.distance_type = distance_type
         
 
         # Weights for losses
@@ -545,12 +552,17 @@ class EquiAssem(pl.LightningModule):
         
 
         # 7. Calculate Matching Scores
-        shape_matching_scores, active_mask = self.calculate_matching_score(shape_feats, pcd_batch_info, eps=1e-8)
-        if self.flip_normal and mode in ['train', 'val']:
-            symmetric_shape_matching_scores, symmetric_active_mask = self.calculate_matching_score(symmetric_shape_feats, pcd_batch_info, eps=1e-8)
-            assert torch.all(symmetric_active_mask == active_mask), "Symmetric active mask is not the same as active mask"
-        
+        active_mask = self.return_active_mask(pcd_batch_info)
 
+        if self.no_matching_loss and self.distance_type == 'cossim':
+            shape_matching_scores = None
+            symmetric_shape_matching_scores = None
+        else:
+            shape_matching_scores = self.calculate_matching_score(shape_feats, active_mask, eps=1e-8)
+            if self.flip_normal and mode in ['train', 'val']:
+                symmetric_shape_matching_scores = self.calculate_matching_score(symmetric_shape_feats, active_mask, eps=1e-8)
+        
+        
         if not self.no_matching_loss:
             # 8. Optimal Transport
             # Optimal Transport is in log space, so inside registration, there is exp operation
@@ -558,6 +570,9 @@ class EquiAssem(pl.LightningModule):
             matching_scores_drop = matching_scores[:,:-1,:-1] if not self.no_slack_variable else matching_scores # (B, N+M, N+M)
             if self.flip_normal and mode in ['train', 'val']:
                 symmetric_matching_scores = self.multibatch_optimal_transport(symmetric_shape_matching_scores, pcd_batch_info, active_mask, mode=self.matching_norm_mode) # (B, N+M+1, N+M+1) if self.no_slack_variable is False, otherwise (B, N+M, N+M)
+        
+        else:
+            matching_scores_drop = None
         
 
         if mode in ['train', 'val']: # Do not calculate for test
@@ -589,9 +604,8 @@ class EquiAssem(pl.LightningModule):
 
         # 9. Evaluation
         if mode in ['val', 'test']:
-            if self.no_matching_loss:
-                # 8. Optimal Transport
-                matching_scores_drop = shape_matching_scores
+            shape_matching_scores = self.calculate_matching_score(shape_feats, active_mask, eps=1e-8) if shape_matching_scores is None else shape_matching_scores
+            matching_scores_drop = shape_matching_scores if matching_scores_drop is None else matching_scores_drop
 
             # Save output for evaluation
             out_dict['shape_matching_scores'] = shape_matching_scores
@@ -605,7 +619,7 @@ class EquiAssem(pl.LightningModule):
             self.log_for_training(loss=loss, pos_neg_distribution=pos_neg_distribution, mode=mode)
         else:
             torch.cuda.empty_cache()
-
+        
         return out_dict, loss    
     
     
@@ -660,24 +674,35 @@ class EquiAssem(pl.LightningModule):
         return inv_feats
     
 
-    def calculate_matching_score(self, shape_feats, batch_info, eps=1e-8):
+    def return_active_mask(self, batch_info):
         """
-        Calculate matching score between src and trg features
-        Assume there are two objects in the batch
+        Return active mask between the different objects
 
         Args:
-            shape_feats (torch.Tensor): (B, D, N+M)
             batch_info (torch.Tensor): (B, N+M, ), batch index of the point cloud
+
         Returns:
-            matching_scores (torch.Tensor): (B, N+M, N+M)
+            active_parts (torch.Tensor): (B, N+M, N+M), True if the point is active
         """
         # Leave only the matching scores between the different objects
         # Right-Upper part is only left
         num_of_points = batch_info.size(1)
         repeated_batch_info_row_for_src = batch_info[:,:,None].expand(-1, -1, num_of_points) == 0  # (B, N+M, N+M)
         repeated_batch_info_col_for_trg = batch_info[:,None,:].expand(-1, num_of_points, -1) == 1 # (B, N+M, N+M)
-        active_parts = torch.logical_and(repeated_batch_info_row_for_src, repeated_batch_info_col_for_trg) # (B, N+M, N+M)
+        active_parts = torch.logical_and(repeated_batch_info_row_for_src, repeated_batch_info_col_for_trg) # (B, N+M, N+M))
+        return active_parts
+    
+    def calculate_matching_score(self, shape_feats, active_mask, eps=1e-8):
+        """
+        Calculate matching score between src and trg features
+        Assume there are two objects in the batch
 
+        Args:
+            shape_feats (torch.Tensor): (B, D, N+M)
+            active_mask (torch.Tensor): (B, N+M, N+M), True if the point is active
+        Returns:
+            matching_scores (torch.Tensor): (B, N+M, N+M)
+        """
         # Calculate matching scores
         if self.no_matching_loss:
             # Normalize the features
@@ -689,8 +714,8 @@ class EquiAssem(pl.LightningModule):
             matching_scores = matching_scores / (shape_feats.shape[1] ** 0.5 + eps) # 1e-8 is for avoiding division by zero
 
         # Remove the matching scores between the same objects
-        matching_scores = matching_scores * active_parts
-        return matching_scores, active_parts
+        matching_scores = matching_scores * active_mask
+        return matching_scores
     
     
     def multibatch_optimal_transport(self, matching_scores, batch_info, active_mask, mode='sinkhorn'):

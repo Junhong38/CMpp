@@ -28,7 +28,6 @@ rm -rf checkpoint/G8ND_F_FV0DV0MH_HARD_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,
 end
 
 
-
 :<<end
 rm -rf checkpoint/IMPLE/ && CUDA_VISIBLE_DEVICES=0 python main.py --logpath IMPLE --model CMpp_equiassem --backbone vn_unet --double_bacbone vn_unet --n_avn 1 --mlp_mode half --scale full --multiplicity 1 --epochs 0 --gpus 0 --n_worker 1 --hard_negative --batch_size 1
 rm -rf checkpoint/IMPLE/ && CUDA_VISIBLE_DEVICES=0,1 python main.py --logpath IMPLE --model CMpp_equiassem --backbone vn_unet --double_bacbone vn_unet --n_avn 1 --mlp_mode half --scale full --multiplicity 1 --epochs 0 --gpus 0 1 --n_worker 1 --hard_negative --batch_size 1
@@ -39,8 +38,10 @@ rm -rf checkpoint/IMPLE/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py 
 
 
 # rm -rf checkpoint/IMPLE_TEST/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python test.py --load checkpoint/IMPLE/models/last.ckpt --logpath IMPLE_TEST --model CMpp_equiassem --backbone vn_unet --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale small --gpus 0 1 2 3 4 5 6 7 --n_worker 6
-end
 
+
+rm -rf checkpoint/IMPLE/ && CUDA_VISIBLE_DEVICES=0 python main.py --logpath IMPLE --backbone vn_unet --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale full --epochs 0 --gpus 0 --n_worker 1 --hard_negative mix --distance_type l2 --batch_size 1 --no_matching_loss
+rm -rf checkpoint/IMPLE/ && CUDA_VISIBLE_DEVICES=0 python main.py --logpath IMPLE --backbone vn_unet --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale full --epochs 0 --gpus 0 --n_worker 1 --hard_negative mix --distance_type cossim --batch_size 1 --no_matching_loss
 
 
 rm -rf checkpoint/G8NDB1_F_BV0V0_MH_HN_SINK_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --logpath G8NDB1_F_BV0V0_MH_HN_SINK_6 --backbone vn_unet --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale full --epochs 0 --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --hard_negative --batch_size 1 --wandb --wandb_entity CMppProject --wandb_project CMpp
@@ -52,7 +53,13 @@ rm -rf checkpoint/G8NDB1_F_BV0V0_MH_HN_SINK_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4
 
 rm -rf checkpoint/G8NDB1_F_BV0V0_MH_HN_NOMATCH_6/ && CUDA_VISIBLE_DEVICES=0,1 python main.py --logpath G8NDB1_F_BV0V0_MH_HN_NOMATCH_6 --backbone vn_unet --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale full --epochs 0 --gpus 0 1--n_worker 6 --hard_negative --batch_size 1 --no_matching_loss # --wandb --wandb_entity CMppProject --wandb_project CMpp
 rm -rf checkpoint/G8NDB3_F_BV0V0_MH_HN_NOMATCH_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --logpath G8NDB3_F_BV0V0_MH_HN_NOMATCH_6 --backbone vn_unet --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale full --epochs 0 --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --hard_negative --batch_size 3 --no_matching_loss --wandb --wandb_entity CMppProject --wandb_project CMpp
+end
 
+
+rm -rf checkpoint/G8NDB3_F_BV0V0_MH_DL2HNMIX_SINK_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --logpath G8NDB3_F_BV0V0_MH_DL2HNMIX_SINK_6 --backbone vn_unet --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale full --epochs 1 --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --hard_negative mix --distance_type l2 --batch_size 1 --wandb --wandb_entity CMppProject --wandb_project CMpp
+rm -rf checkpoint/G8NDB3_F_BV0V0_MH_DL2HNMIX_NOMATCH_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --logpath G8NDB3_F_BV0V0_MH_DL2HNMIX_NOMATCH_6 --backbone vn_unet --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale full --epochs 1 --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --hard_negative mix --distance_type l2 --batch_size 3 --no_matching_loss --wandb --wandb_entity CMppProject --wandb_project CMpp
+rm -rf checkpoint/G8NDB3_F_BV0V0_MH_DCOSHNMIX_NOMATCH_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --logpath G8NDB3_F_BV0V0_MH_DCOSHNMIX_NOMATCH_6 --backbone vn_unet --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale full --epochs 1 --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --hard_negative mix --distance_type cossim --batch_size 3 --no_matching_loss --wandb --wandb_entity CMppProject --wandb_project CMpp
+rm -rf checkpoint/G8NDB3_F_BV0V0_MH_DCOSHNTOPK_NOMATCH_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --logpath G8NDB3_F_BV0V0_MH_DCOSHNTOPK_NOMATCH_6 --backbone vn_unet --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale full --epochs 1 --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --hard_negative topk --distance_type cossim --batch_size 3 --no_matching_loss --wandb --wandb_entity CMppProject --wandb_project CMpp
 
 
 
