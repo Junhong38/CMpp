@@ -55,7 +55,7 @@ class CircleLoss(nn.Module):
 
         if self.hard_negative == 'mix': # Hard negative sampling
             # To find smallest pos score from each batch, we need to fill redundant scores with maximum score.
-            postprocessed_for_pos = matching_scores * pos_mask + matching_scores.max() * (~pos_mask)
+            postprocessed_for_pos = matching_scores * pos_mask + (matching_scores.max() + 1) * (~pos_mask)
             smallest_pos_score = postprocessed_for_pos.reshape(batch_size, -1).min(dim=-1)[0] # (B, N+M, N+M) -> (B, (N+M)*(N+M)) -> (B, )
 
             # Check if the score is bigger than the smallest pos score.
@@ -101,12 +101,18 @@ class CircleLoss(nn.Module):
             num_of_pos = pos_mask.reshape(batch_size, -1).sum(dim=-1) # (B, N+M, N+M) -> (B, (N+M)*(N+M)) -> (B, )
             num_of_negs = neg_mask.reshape(batch_size, -1).sum(dim=-1) # (B, N+M, N+M) -> (B, (N+M)*(N+M)) -> (B, )
             num_of_hard_negs = hard_neg_mask.reshape(batch_size, -1).sum(dim=-1) # (B, N+M, N+M) -> (B, (N+M)*(N+M)) -> (B, )
+            assert torch.all(num_of_pos > 0 ), f"num_of_pos: {num_of_pos}"
 
             # If hard negatives are less than half of positive samples, we should sample more negative samples.
             # If hard negatives are greater than half of positive samples, we should sample equal ratio from negative and hard negative samples.
             not_enough_hard_negs_part = num_of_hard_negs < num_of_pos // 2
             num_of_sampled_negs = (num_of_pos - num_of_hard_negs) * not_enough_hard_negs_part + (num_of_pos - num_of_pos // 2) * (~not_enough_hard_negs_part) # (B, )
             num_of_sampled_hards = num_of_hard_negs * not_enough_hard_negs_part + (num_of_pos // 2) * (~not_enough_hard_negs_part) # (B, )
+
+            # If there is no positive samples, we should not sample any negative or hard negative samples.
+            propoper_part = num_of_pos > 0
+            num_of_sampled_negs = num_of_sampled_negs * propoper_part
+            num_of_sampled_hards = num_of_sampled_hards * propoper_part
 
             # Sample the hard negatives
             hard_neg_indices = hard_neg_mask.nonzero(as_tuple=False) # (B, N+M, N+M) -> (num_of_true_parts, 3), where 3 is (batch_index, row_index, col_index)
@@ -149,7 +155,6 @@ class CircleLoss(nn.Module):
         # Masking the inactive points
         pos_mask = (coords_dist < self.pos_radius) * active_mask
         neg_mask = (coords_dist > self.safe_radius) * active_mask
-        
 
         # Calculate Positive/Negative feats_dist distribution
         with torch.no_grad():
@@ -258,13 +263,11 @@ class CircleLoss(nn.Module):
             value = 1 - dot # (B, N+M, N+M)
         
         assert (value >= 0).all(), f"Negative value detected in sqrt input: min={value.min()}"
-        feats_dist = torch.sqrt(torch.clamp(value, min=1e-8)) if self.distance_type == 'l2' else torch.clamp(value, min=1e-8)
+        feats_dist = torch.sqrt(torch.clamp(value, min=1e-8)) if self.distance_type == 'l2' else value
         feats_dist = feats_dist * active_mask # Remove inactive points
 
-        matching_scores_for_hard_negs = matching_scores if matching_scores is not None else dot
-
         # Calculate circle loss and feature matching recall (FMR)
-        circle_loss, pos_neg_distribution = self.get_circle_loss(coords_dist, feats_dist, matching_scores_for_hard_negs, active_mask)
+        circle_loss, pos_neg_distribution = self.get_circle_loss(coords_dist, feats_dist, matching_scores, active_mask)
 
         if torch.isnan(circle_loss):
             assert False, "Circle loss is nan"
@@ -293,16 +296,17 @@ class PointMatchingLoss(nn.Module):
 
         
         if self.no_slack_variable:
+
             # Mating Surface Part
             # This makes matching_scores[gt_corr_map] to be larger
             loss_for_mating_surface = - matching_scores[gt_corr_map].mean()
 
             # Non-Mating Surface Part
             # This makes matching_scores[~gt_corr_map] to be smaller
-            loss_for_non_mating_surface = matching_scores[torch.logical_and(~gt_corr_map, active_mask)].mean()
+            # loss_for_non_mating_surface = matching_scores[torch.logical_and(~gt_corr_map, active_mask)].mean()
 
-            loss = (loss_for_mating_surface + loss_for_non_mating_surface) / 2
-
+            # loss = (loss_for_mating_surface + loss_for_non_mating_surface) / 2
+            loss = loss_for_mating_surface
         
         else: # Use slack variables
             # Initialize labels for the loss calculation

@@ -63,4 +63,16 @@ rm -rf checkpoint/G8NDB3_F_BV0V0_MH_DCOSHNMIX_NOMATCH_6/ && CUDA_VISIBLE_DEVICES
 # rm -rf checkpoint/G8NDB3_F_BV0V0_MH_DCOSHNTOPK_NOMATCH_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --logpath G8NDB3_F_BV0V0_MH_DCOSHNTOPK_NOMATCH_6 --backbone vn_unet --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale full --epochs 0 --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --hard_negative topk --distance_type cossim --batch_size 3 --no_matching_loss --wandb --wandb_entity CMppProject --wandb_project CMpp
 
 
+rm -rf checkpoint/IMPLE_G8NDB3_F_BV0V0_MH_DCOSHNMIX_NOMATCH_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --logpath IMPLE_G8NDB3_F_BV0V0_MH_DCOSHNMIX_NOMATCH_6 --backbone vn_unet --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale full --epochs 0 --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --hard_negative mix --distance_type cossim --batch_size 3 --matching_score_mode cossim --matching_norm_mode none --no_slack_variable --p_loss_weight 0.0 --wandb --wandb_entity CMppProject --wandb_project CMpp
 
+
+rm -rf checkpoint/IMPLE/ && CUDA_VISIBLE_DEVICES=0 python main.py --logpath IMPLE --backbone vn_unet --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale full --epochs 0 --gpus 0 --n_worker 1 --hard_negative mix --distance_type cossim --batch_size 3 --matching_score_mode cossim --matching_norm_mode none --no_slack_variable --s_loss_weight 0.0
+
+rm -rf checkpoint/IMPLE/ && CUDA_VISIBLE_DEVICES=0 python main.py --logpath IMPLE --backbone vn_unet --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale full --epochs 0 --gpus 0 --n_worker 1 --hard_negative mix --distance_type cossim --batch_size 1 --matching_score_mode cossim
+
+
+
+
+
+
+rm -rf checkpoint/G8NDB3_F_BV0V0_MH_DCOSNOBAL_P0_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --logpath G8NDB3_F_BV0V0_MH_DCOSNOBAL_P0_6 --backbone vn_unet --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale full --epochs 0 --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --hard_negative mix --distance_type cossim --batch_size 3 --matching_score_mode cossim --matching_norm_mode none --no_slack_variable --p_loss_weight 0.0 --no_balance --wandb --wandb_entity CMppProject --wandb_project CMpp

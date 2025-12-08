@@ -75,7 +75,8 @@ def main(args):
 
                       matching_norm_mode=args.matching_norm_mode,
                       no_slack_variable=args.no_slack_variable,
-                      no_matching_loss=args.no_matching_loss,
+
+                      matching_score_mode=args.matching_score_mode,
                         
                       infer_match_option='topk', # Fix match option value during training
                       infer_topk=128, # Fix topk value during training
@@ -295,7 +296,10 @@ if __name__ == '__main__':
     # Sinkhorn experments
     parser.add_argument('--matching_norm_mode', type=str, default='sinkhorn', choices=['sinkhorn', 'sigmoid', 'softmax', 'none'])
     parser.add_argument('--no_slack_variable', action='store_true', help='')
-    parser.add_argument('--no_matching_loss', action='store_true', help='')
+
+
+    # Mathcing Score arguments
+    parser.add_argument('--matching_score_mode', type=str, default='CM', choices=['CM', 'cossim'])
 
 
     # Visualization arguments
@@ -355,7 +359,11 @@ if __name__ == '__main__':
         assert args.double_bacbone != 'none', "load_ori is only allowed when double_bacbone is not none"
     
 
+    if args.matching_norm_mode == 'none':
+        assert args.no_slack_variable is True, "no_slack_variable must be True when matching_norm_mode is none"
+    
+    
     if args.no_slack_variable:
-        assert args.matching_norm_mode in ['sigmoid', 'softmax'], f"no_slack_variable is only allowed when matching_norm_mode is sigmoid or softmax, but got {args.matching_norm_mode}"
+        assert args.matching_norm_mode in ['sigmoid', 'softmax', 'none'], f"no_slack_variable is only allowed when matching_norm_mode is sigmoid or softmax, but got {args.matching_norm_mode}"
     
     main(args)
