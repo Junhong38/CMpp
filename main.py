@@ -53,6 +53,9 @@ def main(args):
                       hard_negative=args.hard_negative,
                       distance_type=args.distance_type,
 
+                      # Point matching loss arguments
+                      pm_neg_margin=args.pm_neg_margin,
+
                       s_loss_weight=args.s_loss_weight,
                       p_loss_weight=args.p_loss_weight,
                       o_loss_weight=args.o_loss_weight,
@@ -283,6 +286,10 @@ if __name__ == '__main__':
     parser.add_argument('--no_balance', action='store_true', help='Use positive and negative balance for Circle loss computation')
     parser.add_argument('--hard_negative', type=str, default='none', choices=['none', 'mix', 'topk'])
     parser.add_argument('--distance_type', type=str, default='l2', choices=['l2', 'cossim'])
+
+    
+    # Arguements for point matching loss
+    parser.add_argument('--pm_neg_margin', type=float, default=-0.4, help='Margin for negative samples in Point Matching loss computation')
 
 
     # Additional experiments

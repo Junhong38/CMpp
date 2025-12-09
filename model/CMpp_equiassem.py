@@ -46,6 +46,9 @@ class EquiAssem(pl.LightningModule):
             no_balance=False, 
             hard_negative='none',
             distance_type='l2',
+
+            # Point matching loss arguments
+            pm_neg_margin=-0.4,
             
             s_loss_weight=1.0, 
             p_loss_weight=1.0, 
@@ -100,9 +103,12 @@ class EquiAssem(pl.LightningModule):
             no_balance (bool, optional): Whether to not use positive and negative balance for circle loss computation. Defaults to False.
             hard_negative (str, optional): 'none' or 'mix' or 'topk'. Defaults to 'none'.
             distance_type (str, optional): 'l2' or 'cossim'. Defaults to 'l2'.
+
+            # Point matching loss arguments
+            pm_neg_margin (float, optional): Margin for negative samples in Point Matching loss computation. Defaults to -0.4.
             
             s_loss_weight (float, optional): Weight for shape loss. Defaults to 1.0.
-            p_loss_weight (float, optional): Weight for point loss. Defaults to 1.0.
+            p_loss_weight (float, optional): Weight for point matching loss. Defaults to 1.0.
             o_loss_weight (float, optional): Weight for orientation loss. Defaults to 1.0.
             
             visualize (bool, optional): Whether to save visualization results. Defaults to False.
@@ -145,6 +151,7 @@ class EquiAssem(pl.LightningModule):
         print(f"double_bacbone: {double_bacbone}")
         
         # Circle loss parameters will be printed in CircleLoss initialization
+        # Point matching loss parameters will be printed in PointMatchingLoss initialization
 
         print(f"s_loss_weight: {s_loss_weight}")
         print(f"p_loss_weight: {p_loss_weight}")
@@ -215,7 +222,7 @@ class EquiAssem(pl.LightningModule):
                                       same_opt=same_opt, no_balance=no_balance, hard_negative=hard_negative,
                                       distance_type=distance_type)
         self.orientation_loss = OrientationLoss(consistency_loss=consistency_loss)
-        self.matching_loss = PointMatchingLoss(pos_radius=pos_radius, no_slack_variable=no_slack_variable)
+        self.matching_loss = PointMatchingLoss(pos_radius=pos_radius, safe_radius=safe_radius, neg_margin=pm_neg_margin, no_slack_variable=no_slack_variable)
         
 
         # Weights for losses

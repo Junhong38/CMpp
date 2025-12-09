@@ -130,6 +130,7 @@ class CircleLoss(nn.Module):
             neg_nonsampled = neg_indices[non_sampled_part_for_negs] # (num_of_non_sampled_parts, 3)
             neg_mask[neg_nonsampled[:,0], neg_nonsampled[:,1], neg_nonsampled[:,2]] = False
 
+
         neg_mask = torch.logical_or(neg_mask, hard_neg_mask) 
         avg_num_of_hard_negs = hard_neg_mask.reshape(batch_size, -1).sum(dim=-1).float().mean().item()
         avg_num_of_negs = neg_mask.reshape(batch_size, -1).sum(dim=-1).float().mean().item()
@@ -176,6 +177,7 @@ class CircleLoss(nn.Module):
             }
         
         neg_mask, pos_neg_distribution['num_of_hard_neg'], pos_neg_distribution['num_of_neg'] = self.negative_sampling(matching_scores, pos_mask, neg_mask)
+
         
         # get anchors that have both positive and negative pairs
         row_sel = ((pos_mask.sum(-1)>0) * (neg_mask.sum(-1)>0)).detach() # (B, N+M, N+M) -> (B, N+M)
@@ -276,10 +278,21 @@ class CircleLoss(nn.Module):
 
 
 class PointMatchingLoss(nn.Module):
-    def __init__(self, pos_radius=0.018, no_slack_variable=False):
+    def __init__(self, pos_radius=0.018, safe_radius=0.03, neg_margin=-0.4, no_slack_variable=False):
         super(PointMatchingLoss, self).__init__()
-        self.positive_radius = pos_radius
+        self.pos_radius = pos_radius
+        self.safe_radius = safe_radius
         self.no_slack_variable = no_slack_variable
+        self.neg_margin = neg_margin
+
+        print("------------------------------------------------------")
+        print("INITIALIZING PointMatchingLoss")
+        print("------------------------------------------------------")
+        print(f"pos_radius: {self.pos_radius}, safe_radius: {self.safe_radius}")
+        print(f"neg_margin: {self.neg_margin}")
+        print(f"no_slack_variable: {self.no_slack_variable}")
+        print("------------------------------------------------------")
+
 
     def forward(self, matching_scores, coords_dist, active_mask):
         """
@@ -292,21 +305,24 @@ class PointMatchingLoss(nn.Module):
             torch.Tensor: (1, ), point matching loss
         """
 
-        gt_corr_map = torch.logical_and(coords_dist < self.positive_radius, active_mask) # (B, N+M, N+M)
+        gt_corr_map = torch.logical_and(coords_dist < self.pos_radius, active_mask) # (B, N+M, N+M)
 
         
         if self.no_slack_variable:
-
             # Mating Surface Part
-            # This makes matching_scores[gt_corr_map] to be larger
+            # This makes cooresponding matching_scores to be larger
             loss_for_mating_surface = - matching_scores[gt_corr_map].mean()
 
-            # Non-Mating Surface Part
-            # This makes matching_scores[~gt_corr_map] to be smaller
-            # loss_for_non_mating_surface = matching_scores[torch.logical_and(~gt_corr_map, active_mask)].mean()
-
-            # loss = (loss_for_mating_surface + loss_for_non_mating_surface) / 2
-            loss = loss_for_mating_surface
+            # Select negative samples whose score is bigger than the smallest positive score
+            batch_size = matching_scores.shape[0]
+            neg_mask = torch.logical_and(coords_dist > self.safe_radius, active_mask) # (B, N+M, N+M)
+            postprocessed_for_pos = matching_scores * gt_corr_map + (matching_scores.max() + 1) * (~gt_corr_map)
+            smallest_pos_score = postprocessed_for_pos.reshape(batch_size, -1).min(dim=-1)[0] # (B, N+M, N+M) -> (B, (N+M)*(N+M)) -> (B, )
+            bigger_than_smallest_pos_score = matching_scores >= smallest_pos_score[:, None, None]
+            hard_neg_mask = torch.logical_and(neg_mask, bigger_than_smallest_pos_score)
+            loss_for_non_mating_surface = matching_scores[hard_neg_mask].mean()
+            
+            loss = (loss_for_mating_surface + loss_for_non_mating_surface) / 2
         
         else: # Use slack variables
             # Initialize labels for the loss calculation
