@@ -320,7 +320,10 @@ class PointMatchingLoss(nn.Module):
             smallest_pos_score = postprocessed_for_pos.reshape(batch_size, -1).min(dim=-1)[0] # (B, N+M, N+M) -> (B, (N+M)*(N+M)) -> (B, )
             bigger_than_smallest_pos_score = matching_scores >= smallest_pos_score[:, None, None]
             hard_neg_mask = torch.logical_and(neg_mask, bigger_than_smallest_pos_score)
-            loss_for_non_mating_surface = matching_scores[hard_neg_mask].mean()
+            if hard_neg_mask.sum() > 0:
+                loss_for_non_mating_surface = matching_scores[hard_neg_mask].mean()
+            else:
+                loss_for_non_mating_surface = torch.tensor(0.).to(matching_scores.device)
             
             loss = (loss_for_mating_surface + loss_for_non_mating_surface) / 2
         

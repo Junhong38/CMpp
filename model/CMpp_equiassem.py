@@ -631,6 +631,7 @@ class EquiAssem(pl.LightningModule):
         self.log(f'{mode}/loss', training_loss, prog_bar=True, logger=True, sync_dist=True, rank_zero_only=True, on_step=True, on_epoch=True)
         self.log('current_lr', current_lr, prog_bar=True, logger=True, sync_dist=True, rank_zero_only=True, on_step=True, on_epoch=False)
     
+    
 
     def make_inv_feats(self, oris, oris_batch_info, equi_feats, src_flip=True):
         """Make invariant features
@@ -940,6 +941,7 @@ class EquiAssem(pl.LightningModule):
         # (b) Compute MSE between prediction & ground-truth for rotation (in degree) and translation
         eval_result['rrmse_rpf'], eval_result['trmse_rpf'] = self._transformation_error_RPFver(pcds_pred, pcds_grtr)
         eval_result['rrmse'], eval_result['trmse'] = self._transformation_error(pred_relative_trsfm, grtr_relative_trsfm)
+        eval_result['rrmse_geo'], eval_result['trmse_geo'] = self._transformation_error_geodesic(pred_relative_trsfm, grtr_relative_trsfm)
 
         # (c) Compute CoRrespondence Distance (CRD) betwween prediction & ground-truth
         eval_result['crd'] = self._correspondence_distance(assm_pred, assm_grtr)
@@ -1155,6 +1157,33 @@ class EquiAssem(pl.LightningModule):
         # div = len(rotat1) if multi_part else 1
         div = 1
         return (rrmse / div).to(trmse.device), trmse / div
+
+
+    def _transformation_error_geodesic(self, trnsf1, trnsf2, trmse_scaling=100):
+        """
+        Args:
+            trnsf1 (tuple): (3, 3), (3)
+            trnsf2 (tuple): (3, 3), (3)
+            trmse_scaling (int, optional): Scaling factor for TRMSE. Defaults to 100.
+
+        Returns:
+            rrmse (torch.Tensor): (1)
+            trmse (torch.Tensor): (1)
+        """
+        rotat1, trans1 = [trnsf1[0]], [trnsf1[1]]
+        rotat2, trans2 = [trnsf2[0]], [trnsf2[1]]
+        
+        rrmse_geo, trmse_geo = 0., 0.
+        for r1, r2, t1, t2 in zip(rotat1, rotat2, trans1, trans2):
+            # pred_rotat^T @ gt_rotat
+            relative_rotat = r1.T @ r2
+
+            # tr(R) = 1 + 2cos(θ) -> θ = acos((tr(R) - 1) / 2), torch.acos is in radian, so we need to convert to degree
+            rrmse_geo += torch.rad2deg(torch.acos(torch.clamp(0.5 * (torch.trace(relative_rotat) - 1.0), -1.0, 1.0)))
+            trmse_geo += torch.norm(t1 - t2) * trmse_scaling
+        
+        div = 1
+        return (rrmse_geo / div).to(trmse_geo.device), trmse_geo / div
 
 
     def _transformation_error_RPFver(self, pcds_pred, pcds_grtr, scaling=100):
