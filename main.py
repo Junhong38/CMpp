@@ -49,12 +49,10 @@ def main(args):
                       neg_margin=args.neg_margin,
                       log_scale=args.log_scale,
                       same_opt=args.same_opt,
-                      no_balance=args.no_balance,
+                      balance_mode=args.balance_mode,
                       hard_negative=args.hard_negative,
                       distance_type=args.distance_type,
-
-                      # Point matching loss arguments
-                      pm_neg_margin=args.pm_neg_margin,
+                      anchor_mode=args.anchor_mode,
 
                       s_loss_weight=args.s_loss_weight,
                       p_loss_weight=args.p_loss_weight,
@@ -283,13 +281,10 @@ if __name__ == '__main__':
     parser.add_argument('--neg_margin', type=float, default=1.4, help='Margin for negative samples in Circle loss computation')
     parser.add_argument('--log_scale', type=float, default=24, help='Log scale for Circle loss computation')
     parser.add_argument('--same_opt', action='store_true', help='Make margin value be same with optimal value')
-    parser.add_argument('--no_balance', action='store_true', help='Use positive and negative balance for Circle loss computation')
+    parser.add_argument('--balance_mode', type=str, default='none', choices=['none', 'half', 'only_hard'])
     parser.add_argument('--hard_negative', type=str, default='none', choices=['none', 'mix', 'topk'])
     parser.add_argument('--distance_type', type=str, default='l2', choices=['l2', 'cossim'])
-
-    
-    # Arguements for point matching loss
-    parser.add_argument('--pm_neg_margin', type=float, default=-0.4, help='Margin for negative samples in Point Matching loss computation')
+    parser.add_argument('--anchor_mode', type=str, default='default', choices=['default', 'all_pos', 'all'])
 
 
     # Additional experiments

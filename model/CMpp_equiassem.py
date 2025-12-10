@@ -43,13 +43,11 @@ class EquiAssem(pl.LightningModule):
             neg_margin=1.4, 
             log_scale=24, 
             same_opt=False, 
-            no_balance=False, 
+            balance_mode='none', 
             hard_negative='none',
             distance_type='l2',
+            anchor_mode='default',
 
-            # Point matching loss arguments
-            pm_neg_margin=-0.4,
-            
             s_loss_weight=1.0, 
             p_loss_weight=1.0, 
             o_loss_weight=1.0,
@@ -100,13 +98,11 @@ class EquiAssem(pl.LightningModule):
             neg_margin (float, optional): Margin for negative samples in loss computation. Defaults to 1.4.
             log_scale (int, optional): Log scaling factor for loss computation. Defaults to 24.
             same_opt (bool, optional): Whether to use the same optimal value as margin in loss computation. Defaults to False.
-            no_balance (bool, optional): Whether to not use positive and negative balance for circle loss computation. Defaults to False.
+            balance_mode (str, optional): 'none' or 'half' or 'only_hard'. Defaults to 'none'.
             hard_negative (str, optional): 'none' or 'mix' or 'topk'. Defaults to 'none'.
             distance_type (str, optional): 'l2' or 'cossim'. Defaults to 'l2'.
+            anchor_mode (str, optional): 'default' or 'all_pos'. Defaults to 'default'.
 
-            # Point matching loss arguments
-            pm_neg_margin (float, optional): Margin for negative samples in Point Matching loss computation. Defaults to -0.4.
-            
             s_loss_weight (float, optional): Weight for shape loss. Defaults to 1.0.
             p_loss_weight (float, optional): Weight for point matching loss. Defaults to 1.0.
             o_loss_weight (float, optional): Weight for orientation loss. Defaults to 1.0.
@@ -219,10 +215,10 @@ class EquiAssem(pl.LightningModule):
         # Objectives
         self.circle_loss = CircleLoss(pos_radius=pos_radius, safe_radius=safe_radius, 
                                       log_scale=log_scale, pos_optimal=pos_margin, neg_optimal=neg_margin, 
-                                      same_opt=same_opt, no_balance=no_balance, hard_negative=hard_negative,
-                                      distance_type=distance_type)
+                                      same_opt=same_opt, balance_mode=balance_mode, hard_negative=hard_negative,
+                                      distance_type=distance_type, anchor_mode=anchor_mode)
         self.orientation_loss = OrientationLoss(consistency_loss=consistency_loss)
-        self.matching_loss = PointMatchingLoss(pos_radius=pos_radius, safe_radius=safe_radius, neg_margin=pm_neg_margin, no_slack_variable=no_slack_variable)
+        self.matching_loss = PointMatchingLoss(pos_radius=pos_radius, safe_radius=safe_radius, no_slack_variable=no_slack_variable)
         
 
         # Weights for losses

@@ -4,16 +4,17 @@ import torch.nn.functional as F
 
 class CircleLoss(nn.Module):
 
-    def __init__(self, pos_radius=0.018, safe_radius=0.03, log_scale=24, pos_optimal=0.1, neg_optimal=1.4, same_opt=False, no_balance=False, hard_negative='none', distance_type='l2'):
+    def __init__(self, pos_radius=0.018, safe_radius=0.03, log_scale=24, pos_optimal=0.1, neg_optimal=1.4, same_opt=False, balance_mode='none', hard_negative='none', distance_type='l2', anchor_mode='default'):
 
 
         super(CircleLoss,self).__init__()
         self.log_scale = log_scale
         self.pos_optimal = pos_optimal
         self.neg_optimal = neg_optimal
-        self.no_balance = no_balance
+        self.balance_mode = balance_mode
         self.hard_negative = hard_negative
         self.distance_type = distance_type
+        self.anchor_mode = anchor_mode
 
 
         if same_opt:
@@ -34,9 +35,9 @@ class CircleLoss(nn.Module):
         print(f"log_scale: {self.log_scale}")
         print(f"pos_optimal: {self.pos_optimal}, pos_margin: {self.pos_margin}")
         print(f"neg_optimal: {self.neg_optimal}, neg_margin: {self.neg_margin}")
-        print(f"same_opt: {same_opt}, no_balance: {self.no_balance}")
-        print(f"hard_negative: {self.hard_negative}")
-        print(f"distance_type: {self.distance_type}")
+        print(f"same_opt: {same_opt}, balance_mode: {self.balance_mode}")
+        print(f"hard_negative: {self.hard_negative}, distance_type: {self.distance_type}")
+        print(f"anchor_mode: {self.anchor_mode}")
         print("------------------------------------------------------")
 
 
@@ -94,7 +95,7 @@ class CircleLoss(nn.Module):
             hard_neg_mask = torch.zeros_like(neg_mask, dtype=torch.bool)
         
 
-        if not self.no_balance and (self.hard_negative in ['none', 'mix']):
+        if (self.balance_mode in ['half', 'only_hard']) and (self.hard_negative in ['none', 'mix']):
             # Do not overlap with hard negatives
             neg_mask = torch.logical_and(neg_mask, ~hard_neg_mask)
 
@@ -103,16 +104,18 @@ class CircleLoss(nn.Module):
             num_of_hard_negs = hard_neg_mask.reshape(batch_size, -1).sum(dim=-1) # (B, N+M, N+M) -> (B, (N+M)*(N+M)) -> (B, )
             assert torch.all(num_of_pos > 0 ), f"num_of_pos: {num_of_pos}"
 
-            # If hard negatives are less than half of positive samples, we should sample more negative samples.
-            # If hard negatives are greater than half of positive samples, we should sample equal ratio from negative and hard negative samples.
-            not_enough_hard_negs_part = num_of_hard_negs < num_of_pos // 2
-            num_of_sampled_negs = (num_of_pos - num_of_hard_negs) * not_enough_hard_negs_part + (num_of_pos - num_of_pos // 2) * (~not_enough_hard_negs_part) # (B, )
-            num_of_sampled_hards = num_of_hard_negs * not_enough_hard_negs_part + (num_of_pos // 2) * (~not_enough_hard_negs_part) # (B, )
-
-            # If there is no positive samples, we should not sample any negative or hard negative samples.
-            propoper_part = num_of_pos > 0
-            num_of_sampled_negs = num_of_sampled_negs * propoper_part
-            num_of_sampled_hards = num_of_sampled_hards * propoper_part
+            if self.balance_mode == 'half':
+                # If hard negatives are less than half of positive samples, we should sample more negative samples.
+                # If hard negatives are greater than half of positive samples, we should sample equal ratio from negative and hard negative samples.
+                not_enough_hard_negs_part = num_of_hard_negs < num_of_pos // 2
+                num_of_sampled_negs = (num_of_pos - num_of_hard_negs) * not_enough_hard_negs_part + (num_of_pos - num_of_pos // 2) * (~not_enough_hard_negs_part) # (B, )
+                num_of_sampled_hards = num_of_hard_negs * not_enough_hard_negs_part + (num_of_pos // 2) * (~not_enough_hard_negs_part) # (B, )
+            elif self.balance_mode == 'only_hard':
+                # Use all hard negatives, but make balance between negative and positive samples.
+                num_of_sampled_negs = num_of_pos # (B, )
+                num_of_sampled_hards = num_of_hard_negs # (B, )
+            else:
+                raise NotImplementedError(f"Balance mode {self.balance_mode} not implemented")
 
             # Sample the hard negatives
             hard_neg_indices = hard_neg_mask.nonzero(as_tuple=False) # (B, N+M, N+M) -> (num_of_true_parts, 3), where 3 is (batch_index, row_index, col_index)
@@ -178,10 +181,20 @@ class CircleLoss(nn.Module):
         
         neg_mask, pos_neg_distribution['num_of_hard_neg'], pos_neg_distribution['num_of_neg'] = self.negative_sampling(matching_scores, pos_mask, neg_mask)
 
-        
-        # get anchors that have both positive and negative pairs
-        row_sel = ((pos_mask.sum(-1)>0) * (neg_mask.sum(-1)>0)).detach() # (B, N+M, N+M) -> (B, N+M)
-        col_sel = ((pos_mask.sum(-2)>0) * (neg_mask.sum(-2)>0)).detach() # (B, N+M, N+M) -> (B, N+M)
+        if self.anchor_mode == 'default':
+            # get anchors that have both positive and negative pairs
+            row_sel = ((pos_mask.sum(-1)>0) * (neg_mask.sum(-1)>0)).detach() # (B, N+M, N+M) -> (B, N+M)
+            col_sel = ((pos_mask.sum(-2)>0) * (neg_mask.sum(-2)>0)).detach() # (B, N+M, N+M) -> (B, N+M)
+        elif self.anchor_mode == 'all_pos':
+            # Use all positive pairs as anchors
+            row_sel = (pos_mask.sum(-1)>0).detach()
+            col_sel = (pos_mask.sum(-2)>0).detach()
+        elif self.anchor_mode == 'all':
+            # Use all pairs as anchors
+            row_sel = torch.ones_like(pos_mask[:,:,0], dtype=torch.bool).detach() # (B, N+M)
+            col_sel = torch.ones_like(pos_mask[:,:,0], dtype=torch.bool).detach() # (B, N+M)
+        else:
+            raise NotImplementedError(f"Anchor mode {self.anchor_mode} not implemented")
 
         # get alpha for both positive and negative pairs
         pos_weight = feats_dist - 1e5 * (~pos_mask).float() # mask the non-positive
@@ -278,18 +291,16 @@ class CircleLoss(nn.Module):
 
 
 class PointMatchingLoss(nn.Module):
-    def __init__(self, pos_radius=0.018, safe_radius=0.03, neg_margin=-0.4, no_slack_variable=False):
+    def __init__(self, pos_radius=0.018, safe_radius=0.03, no_slack_variable=False):
         super(PointMatchingLoss, self).__init__()
         self.pos_radius = pos_radius
         self.safe_radius = safe_radius
         self.no_slack_variable = no_slack_variable
-        self.neg_margin = neg_margin
 
         print("------------------------------------------------------")
         print("INITIALIZING PointMatchingLoss")
         print("------------------------------------------------------")
         print(f"pos_radius: {self.pos_radius}, safe_radius: {self.safe_radius}")
-        print(f"neg_margin: {self.neg_margin}")
         print(f"no_slack_variable: {self.no_slack_variable}")
         print("------------------------------------------------------")
 
@@ -309,24 +320,19 @@ class PointMatchingLoss(nn.Module):
 
         
         if self.no_slack_variable:
-            # Mating Surface Part
-            # This makes cooresponding matching_scores to be larger
-            loss_for_mating_surface = - matching_scores[gt_corr_map].mean()
+            # Select row/col which has at least one positive pair
+            row_pos_sel = (gt_corr_map.sum(-1, keepdim=True) > 0).detach() # (B, N+M, 1)
+            col_pos_sel = (gt_corr_map.sum(-2, keepdim=True) > 0).detach() # (B, 1, N+M)
 
-            # Select negative samples whose score is bigger than the smallest positive score
-            batch_size = matching_scores.shape[0]
+            loc_at_least_one_pos = torch.logical_or(row_pos_sel, col_pos_sel) # (B, N+M, N+M)
+
             neg_mask = torch.logical_and(coords_dist > self.safe_radius, active_mask) # (B, N+M, N+M)
-            postprocessed_for_pos = matching_scores * gt_corr_map + (matching_scores.max() + 1) * (~gt_corr_map)
-            smallest_pos_score = postprocessed_for_pos.reshape(batch_size, -1).min(dim=-1)[0] # (B, N+M, N+M) -> (B, (N+M)*(N+M)) -> (B, )
-            bigger_than_smallest_pos_score = matching_scores >= smallest_pos_score[:, None, None]
-            hard_neg_mask = torch.logical_and(neg_mask, bigger_than_smallest_pos_score)
-            if hard_neg_mask.sum() > 0:
-                loss_for_non_mating_surface = matching_scores[hard_neg_mask].mean()
-            else:
-                loss_for_non_mating_surface = torch.tensor(0.).to(matching_scores.device)
-            
-            loss = (loss_for_mating_surface + loss_for_non_mating_surface) / 2
+            loc_only_negs = torch.logical_and(~loc_at_least_one_pos, neg_mask) # (B, N+M, N+M)
+
+            # Make positive samples' score to be larger, also make negative samples' score to be smaller
+            loss = - matching_scores[gt_corr_map].mean() + matching_scores[loc_only_negs].mean()
         
+
         else: # Use slack variables
             # Initialize labels for the loss calculation
             labels = torch.zeros_like(matching_scores, dtype=torch.bool) # (B, N+M+1, N+M+1)
