@@ -329,8 +329,11 @@ class PointMatchingLoss(nn.Module):
             neg_mask = torch.logical_and(coords_dist > self.safe_radius, active_mask) # (B, N+M, N+M)
             loc_only_negs = torch.logical_and(~loc_at_least_one_pos, neg_mask) # (B, N+M, N+M)
 
+            pos_part_loss = - matching_scores[gt_corr_map].mean()
+            neg_part_loss = matching_scores[loc_only_negs].mean() if loc_only_negs.sum() > 0 else torch.tensor(0.).to(matching_scores.device)
+
             # Make positive samples' score to be larger, also make negative samples' score to be smaller
-            loss = - matching_scores[gt_corr_map].mean() + matching_scores[loc_only_negs].mean()
+            loss = pos_part_loss + neg_part_loss
         
 
         else: # Use slack variables
