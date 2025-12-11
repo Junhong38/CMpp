@@ -51,6 +51,7 @@ def main(args):
                       same_opt=args.same_opt,
                       balance_mode=args.balance_mode,
                       hard_negative=args.hard_negative,
+                      neg_topk=args.neg_topk,
                       distance_type=args.distance_type,
                       anchor_mode=args.anchor_mode,
 
@@ -282,7 +283,8 @@ if __name__ == '__main__':
     parser.add_argument('--log_scale', type=float, default=24, help='Log scale for Circle loss computation')
     parser.add_argument('--same_opt', action='store_true', help='Make margin value be same with optimal value')
     parser.add_argument('--balance_mode', type=str, default='none', choices=['none', 'half', 'only_hard'])
-    parser.add_argument('--hard_negative', type=str, default='none', choices=['none', 'mix', 'topk'])
+    parser.add_argument('--hard_negative', type=str, default='none', choices=['none', 'mix'])
+    parser.add_argument('--neg_topk', type=int, default=0, help='')
     parser.add_argument('--distance_type', type=str, default='l2', choices=['l2', 'cossim'])
     parser.add_argument('--anchor_mode', type=str, default='default', choices=['default', 'all_pos', 'all'])
 

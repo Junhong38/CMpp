@@ -57,48 +57,14 @@ end
 
 
 
-# rm -rf checkpoint/G8NDB1_F_BV0V0_MH_DL2HNMIX_SINK_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --logpath G8NDB1_F_BV0V0_MH_DL2HNMIX_SINK_6 --backbone vn_unet --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale full --epochs 0 --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --hard_negative mix --distance_type l2 --batch_size 1 --wandb --wandb_entity CMppProject --wandb_project CMpp
-# rm -rf checkpoint/G8NDB3_F_BV0V0_MH_DL2HNMIX_NOMATCH_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --logpath G8NDB3_F_BV0V0_MH_DL2HNMIX_NOMATCH_6 --backbone vn_unet --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale full --epochs 0 --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --hard_negative mix --distance_type l2 --batch_size 3 --no_matching_loss --wandb --wandb_entity CMppProject --wandb_project CMpp
-rm -rf checkpoint/G8NDB3_F_BV0V0_MH_DCOSHNMIX_NOMATCH_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --logpath G8NDB3_F_BV0V0_MH_DCOSHNMIX_NOMATCH_6 --backbone vn_unet --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale full --epochs 0 --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --hard_negative mix --distance_type cossim --batch_size 3 --no_matching_loss --wandb --wandb_entity CMppProject --wandb_project CMpp
-# rm -rf checkpoint/G8NDB3_F_BV0V0_MH_DCOSHNTOPK_NOMATCH_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --logpath G8NDB3_F_BV0V0_MH_DCOSHNTOPK_NOMATCH_6 --backbone vn_unet --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale full --epochs 0 --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --hard_negative topk --distance_type cossim --batch_size 3 --no_matching_loss --wandb --wandb_entity CMppProject --wandb_project CMpp
+
+# G8NDB3_F_BV0V0_MH_BN+HNM+NK0+DCOS+AD_MCOS+MNN+NS_S1P0_6
+# G8NDB3_F_BV0V0_MH_BN+HNM+NK1000+DCOS+AD_MCOS+MNN+NS_S1P0_6
+# G8NDB3_F_BV0V0_MH_BN+HNM+NK1000+DCOS+AA_MCOS+MNN+NS_S1P0_6
+
+rm -rf checkpoint/IMPLE/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --logpath IMPLE --backbone vn_unet --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale full --epochs 0 --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --batch_size 3 --balance_mode none --hard_negative mix --neg_topk 0 --distance_type cossim --anchor_mode default --matching_score_mode cossim --matching_norm_mode none --no_slack_variable --p_loss_weight 0.0 --wandb --wandb_entity CMppProject --wandb_project CMpp
 
 
-rm -rf checkpoint/IMPLE_G8NDB3_F_BV0V0_MH_DCOSHNMIX_NOMATCH_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --logpath IMPLE_G8NDB3_F_BV0V0_MH_DCOSHNMIX_NOMATCH_6 --backbone vn_unet --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale full --epochs 0 --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --hard_negative mix --distance_type cossim --batch_size 3 --matching_score_mode cossim --matching_norm_mode none --no_slack_variable --p_loss_weight 0.0 --wandb --wandb_entity CMppProject --wandb_project CMpp
-
-
-rm -rf checkpoint/IMPLE/ && CUDA_VISIBLE_DEVICES=0 python main.py --logpath IMPLE --backbone vn_unet --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale full --epochs 0 --gpus 0 --n_worker 1 --hard_negative mix --distance_type cossim --batch_size 3 --matching_score_mode cossim --matching_norm_mode none --no_slack_variable --s_loss_weight 0.0
-
-rm -rf checkpoint/IMPLE/ && CUDA_VISIBLE_DEVICES=0 python main.py --logpath IMPLE --backbone vn_unet --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale full --epochs 0 --gpus 0 --n_worker 1 --hard_negative mix --distance_type cossim --batch_size 1 --matching_score_mode cossim
-
-
-
-
-
-
-rm -rf checkpoint/G8NDB3_F_BV0V0_MH_DCOSNOBAL_P0_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --logpath G8NDB3_F_BV0V0_MH_DCOSNOBAL_P0_6 --backbone vn_unet --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale full --epochs 0 --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --hard_negative mix --distance_type cossim --batch_size 3 --matching_score_mode cossim --matching_norm_mode none --no_slack_variable --p_loss_weight 0.0 --no_balance --wandb --wandb_entity CMppProject --wandb_project CMpp
-
-rm -rf checkpoint/IMPLE/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --logpath IMPLE --backbone vn_unet --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale full --epochs 0 --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --hard_negative none --distance_type cossim --batch_size 3 --matching_score_mode cossim --matching_norm_mode none --no_slack_variable --s_loss_weight 0.0 --no_balance --wandb --wandb_entity CMppProject --wandb_project CMpp
-
-rm -rf checkpoint/IMPLE/ && CUDA_VISIBLE_DEVICES=0 python main.py --logpath IMPLE --backbone vn_unet --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale full --epochs 0 --gpus 0 --n_worker 1 --hard_negative none --distance_type cossim --batch_size 1 --matching_score_mode cossim --matching_norm_mode none --no_slack_variable --p_loss_weight 0.0 --no_balance
-
-
-
-
-
-rm -rf checkpoint/IMPLE/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --logpath IMPLE --backbone vn_unet --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale full --epochs 0 --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --hard_negative none --distance_type cossim --batch_size 3 --matching_score_mode cossim --matching_norm_mode none --no_slack_variable --no_balance --wandb --wandb_entity CMppProject --wandb_project CMpp
-rm -rf checkpoint/IMPLE/ && CUDA_VISIBLE_DEVICES=0 python main.py --logpath IMPLE --backbone vn_unet --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale full --epochs 0 --gpus 0 --n_worker 1 --hard_negative none --distance_type cossim --batch_size 1 --matching_score_mode cossim --matching_norm_mode none --no_slack_variable  --no_balance
-rm -rf checkpoint/IMPLE/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --logpath IMPLE --backbone vn_unet --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale full --epochs 0 --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --hard_negative mix --distance_type cossim --batch_size 3 --matching_score_mode cossim --matching_norm_mode none --no_slack_variable --no_balance --wandb --wandb_entity CMppProject --wandb_project CMpp
-
-rm -rf checkpoint/G8NDB3_F_BV0V0_MH_DCOSNOBAL_S1P1HN_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --logpath G8NDB3_F_BV0V0_MH_DCOSNOBAL_S1P1HN_6 --backbone vn_unet --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale full --epochs 0 --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --hard_negative mix --distance_type cossim --batch_size 3 --matching_score_mode cossim --matching_norm_mode none --no_slack_variable --no_balance --wandb --wandb_entity CMppProject --wandb_project CMpp
-rm -rf checkpoint/IMPLE/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --logpath IMPLE --backbone vn_unet --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale full --epochs 0 --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --hard_negative mix --distance_type cossim --batch_size 3 --matching_score_mode cossim --matching_norm_mode none --no_slack_variable
-rm -rf checkpoint/IMPLE/ && CUDA_VISIBLE_DEVICES=0 python main.py --logpath IMPLE --backbone vn_unet --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale full --epochs 0 --gpus 0 --n_worker 1 --hard_negative mix --distance_type cossim --batch_size 1 --matching_score_mode cossim --matching_norm_mode none --no_slack_variable
-
-
-
-rm -rf checkpoint/IMPLE/ && CUDA_VISIBLE_DEVICES=0 python main.py --logpath IMPLE --backbone vn_unet --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale full --epochs 0 --gpus 0 --n_worker 1 --batch_size 1 --balance_mode only_hard --hard_negative mix --distance_type cossim --anchor_mode all_pos --matching_score_mode cossim --matching_norm_mode none --no_slack_variable
-rm -rf checkpoint/IMPLE/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --logpath IMPLE --backbone vn_unet --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale full --epochs 0 --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --batch_size 3 --balance_mode only_hard --hard_negative mix --distance_type cossim --anchor_mode all_pos --matching_score_mode cossim --matching_norm_mode none --no_slack_variable --wandb --wandb_entity CMppProject --wandb_project CMpp
-
-
-
-rm -rf checkpoint/G8NDB3_F_BV0V0_MH_DCOSOHNALL_S1P0_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --logpath G8NDB3_F_BV0V0_MH_DCOSOHNALL_S1P0_6 --backbone vn_unet --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale full --epochs 0 --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --batch_size 3 --balance_mode only_hard --hard_negative mix --distance_type cossim --anchor_mode all --matching_score_mode cossim --matching_norm_mode none --no_slack_variable --p_loss_weight 0.0 --wandb --wandb_entity CMppProject --wandb_project CMpp
-
+rm -rf checkpoint/G8NDB3_F_BV0V0_MH_BN+HNM+NK0+DCOS+AD_MCOS+MNN+NS_S1P0_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --logpath G8NDB3_F_BV0V0_MH_BN+HNM+NK0+DCOS+AD_MCOS+MNN+NS_S1P0_6 --backbone vn_unet --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale full --epochs 0 --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --batch_size 3 --balance_mode none --hard_negative mix --neg_topk 0 --distance_type cossim --anchor_mode default --matching_score_mode cossim --matching_norm_mode none --no_slack_variable --p_loss_weight 0.0 --wandb --wandb_entity CMppProject --wandb_project CMpp
+rm -rf checkpoint/G8NDB3_F_BV0V0_MH_BN+HNM+NK1000+DCOS+AD_MCOS+MNN+NS_S1P0_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --logpath G8NDB3_F_BV0V0_MH_BN+HNM+NK1000+DCOS+AD_MCOS+MNN+NS_S1P0_6 --backbone vn_unet --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale full --epochs 0 --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --batch_size 3 --balance_mode none --hard_negative mix --neg_topk 1000 --distance_type cossim --anchor_mode default --matching_score_mode cossim --matching_norm_mode none --no_slack_variable --p_loss_weight 0.0 --wandb --wandb_entity CMppProject --wandb_project CMpp
+rm -rf checkpoint/G8NDB3_F_BV0V0_MH_BN+HNM+NK1000+DCOS+AA_MCOS+MNN+NS_S1P0_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --logpath G8NDB3_F_BV0V0_MH_BN+HNM+NK1000+DCOS+AA_MCOS+MNN+NS_S1P0_6 --backbone vn_unet --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale full --epochs 0 --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --batch_size 3 --balance_mode none --hard_negative mix --neg_topk 1000 --distance_type cossim --anchor_mode all --matching_score_mode cossim --matching_norm_mode none --no_slack_variable --p_loss_weight 0.0 --wandb --wandb_entity CMppProject --wandb_project CMpp

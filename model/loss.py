@@ -4,7 +4,7 @@ import torch.nn.functional as F
 
 class CircleLoss(nn.Module):
 
-    def __init__(self, pos_radius=0.018, safe_radius=0.03, log_scale=24, pos_optimal=0.1, neg_optimal=1.4, same_opt=False, balance_mode='none', hard_negative='none', distance_type='l2', anchor_mode='default'):
+    def __init__(self, pos_radius=0.018, safe_radius=0.03, log_scale=24, pos_optimal=0.1, neg_optimal=1.4, same_opt=False, balance_mode='none', hard_negative='none', neg_topk=0, distance_type='l2', anchor_mode='default'):
 
 
         super(CircleLoss,self).__init__()
@@ -13,6 +13,7 @@ class CircleLoss(nn.Module):
         self.neg_optimal = neg_optimal
         self.balance_mode = balance_mode
         self.hard_negative = hard_negative
+        self.neg_topk = neg_topk
         self.distance_type = distance_type
         self.anchor_mode = anchor_mode
 
@@ -36,8 +37,8 @@ class CircleLoss(nn.Module):
         print(f"pos_optimal: {self.pos_optimal}, pos_margin: {self.pos_margin}")
         print(f"neg_optimal: {self.neg_optimal}, neg_margin: {self.neg_margin}")
         print(f"same_opt: {same_opt}, balance_mode: {self.balance_mode}")
-        print(f"hard_negative: {self.hard_negative}, distance_type: {self.distance_type}")
-        print(f"anchor_mode: {self.anchor_mode}")
+        print(f"hard_negative: {self.hard_negative}, neg_topk: {self.neg_topk}")
+        print(f"distance_type: {self.distance_type}, anchor_mode: {self.anchor_mode}")
         print("------------------------------------------------------")
 
 
@@ -65,44 +66,36 @@ class CircleLoss(nn.Module):
             # We want to divide pos and neg completely.
             # So, if neg sample has bigger score than smallest pos sample, it is a hard negative.
             hard_neg_mask = torch.logical_and(neg_mask, bigger_than_smallest_pos_score)
-
-        elif self.hard_negative == 'topk':
-            # Only sample topk neg samples, topk is same as the number of positive samples
-            num_of_pos = pos_mask.reshape(batch_size, -1).sum(dim=-1) # (B, N+M, N+M) -> (B, (N+M)*(N+M)) -> (B, )
-            topk = num_of_pos.max()
-
-            if topk == 0:
-                neg_mask = torch.zeros_like(neg_mask, dtype=torch.bool)
-                hard_neg_mask = torch.zeros_like(neg_mask, dtype=torch.bool)
-            
-            else:
-                # To find topk neg score from each batch, we need to fill redundant scores with minimum score.
-                postprocessed_for_neg = matching_scores * neg_mask + matching_scores.min() * (~neg_mask)
-                topk_neg_score = postprocessed_for_neg.reshape(batch_size, -1).topk(k=topk, dim=-1)[0] # (B, N+M, N+M) -> (B, (N+M)*(N+M)) -> (B, topk)
-                kth_selection_indices = (num_of_pos - 1) + torch.arange(batch_size, device=matching_scores.device) * topk # (B, )
-                kth_neg_score = topk_neg_score.reshape(-1)[kth_selection_indices].reshape(batch_size) # (B, topk) -> (B, )
-                propoper_part = num_of_pos > 0
-                kth_neg_score = kth_neg_score * propoper_part + (matching_scores.max() + 1) * (~propoper_part)
-
-                # Check if the score is bigger than the kth biggest neg score.
-                bigger_than_kth_neg_score = matching_scores >= kth_neg_score[:, None, None]
-
-                # We want to only sample topk neg samples.
-                neg_mask = torch.logical_and(neg_mask, bigger_than_kth_neg_score)
-                hard_neg_mask = torch.zeros_like(neg_mask, dtype=torch.bool)
         
         else: # 'none'
             hard_neg_mask = torch.zeros_like(neg_mask, dtype=torch.bool)
         
+        
+        if self.neg_topk > 0:
+            # Do not overlap with hard negatives
+            pure_neg_mask = torch.logical_and(neg_mask, ~ hard_neg_mask)
+            
+            # Only sample topk neg samples. Value K will be same as the number of positive samples.
+            # If default topk value is bigger than, choose default value.
+            num_of_pos = pos_mask.reshape(batch_size, -1).sum(dim=-1) # (B, N+M, N+M) -> (B, (N+M)*(N+M)) -> (B, )
+            topk = num_of_pos.max()
+            topk = max(topk, self.neg_topk)
 
-        if (self.balance_mode in ['half', 'only_hard']) and (self.hard_negative in ['none', 'mix']):
+            # To find topk neg score from each batch, we need to fill redundant scores with minimum score.
+            postprocessed_for_neg = matching_scores * pure_neg_mask + matching_scores.min() * (~pure_neg_mask)
+            topk_neg_score = postprocessed_for_neg.reshape(batch_size, -1).topk(k=topk, dim=-1)[0] # (B, N+M, N+M) -> (B, (N+M)*(N+M)) -> (B, topk)
+            kth_biggest_neg_score = topk_neg_score[:, -1] # (B, topk) -> (B, )
+            bigger_than_kth_neg_score = matching_scores >= kth_biggest_neg_score[:, None, None]
+            neg_mask = torch.logical_and(pure_neg_mask, bigger_than_kth_neg_score)
+        
+
+        if (self.balance_mode in ['half', 'only_hard']):
             # Do not overlap with hard negatives
             neg_mask = torch.logical_and(neg_mask, ~hard_neg_mask)
 
             num_of_pos = pos_mask.reshape(batch_size, -1).sum(dim=-1) # (B, N+M, N+M) -> (B, (N+M)*(N+M)) -> (B, )
             num_of_negs = neg_mask.reshape(batch_size, -1).sum(dim=-1) # (B, N+M, N+M) -> (B, (N+M)*(N+M)) -> (B, )
             num_of_hard_negs = hard_neg_mask.reshape(batch_size, -1).sum(dim=-1) # (B, N+M, N+M) -> (B, (N+M)*(N+M)) -> (B, )
-            assert torch.all(num_of_pos > 0 ), f"num_of_pos: {num_of_pos}"
 
             if self.balance_mode == 'half':
                 # If hard negatives are less than half of positive samples, we should sample more negative samples.
@@ -110,10 +103,17 @@ class CircleLoss(nn.Module):
                 not_enough_hard_negs_part = num_of_hard_negs < num_of_pos // 2
                 num_of_sampled_negs = (num_of_pos - num_of_hard_negs) * not_enough_hard_negs_part + (num_of_pos - num_of_pos // 2) * (~not_enough_hard_negs_part) # (B, )
                 num_of_sampled_hards = num_of_hard_negs * not_enough_hard_negs_part + (num_of_pos // 2) * (~not_enough_hard_negs_part) # (B, )
+
+                # If there is no positive samples, we should not sample any negative samples or hard negatives
+                zero_num_of_pos = num_of_pos == 0
+                num_of_sampled_negs = num_of_sampled_negs * (~zero_num_of_pos) + 0 * zero_num_of_pos
+                num_of_sampled_hards = num_of_sampled_hards * (~zero_num_of_pos) + 0 * zero_num_of_pos
+
             elif self.balance_mode == 'only_hard':
                 # Use all hard negatives, but make balance between negative and positive samples.
                 num_of_sampled_negs = num_of_pos # (B, )
                 num_of_sampled_hards = num_of_hard_negs # (B, )
+            
             else:
                 raise NotImplementedError(f"Balance mode {self.balance_mode} not implemented")
 
@@ -133,10 +133,10 @@ class CircleLoss(nn.Module):
             neg_nonsampled = neg_indices[non_sampled_part_for_negs] # (num_of_non_sampled_parts, 3)
             neg_mask[neg_nonsampled[:,0], neg_nonsampled[:,1], neg_nonsampled[:,2]] = False
 
-
         neg_mask = torch.logical_or(neg_mask, hard_neg_mask) 
         avg_num_of_hard_negs = hard_neg_mask.reshape(batch_size, -1).sum(dim=-1).float().mean().item()
         avg_num_of_negs = neg_mask.reshape(batch_size, -1).sum(dim=-1).float().mean().item()
+        
         return neg_mask, avg_num_of_hard_negs, avg_num_of_negs
     
     

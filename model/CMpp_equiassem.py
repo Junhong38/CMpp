@@ -45,6 +45,7 @@ class EquiAssem(pl.LightningModule):
             same_opt=False, 
             balance_mode='none', 
             hard_negative='none',
+            neg_topk=0,
             distance_type='l2',
             anchor_mode='default',
 
@@ -100,6 +101,7 @@ class EquiAssem(pl.LightningModule):
             same_opt (bool, optional): Whether to use the same optimal value as margin in loss computation. Defaults to False.
             balance_mode (str, optional): 'none' or 'half' or 'only_hard'. Defaults to 'none'.
             hard_negative (str, optional): 'none' or 'mix' or 'topk'. Defaults to 'none'.
+            negative (str, optional): 'none' or 'topk'. Defaults to 'none'.
             distance_type (str, optional): 'l2' or 'cossim'. Defaults to 'l2'.
             anchor_mode (str, optional): 'default' or 'all_pos'. Defaults to 'default'.
 
@@ -216,7 +218,7 @@ class EquiAssem(pl.LightningModule):
         self.circle_loss = CircleLoss(pos_radius=pos_radius, safe_radius=safe_radius, 
                                       log_scale=log_scale, pos_optimal=pos_margin, neg_optimal=neg_margin, 
                                       same_opt=same_opt, balance_mode=balance_mode, hard_negative=hard_negative,
-                                      distance_type=distance_type, anchor_mode=anchor_mode)
+                                      neg_topk=neg_topk, distance_type=distance_type, anchor_mode=anchor_mode)
         self.orientation_loss = OrientationLoss(consistency_loss=consistency_loss)
         self.matching_loss = PointMatchingLoss(pos_radius=pos_radius, safe_radius=safe_radius, no_slack_variable=no_slack_variable)
         
@@ -574,15 +576,15 @@ class EquiAssem(pl.LightningModule):
                 src_move_circle_loss, src_coords_dist, pos_neg_distribution = self.circle_loss(pcd_raw, shape_feats, shape_matching_scores, active_mask)
                 trg_move_circle_loss, _, _ = self.circle_loss(pcd_raw, symmetric_shape_feats, symmetric_shape_matching_scores, active_mask)
 
-                src_move_matching_scores = self.matching_loss(matching_scores, src_coords_dist, active_mask).float()
-                trg_move_matching_scores = self.matching_loss(symmetric_matching_scores, src_coords_dist, active_mask).float()
+                src_move_matching_scores = self.matching_loss(matching_scores, src_coords_dist, active_mask).float() if self.p_loss_weight != 0 else torch.tensor(0.).to(matching_scores.device)
+                trg_move_matching_scores = self.matching_loss(symmetric_matching_scores, src_coords_dist, active_mask).float() if self.p_loss_weight != 0 else torch.tensor(0.).to(symmetric_matching_scores.device)
 
                 loss['s_loss'] = (src_move_circle_loss + trg_move_circle_loss) / 2
                 loss['p_loss'] = (src_move_matching_scores + trg_move_matching_scores) / 2
             
             else:
                 loss['s_loss'], coords_dist, pos_neg_distribution = self.circle_loss(pcd_raw, shape_feats, shape_matching_scores, active_mask)
-                loss['p_loss'] = self.matching_loss(matching_scores, coords_dist, active_mask).float()
+                loss['p_loss'] = self.matching_loss(matching_scores, coords_dist, active_mask).float() if self.p_loss_weight != 0 else torch.tensor(0.).to(matching_scores.device)
             
             loss['o_loss'] = self.orientation_loss(oris, gt_normals, batch_scaled_pcd_batch_info, gt_corr, gt_corr_bincount_info)
             loss['loss'] = self.o_loss_weight * loss['o_loss'] + self.s_loss_weight * loss['s_loss'] + self.p_loss_weight * loss['p_loss']
@@ -682,6 +684,7 @@ class EquiAssem(pl.LightningModule):
         repeated_batch_info_col_for_trg = batch_info[:,None,:].expand(-1, num_of_points, -1) == 1 # (B, N+M, N+M)
         active_parts = torch.logical_and(repeated_batch_info_row_for_src, repeated_batch_info_col_for_trg) # (B, N+M, N+M))
         return active_parts
+    
     
     def calculate_matching_score(self, shape_feats, active_mask, eps=1e-8, mode='CM'):
         """
