@@ -17,13 +17,18 @@ class CircleLoss(nn.Module):
         self.distance_type = distance_type
         self.anchor_mode = anchor_mode
 
+        # Hard encoding, in the future, we should change hard encoding to be more flexible
+        if self.distance_type == 'l2':
+            self.hard_encoding_soft_part = 0.05
+        else: # Cosine similarity
+            self.hard_encoding_soft_part = 0.00125
 
         if same_opt:
             self.pos_margin = pos_optimal
             self.neg_margin = neg_optimal
         else:
-            self.pos_margin = pos_optimal - 0.05
-            self.neg_margin = neg_optimal + 0.05
+            self.pos_margin = pos_optimal - self.hard_encoding_soft_part
+            self.neg_margin = neg_optimal + self.hard_encoding_soft_part
 
         self.pos_radius = pos_radius
         self.safe_radius = safe_radius
@@ -39,6 +44,7 @@ class CircleLoss(nn.Module):
         print(f"same_opt: {same_opt}, balance_mode: {self.balance_mode}")
         print(f"hard_negative: {self.hard_negative}, neg_topk: {self.neg_topk}")
         print(f"distance_type: {self.distance_type}, anchor_mode: {self.anchor_mode}")
+        print(f"hard_encoding_soft_part: {self.hard_encoding_soft_part}")
         print("------------------------------------------------------")
 
 
