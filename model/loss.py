@@ -4,31 +4,24 @@ import torch.nn.functional as F
 
 class CircleLoss(nn.Module):
 
-    def __init__(self, pos_radius=0.018, safe_radius=0.03, log_scale=24, pos_optimal=0.1, neg_optimal=1.4, same_opt=False, balance_mode='none', hard_negative='none', neg_topk=0, distance_type='l2', anchor_mode='default'):
+    def __init__(self, pos_radius=0.018, safe_radius=0.03, log_scale=24, pos_optimal=0.1, neg_optimal=1.4, pos_offset=0.0, neg_offset=0.0,
+                 balance_mode='none', hard_negative='none', neg_topk=0, distance_type='l2', anchor_mode='default'):
 
 
         super(CircleLoss,self).__init__()
         self.log_scale = log_scale
         self.pos_optimal = pos_optimal
         self.neg_optimal = neg_optimal
+        self.pos_offset = pos_offset
+        self.neg_offset = neg_offset
         self.balance_mode = balance_mode
         self.hard_negative = hard_negative
         self.neg_topk = neg_topk
         self.distance_type = distance_type
         self.anchor_mode = anchor_mode
 
-        # Hard encoding, in the future, we should change hard encoding to be more flexible
-        if self.distance_type == 'l2':
-            self.hard_encoding_soft_part = 0.05
-        else: # Cosine similarity
-            self.hard_encoding_soft_part = 0.00125
-
-        if same_opt:
-            self.pos_margin = pos_optimal
-            self.neg_margin = neg_optimal
-        else:
-            self.pos_margin = pos_optimal - self.hard_encoding_soft_part
-            self.neg_margin = neg_optimal + self.hard_encoding_soft_part
+        self.pos_margin = pos_optimal - pos_offset
+        self.neg_margin = neg_optimal + neg_offset
 
         self.pos_radius = pos_radius
         self.safe_radius = safe_radius
@@ -41,10 +34,10 @@ class CircleLoss(nn.Module):
         print(f"log_scale: {self.log_scale}")
         print(f"pos_optimal: {self.pos_optimal}, pos_margin: {self.pos_margin}")
         print(f"neg_optimal: {self.neg_optimal}, neg_margin: {self.neg_margin}")
-        print(f"same_opt: {same_opt}, balance_mode: {self.balance_mode}")
+        print(f"pos_offset: {self.pos_offset}, neg_offset: {self.neg_offset}")
+        print(f"balance_mode: {self.balance_mode}")
         print(f"hard_negative: {self.hard_negative}, neg_topk: {self.neg_topk}")
         print(f"distance_type: {self.distance_type}, anchor_mode: {self.anchor_mode}")
-        print(f"hard_encoding_soft_part: {self.hard_encoding_soft_part}")
         print("------------------------------------------------------")
 
 

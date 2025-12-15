@@ -47,8 +47,9 @@ def main(args):
                       # Circle loss arguments
                       pos_margin=args.pos_margin,
                       neg_margin=args.neg_margin,
+                      pos_offset=args.pos_offset,
+                      neg_offset=args.neg_offset,
                       log_scale=args.log_scale,
-                      same_opt=args.same_opt,
                       balance_mode=args.balance_mode,
                       hard_negative=args.hard_negative,
                       neg_topk=args.neg_topk,
@@ -280,8 +281,9 @@ if __name__ == '__main__':
     parser.add_argument('--safe_radius', type=float, default=0.03, help='Radius for safe samples in Circle loss computation')
     parser.add_argument('--pos_margin', type=float, default=0.1, help='Margin for positive samples in Circle loss computation')
     parser.add_argument('--neg_margin', type=float, default=1.4, help='Margin for negative samples in Circle loss computation')
+    parser.add_argument('--pos_offset', type=float, default=0.0, help='Offset for positive samples in Circle loss computation')
+    parser.add_argument('--neg_offset', type=float, default=0.0, help='Offset for negative samples in Circle loss computation')
     parser.add_argument('--log_scale', type=float, default=24, help='Log scale for Circle loss computation')
-    parser.add_argument('--same_opt', action='store_true', help='Make margin value be same with optimal value')
     parser.add_argument('--balance_mode', type=str, default='none', choices=['none', 'half', 'only_hard'])
     parser.add_argument('--hard_negative', type=str, default='none', choices=['none', 'mix'])
     parser.add_argument('--neg_topk', type=int, default=0, help='')

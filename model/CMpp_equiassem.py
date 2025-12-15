@@ -41,8 +41,9 @@ class EquiAssem(pl.LightningModule):
             # Circle loss arguments
             pos_margin=0.1, 
             neg_margin=1.4, 
+            pos_offset=0.0,
+            neg_offset=0.0,
             log_scale=24, 
-            same_opt=False, 
             balance_mode='none', 
             hard_negative='none',
             neg_topk=0,
@@ -97,8 +98,9 @@ class EquiAssem(pl.LightningModule):
             # Circle loss arguments
             pos_margin (float, optional): Margin for positive samples in loss computation. Defaults to 0.1.
             neg_margin (float, optional): Margin for negative samples in loss computation. Defaults to 1.4.
+            pos_offset (float, optional): Offset for positive samples in loss computation. Defaults to 0.0.
+            neg_offset (float, optional): Offset for negative samples in loss computation. Defaults to 0.0.
             log_scale (int, optional): Log scaling factor for loss computation. Defaults to 24.
-            same_opt (bool, optional): Whether to use the same optimal value as margin in loss computation. Defaults to False.
             balance_mode (str, optional): 'none' or 'half' or 'only_hard'. Defaults to 'none'.
             hard_negative (str, optional): 'none' or 'mix' or 'topk'. Defaults to 'none'.
             negative (str, optional): 'none' or 'topk'. Defaults to 'none'.
@@ -217,7 +219,8 @@ class EquiAssem(pl.LightningModule):
         # Objectives
         self.circle_loss = CircleLoss(pos_radius=pos_radius, safe_radius=safe_radius, 
                                       log_scale=log_scale, pos_optimal=pos_margin, neg_optimal=neg_margin, 
-                                      same_opt=same_opt, balance_mode=balance_mode, hard_negative=hard_negative,
+                                      pos_offset=pos_offset, neg_offset=neg_offset,
+                                      balance_mode=balance_mode, hard_negative=hard_negative,
                                       neg_topk=neg_topk, distance_type=distance_type, anchor_mode=anchor_mode)
         self.orientation_loss = OrientationLoss(consistency_loss=consistency_loss)
         self.matching_loss = PointMatchingLoss(pos_radius=pos_radius, safe_radius=safe_radius, no_slack_variable=no_slack_variable)
