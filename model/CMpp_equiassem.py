@@ -218,7 +218,7 @@ class EquiAssem(pl.LightningModule):
         
         # Objectives
         self.circle_loss = CircleLoss(pos_radius=pos_radius, safe_radius=safe_radius, 
-                                      log_scale=log_scale, pos_optimal=pos_margin, neg_optimal=neg_margin, 
+                                      log_scale=log_scale, pos_margin=pos_margin, neg_margin=neg_margin, 
                                       pos_offset=pos_offset, neg_offset=neg_offset,
                                       balance_mode=balance_mode, hard_negative=hard_negative,
                                       neg_topk=neg_topk, distance_type=distance_type, anchor_mode=anchor_mode)

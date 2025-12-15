@@ -4,14 +4,14 @@ import torch.nn.functional as F
 
 class CircleLoss(nn.Module):
 
-    def __init__(self, pos_radius=0.018, safe_radius=0.03, log_scale=24, pos_optimal=0.1, neg_optimal=1.4, pos_offset=0.0, neg_offset=0.0,
+    def __init__(self, pos_radius=0.018, safe_radius=0.03, log_scale=24, pos_margin=0.1, neg_margin=1.4, pos_offset=0.0, neg_offset=0.0,
                  balance_mode='none', hard_negative='none', neg_topk=0, distance_type='l2', anchor_mode='default'):
 
 
         super(CircleLoss,self).__init__()
         self.log_scale = log_scale
-        self.pos_optimal = pos_optimal
-        self.neg_optimal = neg_optimal
+        self.pos_margin = pos_margin
+        self.neg_margin = neg_margin
         self.pos_offset = pos_offset
         self.neg_offset = neg_offset
         self.balance_mode = balance_mode
@@ -20,8 +20,8 @@ class CircleLoss(nn.Module):
         self.distance_type = distance_type
         self.anchor_mode = anchor_mode
 
-        self.pos_margin = pos_optimal - pos_offset
-        self.neg_margin = neg_optimal + neg_offset
+        self.pos_optimal = pos_margin - pos_offset
+        self.neg_optimal = neg_margin + neg_offset
 
         self.pos_radius = pos_radius
         self.safe_radius = safe_radius
