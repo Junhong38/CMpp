@@ -38,17 +38,20 @@ def test(args):
                       double_bacbone=args.double_bacbone,
 
                       # Circle loss and point matching loss arguments
-                      pos_radius=0.0,
+                      pos_radius=args.pos_radius,
                       safe_radius=0.0,
 
                       # Circle loss arguments
                       pos_margin=0, # We don't need to use this parameter for testing  
                       neg_margin=0, # We don't need to use this parameter for testing  
+                      pos_offset=0, # We don't need to use this parameter for testing
+                      neg_offset=0, # We don't need to use this parameter for testing
                       log_scale=1, # We don't need to use this parameter for testing
-                      same_opt=False, # We don't need to use this parameter for testing
-                      no_balance=False, # We don't need to use this parameter for testing
+                      balance_mode='none', # We don't need to use this parameter for testing
                       hard_negative='none', # We don't need to use this parameter for testing
-                      distance_type=args.distance_type, 
+                      neg_topk=0, # We don't need to use this parameter for testing
+                      distance_type='cossim', # We don't need to use this parameter for testing
+                      anchor_mode='default', # We don't need to use this parameter for testing
 
                       s_loss_weight=0.0, # We don't need to use this parameter for testing
                       p_loss_weight=0.0, # We don't need to use this parameter for testing
@@ -72,7 +75,8 @@ def test(args):
 
                       matching_norm_mode=args.matching_norm_mode,
                       no_slack_variable=args.no_slack_variable,
-                      no_matching_loss=args.no_matching_loss,
+                      
+                      matching_score_mode=args.matching_score_mode,
                         
                       infer_match_option=args.infer_match_option,
                       infer_topk=args.infer_topk,
@@ -162,7 +166,8 @@ if __name__ == '__main__':
     parser.add_argument('--mlp_mode', type=str, default='CMpp', choices=['CMpp', 'CMpp_half', 'half', 'deep'])
 
 
-    parser.add_argument('--distance_type', type=str, default='l2', choices=['l2', 'cossim'])
+    # Only for evaluation metrics
+    parser.add_argument('--pos_radius', type=float, default=0.018, help='Radius for positive samples in Circle loss computation and point matching loss')
 
 
     # Additional experiments
@@ -174,9 +179,12 @@ if __name__ == '__main__':
     # Sinkhorn experments
     parser.add_argument('--matching_norm_mode', type=str, default='sinkhorn', choices=['sinkhorn', 'sigmoid', 'softmax', 'none'])
     parser.add_argument('--no_slack_variable', action='store_true', help='')
-    parser.add_argument('--no_matching_loss', action='store_true', help='')
 
 
+    # Mathcing Score arguments
+    parser.add_argument('--matching_score_mode', type=str, default='CM', choices=['CM', 'cossim'])
+
+    
     # Inference arguments
     parser.add_argument('--infer_match_option', type=str, default='topk', choices=['topk', 'mutual_topk', 'soft_topk', 'unidirectional_nn_matching', 'injective_matching', 'bijective_matching'])
     parser.add_argument('--infer_topk', type=int, default=128)
@@ -218,10 +226,13 @@ if __name__ == '__main__':
     else: # Single-GPU training
         args.parallel_strategy = 'auto'
     
-    if args.no_slack_variable:
-        assert args.matching_norm_mode in ['sigmoid', 'softmax'], f"no_slack_variable is only allowed when matching_norm_mode is sigmoid or softmax, but got {args.matching_norm_mode}"
+    if args.matching_norm_mode == 'none':
+        assert args.no_slack_variable is True, "no_slack_variable must be True when matching_norm_mode is none"
     
-
+    
+    if args.no_slack_variable:
+        assert args.matching_norm_mode in ['sigmoid', 'softmax', 'none'], f"no_slack_variable is only allowed when matching_norm_mode is sigmoid or softmax, but got {args.matching_norm_mode}"
+    
     print("================================================")
     print(f"args: {args}")
     print("================================================")

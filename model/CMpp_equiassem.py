@@ -832,6 +832,7 @@ class EquiAssem(pl.LightningModule):
         # Dataloader will returns (B, N+M, ....) format.
         # However, batch size must be 1 for evaluation
         # So, we will use src/trg individually for evaluation
+        src_pcd_raw, trg_pcd_raw = extract_all_objects(in_dict['pcd'][0], in_dict['pcd_batch_info'][0]) # (N, 3), (M, 3)
         src_pcd, trg_pcd = extract_all_objects(in_dict['pcd_t'][0], in_dict['pcd_batch_info'][0]) # (N, 3), (M, 3)
         src_ori, trg_ori = extract_all_objects(out_dict['oris'][0], in_dict['pcd_batch_info'][0]) # (N, 3, 3), (M, 3, 3)
         gt_src_normals, gt_trg_normals = extract_all_objects(in_dict['gt_normals'][0].float(), in_dict['pcd_batch_info'][0]) # (N, 3), (M, 3)
@@ -887,7 +888,7 @@ class EquiAssem(pl.LightningModule):
         eval_dict.update(self._calculate_recall(postprocessed_matching_scores_drop, gt_corr))
 
         # Calculate ratio of GT among topk scores
-        eval_dict['gt_among_topk'] = self.calculate_ratio_of_gt_among_topk_scores(src_pcd, trg_pcd, postprocessed_matching_scores_drop, topk=self.infer_topk, pos_radius=self.pos_radius)
+        eval_dict['gt_among_topk'] = self.calculate_ratio_of_gt_among_topk_scores(src_pcd_raw, trg_pcd_raw, postprocessed_matching_scores_drop, topk=self.infer_topk, pos_radius=self.pos_radius)
 
         return out_dict, eval_dict
     
@@ -1311,7 +1312,7 @@ class EquiAssem(pl.LightningModule):
         return result_dict
     
 
-    def calculate_ratio_of_gt_among_topk_scores(self, src_pcd, trg_pcd, matching_scores, topk=128, pos_radius=0.018):
+    def calculate_ratio_of_gt_among_topk_scores(self, src_pcd_raw, trg_pcd_raw, matching_scores, topk=128, pos_radius=0.018):
         """Calculate ratio of GT among topk scores
 
         Args:
@@ -1324,7 +1325,7 @@ class EquiAssem(pl.LightningModule):
             ratio_of_gt_among_topk_scores (torch.Tensor): (1)
         """
         # Calculate distance between source and target points, and check if it is within the positive radius
-        corr_dist = torch.cdist(src_pcd, trg_pcd, p=2) # (N, M)
+        corr_dist = torch.cdist(src_pcd_raw, trg_pcd_raw, p=2) # (N, M)
         pos_mask = corr_dist < pos_radius # (N, M)
 
         # Find pairs that have topk scores
@@ -1334,7 +1335,6 @@ class EquiAssem(pl.LightningModule):
 
         # Calculate ratio of GT among topk scores
         ratio_of_gt_among_topk_scores = torch.logical_and(topk_mask, pos_mask).sum() / topk_mask.sum() # (N, M) -> (1, )
-
         return ratio_of_gt_among_topk_scores
 
 
