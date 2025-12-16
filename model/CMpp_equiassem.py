@@ -217,6 +217,7 @@ class EquiAssem(pl.LightningModule):
         self.feat_dim = 1024
         
         # Objectives
+        self.pos_radius = pos_radius
         self.circle_loss = CircleLoss(pos_radius=pos_radius, safe_radius=safe_radius, 
                                       log_scale=log_scale, pos_margin=pos_margin, neg_margin=neg_margin, 
                                       pos_offset=pos_offset, neg_offset=neg_offset,
@@ -885,6 +886,9 @@ class EquiAssem(pl.LightningModule):
         # Matching Recall
         eval_dict.update(self._calculate_recall(postprocessed_matching_scores_drop, gt_corr))
 
+        # Calculate ratio of GT among topk scores
+        eval_dict['gt_among_topk'] = self.calculate_ratio_of_gt_among_topk_scores(src_pcd, trg_pcd, postprocessed_matching_scores_drop, topk=self.infer_topk, pos_radius=self.pos_radius)
+
         return out_dict, eval_dict
     
 
@@ -1305,6 +1309,35 @@ class EquiAssem(pl.LightningModule):
             result_dict[f"recall@{str(topk)}"] = recall_dot_k
         
         return result_dict
+    
+
+    def calculate_ratio_of_gt_among_topk_scores(self, src_pcd, trg_pcd, matching_scores, topk=128, pos_radius=0.018):
+        """Calculate ratio of GT among topk scores
+
+        Args:
+            src_pcd (torch.Tensor): (N, 3)
+            trg_pcd (torch.Tensor): (M, 3)
+            matching_scores (torch.Tensor): (N, M)
+            topk (int, optional): Topk value for matching. Defaults to 128.
+
+        Returns:
+            ratio_of_gt_among_topk_scores (torch.Tensor): (1)
+        """
+        # Calculate distance between source and target points, and check if it is within the positive radius
+        corr_dist = torch.cdist(src_pcd, trg_pcd, p=2) # (N, M)
+        pos_mask = corr_dist < pos_radius # (N, M)
+
+        # Find pairs that have topk scores
+        topk_scores = torch.topk(matching_scores.reshape(-1), k=topk, dim=-1)[0] # (N*M) -> (topk)
+        kth_biggest_score = topk_scores[-1] # (topk) -> (1, )
+        topk_mask = matching_scores >= kth_biggest_score # (N, M)
+
+        # Calculate ratio of GT among topk scores
+        ratio_of_gt_among_topk_scores = torch.logical_and(topk_mask, pos_mask).sum() / topk_mask.sum() # (N, M) -> (1, )
+
+        return ratio_of_gt_among_topk_scores
+
+
 
 
 
