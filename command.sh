@@ -53,7 +53,7 @@ rm -rf checkpoint/G8NDB1_F_BV0V0_MH_HN_SINK_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4
 
 rm -rf checkpoint/G8NDB1_F_BV0V0_MH_HN_NOMATCH_6/ && CUDA_VISIBLE_DEVICES=0,1 python main.py --logpath G8NDB1_F_BV0V0_MH_HN_NOMATCH_6 --backbone vn_unet --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale full --epochs 0 --gpus 0 1--n_worker 6 --hard_negative --batch_size 1 --no_matching_loss # --wandb --wandb_entity CMppProject --wandb_project CMpp
 rm -rf checkpoint/G8NDB3_F_BV0V0_MH_HN_NOMATCH_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --logpath G8NDB3_F_BV0V0_MH_HN_NOMATCH_6 --backbone vn_unet --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale full --epochs 0 --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --hard_negative --batch_size 3 --no_matching_loss --wandb --wandb_entity CMppProject --wandb_project CMpp
-end
+
 
 
 
@@ -101,14 +101,19 @@ rm -rf checkpoint/TEST_G8NDB3_F_BV0V0_MH_NLRS_P005M010+N145M140+BN+HNM+NK0+DCOS+
 # Matching loss + Softmax / Matching loss + Softmax + CM-type Score
 rm -rf checkpoint/G8NDB3_F_BV0V0_MH_P005M010+N145M140+BN+HNM+NK0+DCOS+AD_MCOS+MNSoft_S1P1_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --logpath G8NDB3_F_BV0V0_MH_P005M010+N145M140+BN+HNM+NK0+DCOS+AD_MCOS+MNSoft_S1P1_6 --backbone vn_unet --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale full --epochs 0 --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --batch_size 3 --pos_margin 0.10 --neg_margin 1.40 --pos_offset 0.05 --neg_offset 0.05 --balance_mode none --hard_negative mix --neg_topk 0 --distance_type cossim --anchor_mode default --matching_score_mode cossim --matching_norm_mode softmax --p_loss_weight 1.0 --wandb --wandb_entity CMppProject --wandb_project CMpp
 rm -rf checkpoint/G8NDB3_F_BV0V0_MH_P005M010+N145M140+BN+HNM+NK0+DCOS+AD_MCM+MNSoft_S1P1_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --logpath G8NDB3_F_BV0V0_MH_P005M010+N145M140+BN+HNM+NK0+DCOS+AD_MCM+MNSoft_S1P1_6 --backbone vn_unet --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale full --epochs 0 --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --batch_size 3 --pos_margin 0.10 --neg_margin 1.40 --pos_offset 0.05 --neg_offset 0.05 --balance_mode none --hard_negative mix --neg_topk 0 --distance_type cossim --anchor_mode default --matching_score_mode CM --matching_norm_mode softmax --p_loss_weight 1.0 --wandb --wandb_entity CMppProject --wandb_project CMpp
+end
 
 
-# Origin + Sinkhorn + Hard Negative:mix + No balance
-rm -rf checkpoint/G8NDB3_F_BV0V0_MH_P010M005+N140M145+BN+HNM+NK0+DL2+AD_MCM+MNSink_S1P1_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --logpath G8NDB3_F_BV0V0_MH_P010M005+N140M145+BN+HNM+NK0+DL2+AD_MCM+MNSink_S1P1_6 --backbone vn_unet --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale full --epochs 0 --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --batch_size 1 --pos_margin 0.05 --neg_margin 1.45 --pos_offset -0.05 --neg_offset -0.05 --balance_mode none --hard_negative mix --neg_topk 0 --distance_type l2 --anchor_mode default --matching_score_mode CM --matching_norm_mode sinkhorn --p_loss_weight 1.0 --wandb --wandb_entity CMppProject --wandb_project CMpp
+# [ING] Origin + Softmax + Distance: cossim + PO0.05PM0.10/NO1.45NM1.40 no offset + Hard Negative:mix + No balance
+rm -rf checkpoint/G8NDB3_F_BV0V0_MH_P005M010+N145M140+BN+HNM+NK0+DCOS+AD_MCM+MNSoft_S1P1_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --logpath G8NDB3_F_BV0V0_MH_P005M010+N145M140+BN+HNM+NK0+DCOS+AD_MCM+MNSoft_S1P1_6 --backbone vn_unet --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale full --epochs 0 --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --batch_size 3 --pos_margin 0.10 --neg_margin 1.40 --pos_offset 0.05 --neg_offset 0.05 --balance_mode none --hard_negative mix --neg_topk 0 --distance_type cossim --anchor_mode default --matching_score_mode CM --matching_norm_mode softmax --p_loss_weight 1.0 --wandb --wandb_entity CMppProject --wandb_project CMpp
 
 
 # Origin + Sinkhorn
-rm -rf checkpoint/G8NDB3_F_BV0V0_MH_P010M005+N140M145+BH+HNN+NK0+DL2+AD_MCM+MNSink_S1P1_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --logpath G8NDB3_F_BV0V0_MH_P010M005+N140M145+BH+HNN+NK0+DL2+AD_MCM+MNSink_S1P1_6 --backbone vn_unet --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale full --epochs 0 --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --batch_size 1 --pos_margin 0.05 --neg_margin 1.45 --pos_offset -0.05 --neg_offset -0.05 --balance_mode half --hard_negative none --neg_topk 0 --distance_type l2 --anchor_mode default --matching_score_mode CM --matching_norm_mode sinkhorn --p_loss_weight 1.0 --wandb --wandb_entity CMppProject --wandb_project CMpp
+rm -rf checkpoint/G8NDB1_F_BV0V0_MH_P010M005+N140M145+BH+HNN+NK0+DL2+AD_MCM+MNSink_S1P1_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --logpath G8NDB1_F_BV0V0_MH_P010M005+N140M145+BH+HNN+NK0+DL2+AD_MCM+MNSink_S1P1_6 --backbone vn_unet --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale full --epochs 0 --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --batch_size 1 --pos_margin 0.05 --neg_margin 1.45 --pos_offset -0.05 --neg_offset -0.05 --balance_mode half --hard_negative none --neg_topk 0 --distance_type l2 --anchor_mode default --matching_score_mode CM --matching_norm_mode sinkhorn --p_loss_weight 1.0 --wandb --wandb_entity CMppProject --wandb_project CMpp
+
+
+# Origin + Sinkhorn + Hard Negative:mix
+rm -rf checkpoint/G8NDB1_F_BV0V0_MH_P010M005+N140M145+BH+HNM+NK0+DL2+AD_MCM+MNSink_S1P1_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --logpath G8NDB1_F_BV0V0_MH_P010M005+N140M145+BH+HNM+NK0+DL2+AD_MCM+MNSink_S1P1_6 --backbone vn_unet --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale full --epochs 0 --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --batch_size 1 --pos_margin 0.05 --neg_margin 1.45 --pos_offset -0.05 --neg_offset -0.05 --balance_mode half --hard_negative mix --neg_topk 0 --distance_type l2 --anchor_mode default --matching_score_mode CM --matching_norm_mode sinkhorn --p_loss_weight 1.0 --wandb --wandb_entity CMppProject --wandb_project CMpp
 
 
 # Origin + Softmax
@@ -119,7 +124,7 @@ rm -rf checkpoint/G8NDB3_F_BV0V0_MH_P010M005+N140M145+BH+HNN+NK0+DL2+AD_MCM+MNSo
 rm -rf checkpoint/G8NDB3_F_BV0V0_MH_P010M005+N140M145+BH+HNN+NK0+DCOS+AD_MCM+MNSoft_S1P1_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --logpath G8NDB3_F_BV0V0_MH_P010M005+N140M145+BH+HNN+NK0+DCOS+AD_MCM+MNSoft_S1P1_6 --backbone vn_unet --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale full --epochs 0 --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --batch_size 3 --pos_margin 0.05 --neg_margin 1.45 --pos_offset -0.05 --neg_offset -0.05 --balance_mode half --hard_negative none --neg_topk 0 --distance_type cossim --anchor_mode default --matching_score_mode CM --matching_norm_mode softmax --p_loss_weight 1.0 --wandb --wandb_entity CMppProject --wandb_project CMpp
 
 
-# Origin + Softmax + P0.05/N1.45 no offset
+# Origin + Softmax + Distance: cossim + P0.05/N1.45 no offset
 rm -rf checkpoint/G8NDB3_F_BV0V0_MH_P005M005+N145M145+BH+HNN+NK0+DCOS+AD_MCM+MNSoft_S1P1_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --logpath G8NDB3_F_BV0V0_MH_P005M005+N145M145+BH+HNN+NK0+DCOS+AD_MCM+MNSoft_S1P1_6 --backbone vn_unet --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale full --epochs 0 --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --batch_size 3 --pos_margin 0.05 --neg_margin 1.45 --pos_offset 0.0 --neg_offset 0.0 --balance_mode half --hard_negative none --neg_topk 0 --distance_type cossim --anchor_mode default --matching_score_mode CM --matching_norm_mode softmax --p_loss_weight 1.0 --wandb --wandb_entity CMppProject --wandb_project CMpp
 
 
@@ -131,12 +136,13 @@ rm -rf checkpoint/G8NDB3_F_BV0V0_MH_P005M005+N145M145+BH+HNM+NK0+DCOS+AD_MCM+MNS
 rm -rf checkpoint/G8NDB3_F_BV0V0_MH_P005M005+N145M145+BH+HNM+NK1000+DCOS+AD_MCM+MNSoft_S1P1_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --logpath G8NDB3_F_BV0V0_MH_P005M005+N145M145+BH+HNM+NK1000+DCOS+AD_MCM+MNSoft_S1P1_6 --backbone vn_unet --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale full --epochs 0 --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --batch_size 3 --pos_margin 0.05 --neg_margin 1.45 --pos_offset 0.0 --neg_offset 0.0 --balance_mode half --hard_negative mix --neg_topk 1000 --distance_type cossim --anchor_mode default --matching_score_mode CM --matching_norm_mode softmax --p_loss_weight 1.0 --wandb --wandb_entity CMppProject --wandb_project CMpp
 
 
-
-# Origin + Softmax + Distance: cossim + P0.05/N1.45 no offset + Hard Negative:mix + No balance
+# [ING] Origin + Softmax + Distance: cossim + P0.05/N1.45 no offset + Hard Negative:mix + No balance
 rm -rf checkpoint/G8NDB3_F_BV0V0_MH_P005M005+N145M145+BN+HNM+NK0+DCOS+AD_MCM+MNSoft_S1P1_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --logpath G8NDB3_F_BV0V0_MH_P005M005+N145M145+BN+HNM+NK0+DCOS+AD_MCM+MNSoft_S1P1_6 --backbone vn_unet --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale full --epochs 0 --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --batch_size 3 --pos_margin 0.05 --neg_margin 1.45 --pos_offset 0.0 --neg_offset 0.0 --balance_mode none --hard_negative mix --neg_topk 0 --distance_type cossim --anchor_mode default --matching_score_mode CM --matching_norm_mode softmax --p_loss_weight 1.0 --wandb --wandb_entity CMppProject --wandb_project CMpp
 
 
 # Origin + Softmax + Distance: cossim + P0.05/N1.45 no offset + Hard Negative:mix&topk + No balance
 rm -rf checkpoint/G8NDB3_F_BV0V0_MH_P005M005+N145M145+BN+HNM+NK1000+DCOS+AD_MCM+MNSoft_S1P1_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --logpath G8NDB3_F_BV0V0_MH_P005M005+N145M145+BN+HNM+NK1000+DCOS+AD_MCM+MNSoft_S1P1_6 --backbone vn_unet --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale full --epochs 0 --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --batch_size 3 --pos_margin 0.05 --neg_margin 1.45 --pos_offset 0.0 --neg_offset 0.0 --balance_mode none --hard_negative mix --neg_topk 1000 --distance_type cossim --anchor_mode default --matching_score_mode CM --matching_norm_mode softmax --p_loss_weight 1.0 --wandb --wandb_entity CMppProject --wandb_project CMpp
 
+
+# Origin + Softmax + only matching loss (no circle loss)
 
