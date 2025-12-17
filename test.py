@@ -74,8 +74,6 @@ def test(args):
                       move_smaller=args.move_smaller,
 
                       matching_norm_mode=args.matching_norm_mode,
-                      no_slack_variable=args.no_slack_variable,
-                      
                       matching_score_mode=args.matching_score_mode,
                         
                       infer_match_option=args.infer_match_option,
@@ -176,12 +174,8 @@ if __name__ == '__main__':
     parser.add_argument('--move_smaller', action='store_true', help='If True, always move the smaller point cloud to the origin')
 
 
-    # Sinkhorn experments
-    parser.add_argument('--matching_norm_mode', type=str, default='sinkhorn', choices=['sinkhorn', 'sigmoid', 'softmax', 'none'])
-    parser.add_argument('--no_slack_variable', action='store_true', help='')
-
-
-    # Mathcing Score arguments
+    # Sinkhorn/Matching experments
+    parser.add_argument('--matching_norm_mode', type=str, default='sinkhorn', choices=['sinkhorn', 'softmax', 'none'])
     parser.add_argument('--matching_score_mode', type=str, default='CM', choices=['CM', 'cossim'])
 
     
@@ -225,13 +219,6 @@ if __name__ == '__main__':
     
     else: # Single-GPU training
         args.parallel_strategy = 'auto'
-    
-    if args.matching_norm_mode == 'none':
-        assert args.no_slack_variable is True, "no_slack_variable must be True when matching_norm_mode is none"
-    
-    
-    if args.no_slack_variable:
-        assert args.matching_norm_mode in ['sigmoid', 'softmax', 'none'], f"no_slack_variable is only allowed when matching_norm_mode is sigmoid or softmax, but got {args.matching_norm_mode}"
     
     print("================================================")
     print(f"args: {args}")

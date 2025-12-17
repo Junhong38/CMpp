@@ -290,52 +290,45 @@ class CircleLoss(nn.Module):
 
 
 class PointMatchingLoss(nn.Module):
-    def __init__(self, pos_radius=0.018, safe_radius=0.03, no_slack_variable=False):
+    def __init__(self, pos_radius=0.018, safe_radius=0.03):
         super(PointMatchingLoss, self).__init__()
         self.pos_radius = pos_radius
         self.safe_radius = safe_radius
-        self.no_slack_variable = no_slack_variable
 
         print("------------------------------------------------------")
         print("INITIALIZING PointMatchingLoss")
         print("------------------------------------------------------")
         print(f"pos_radius: {self.pos_radius}, safe_radius: {self.safe_radius}")
-        print(f"no_slack_variable: {self.no_slack_variable}")
         print("------------------------------------------------------")
 
 
-    def forward(self, matching_scores, coords_dist, active_mask):
+    def forward(self, matching_scores, coords_dist, active_mask, matching_norm_mode):
         """
         Args:
-            matching_scores (torch.Tensor): (B, N+M+1, N+M+1) if self.no_slack_variable is False, otherwise (B, N+M, N+M) (This already removed inactive points)
+            matching_scores (torch.Tensor): (B, N+M+1, N+M+1) if mode is ['sinkhorn', 'softmax'], otherwise (B, N+M, N+M) (This already removed inactive points)
             coords_dist (torch.Tensor): (B, N+M, N+M)
             active_mask (torch.Tensor): (B, N+M, N+M), True if the point is active
+            matching_norm_mode (str): 'sinkhorn', 'softmax', 'none'
 
         Returns:
             torch.Tensor: (1, ), point matching loss
         """
-
         gt_corr_map = torch.logical_and(coords_dist < self.pos_radius, active_mask) # (B, N+M, N+M)
 
-        
-        if self.no_slack_variable:
-            # Select row/col which has at least one positive pair
-            row_pos_sel = (gt_corr_map.sum(-1, keepdim=True) > 0).detach() # (B, N+M, 1)
-            col_pos_sel = (gt_corr_map.sum(-2, keepdim=True) > 0).detach() # (B, 1, N+M)
-
-            loc_at_least_one_pos = torch.logical_or(row_pos_sel, col_pos_sel) # (B, N+M, N+M)
-
+        if matching_norm_mode == 'none': # log-likelihood loss
+            # To prevent INF value, use minimum value 1e-8
+            matching_loss_scores = torch.log(matching_scores + 1e-8)
             neg_mask = torch.logical_and(coords_dist > self.safe_radius, active_mask) # (B, N+M, N+M)
-            loc_only_negs = torch.logical_and(~loc_at_least_one_pos, neg_mask) # (B, N+M, N+M)
-
-            pos_part_loss = - matching_scores[gt_corr_map].mean()
-            neg_part_loss = matching_scores[loc_only_negs].mean() if loc_only_negs.sum() > 0 else torch.tensor(0.).to(matching_scores.device)
+            pos_part_loss = - matching_loss_scores[gt_corr_map].mean()
+            neg_part_loss = matching_loss_scores[neg_mask].mean()
 
             # Make positive samples' score to be larger, also make negative samples' score to be smaller
             loss = pos_part_loss + neg_part_loss
         
+        else: # Use slack variables, ['sinkhorn', 'softmax'], negative log-likelihood loss
+            # To prevent INF value, use minimum value 1e-8
+            matching_loss_scores = matching_scores if matching_norm_mode == 'sinkhorn' else torch.log(matching_scores + 1e-8)
 
-        else: # Use slack variables
             # Initialize labels for the loss calculation
             labels = torch.zeros_like(matching_scores, dtype=torch.bool) # (B, N+M+1, N+M+1)
 
@@ -350,7 +343,7 @@ class PointMatchingLoss(nn.Module):
             labels[:, -1, :-1] = slack_col_labels
 
             # Calculate the loss
-            loss = - matching_scores[labels].mean()
+            loss = - matching_loss_scores[labels].mean()
 
         return loss
 

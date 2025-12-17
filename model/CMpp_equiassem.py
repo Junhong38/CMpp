@@ -71,8 +71,6 @@ class EquiAssem(pl.LightningModule):
             move_smaller=False,
 
             matching_norm_mode='sinkhorn',
-            no_slack_variable=False,
-
             matching_score_mode='CM',
             
             # RANSAC arguments
@@ -127,9 +125,7 @@ class EquiAssem(pl.LightningModule):
             mlp_mode (str, optional): 'CMpp' or 'half' or 'deep'. Defaults to 'CMpp'.
             move_smaller (bool, optional): Whether to always move the smaller point cloud to the origin. Defaults to False.
 
-            matching_norm_mode (str, optional): ['sinkhorn', 'sigmoid', 'softmax', 'none']. Defaults to 'sinkhorn'.
-            no_slack_variable (bool, optional): Whether to not use slack variable for Sinkhorn algorithm. Defaults to False.
-
+            matching_norm_mode (str, optional): ['sinkhorn', 'softmax', 'none']. Defaults to 'sinkhorn'.
             matching_score_mode (str, optional): 'CM' or 'cossim'. Defaults to 'CM'.
 
             # RANSAC arguments
@@ -174,8 +170,6 @@ class EquiAssem(pl.LightningModule):
         print(f"move_smaller: {move_smaller}")
 
         print(f"matching_norm_mode: {matching_norm_mode}")
-        print(f"no_slack_variable: {no_slack_variable}")
-
         print(f"matching_score_mode: {matching_score_mode}")
 
         # RANSAC arguments
@@ -201,8 +195,6 @@ class EquiAssem(pl.LightningModule):
         self.move_smaller = move_smaller
 
         self.matching_norm_mode = matching_norm_mode
-        self.no_slack_variable = no_slack_variable
-
         self.matching_score_mode = matching_score_mode
 
         # Inference arguments
@@ -224,7 +216,7 @@ class EquiAssem(pl.LightningModule):
                                       balance_mode=balance_mode, hard_negative=hard_negative,
                                       neg_topk=neg_topk, distance_type=distance_type, anchor_mode=anchor_mode)
         self.orientation_loss = OrientationLoss(consistency_loss=consistency_loss)
-        self.matching_loss = PointMatchingLoss(pos_radius=pos_radius, safe_radius=safe_radius, no_slack_variable=no_slack_variable)
+        self.matching_loss = PointMatchingLoss(pos_radius=pos_radius, safe_radius=safe_radius)
         
 
         # Weights for losses
@@ -329,6 +321,9 @@ class EquiAssem(pl.LightningModule):
         # Optimal Transport
         if self.matching_norm_mode == 'sinkhorn':
             self.optimal_transport = LearnableLogOptimalTransport(num_iterations=100)
+        elif self.matching_norm_mode == 'softmax':
+            self.register_parameter('slack_variable', torch.nn.Parameter(torch.tensor(1.0)))
+
 
         if not self.use_RANSAC: # If not using RANSAC, use LGR for fine matching
             # LGR
@@ -568,10 +563,10 @@ class EquiAssem(pl.LightningModule):
 
         # 8. Optimal Transport
         # Optimal Transport is in log space, so inside registration, there is exp operation
-        matching_scores = self.multibatch_optimal_transport(shape_matching_scores, pcd_batch_info, active_mask, mode=self.matching_norm_mode) # (B, N+M+1, N+M+1) if self.no_slack_variable is False, otherwise (B, N+M, N+M)
-        matching_scores_drop = matching_scores[:,:-1,:-1] if not self.no_slack_variable else matching_scores # (B, N+M, N+M)
+        matching_scores = self.multibatch_optimal_transport(shape_matching_scores, pcd_batch_info, active_mask, mode=self.matching_norm_mode) # (B, N+M+1, N+M+1) if mode is ['sinkhorn', 'softmax'], otherwise (B, N+M, N+M)
+        matching_scores_drop = matching_scores[:,:-1,:-1] if self.matching_norm_mode in ['sinkhorn', 'softmax'] else matching_scores # (B, N+M, N+M)
         if self.flip_normal and mode in ['train', 'val']:
-            symmetric_matching_scores = self.multibatch_optimal_transport(symmetric_shape_matching_scores, pcd_batch_info, active_mask, mode=self.matching_norm_mode) # (B, N+M+1, N+M+1) if self.no_slack_variable is False, otherwise (B, N+M, N+M)
+            symmetric_matching_scores = self.multibatch_optimal_transport(symmetric_shape_matching_scores, pcd_batch_info, active_mask, mode=self.matching_norm_mode) # (B, N+M+1, N+M+1) if mode is ['sinkhorn', 'softmax'], otherwise (B, N+M, N+M)
         
 
         if mode in ['train', 'val']: # Do not calculate for test
@@ -580,15 +575,15 @@ class EquiAssem(pl.LightningModule):
                 src_move_circle_loss, src_coords_dist, pos_neg_distribution = self.circle_loss(pcd_raw, shape_feats, shape_matching_scores, active_mask)
                 trg_move_circle_loss, _, _ = self.circle_loss(pcd_raw, symmetric_shape_feats, symmetric_shape_matching_scores, active_mask)
 
-                src_move_matching_scores = self.matching_loss(matching_scores, src_coords_dist, active_mask).float() if self.p_loss_weight != 0 else torch.tensor(0.).to(matching_scores.device)
-                trg_move_matching_scores = self.matching_loss(symmetric_matching_scores, src_coords_dist, active_mask).float() if self.p_loss_weight != 0 else torch.tensor(0.).to(symmetric_matching_scores.device)
+                src_move_matching_scores = self.matching_loss(matching_scores, src_coords_dist, active_mask, matching_norm_mode=self.matching_norm_mode).float() if self.p_loss_weight != 0 else torch.tensor(0.).to(matching_scores.device)
+                trg_move_matching_scores = self.matching_loss(symmetric_matching_scores, src_coords_dist, active_mask, matching_norm_mode=self.matching_norm_mode).float() if self.p_loss_weight != 0 else torch.tensor(0.).to(symmetric_matching_scores.device)
 
                 loss['s_loss'] = (src_move_circle_loss + trg_move_circle_loss) / 2
                 loss['p_loss'] = (src_move_matching_scores + trg_move_matching_scores) / 2
             
             else:
                 loss['s_loss'], coords_dist, pos_neg_distribution = self.circle_loss(pcd_raw, shape_feats, shape_matching_scores, active_mask)
-                loss['p_loss'] = self.matching_loss(matching_scores, coords_dist, active_mask).float() if self.p_loss_weight != 0 else torch.tensor(0.).to(matching_scores.device)
+                loss['p_loss'] = self.matching_loss(matching_scores, coords_dist, active_mask, matching_norm_mode=self.matching_norm_mode).float() if self.p_loss_weight != 0 else torch.tensor(0.).to(matching_scores.device)
             
             loss['o_loss'] = self.orientation_loss(oris, gt_normals, batch_scaled_pcd_batch_info, gt_corr, gt_corr_bincount_info)
             loss['loss'] = self.o_loss_weight * loss['o_loss'] + self.s_loss_weight * loss['s_loss'] + self.p_loss_weight * loss['p_loss']
@@ -725,12 +720,14 @@ class EquiAssem(pl.LightningModule):
             matching_scores (torch.Tensor): (B, N+M, N+M), inactive parts are already removed
             batch_info (torch.Tensor): (B, N+M, ), batch index of the point cloud
             active_mask (torch.Tensor): (B, N+M, N+M), True if the point is active
-            mode (str, optional): 'sinkhorn', 'sigmoid', 'softmax', 'none'. Defaults to 'sinkhorn'.
+            mode (str, optional): 'sinkhorn', 'softmax', 'none'. Defaults to 'sinkhorn'.
         
         Returns:
-            result (torch.Tensor): (B, N+M+1, N+M+1) if self.no_slack_variable is False, otherwise (B, N+M, N+M)
-                                   Also, we need to remove inactive parts from the result
+            result (torch.Tensor): 
+            - (B, N+M+1, N+M+1) if mode is ['sinkhorn', 'softmax']
+            - (B, N+M, N+M) if mode is 'none'
         """
+
         batch_size, row_size, col_size = matching_scores.shape
 
         if mode == 'sinkhorn':
@@ -758,61 +755,37 @@ class EquiAssem(pl.LightningModule):
             
             result = torch.stack(result_list, dim=0) # (B, N+M+1, N+M+1)
         
-        elif mode in ['sigmoid', 'softmax'] and not self.no_slack_variable:
-            # Calculate slack variables for rows and columns
-            matching_scores_row_sum = torch.sum(matching_scores, dim=-1) # (B, N+M)
-            matching_scores_col_sum = torch.sum(matching_scores, dim=-2) # (B, N+M)
-
-            matching_scores_row_num = torch.sum(active_mask, dim=-1) # (B, N+M)
-            matching_scores_col_num = torch.sum(active_mask, dim=-2) # (B, N+M)
-            matching_scores_row_num = torch.where(matching_scores_row_num == 0.0, 1.0, matching_scores_row_num)
-            matching_scores_col_num = torch.where(matching_scores_col_num == 0.0, 1.0, matching_scores_col_num)
-            
-            matching_scores_mean_for_slack_row = - matching_scores_row_sum / matching_scores_row_num # (B, N+M)
-            matching_scores_mean_for_slack_col = - matching_scores_col_sum / matching_scores_col_num # (B, N+M)
-
-            corner_slack = (matching_scores_mean_for_slack_row.mean(dim=1) + matching_scores_mean_for_slack_col.mean(dim=1)) / 2 # (B, )
-
-            # Recover shape
-            place_holder = torch.zeros(batch_size, row_size+1, col_size+1, device=matching_scores.device) # (B, N+M+1, N+M+1)
-            place_holder[:, :-1, :-1] = matching_scores
-            place_holder[:, :-1, -1] = matching_scores_mean_for_slack_row
-            place_holder[:, -1, :-1] = matching_scores_mean_for_slack_col
-            place_holder[:, -1, -1] = corner_slack
-
-            # Remove inactive parts
-            padded_active_mask = torch.zeros(batch_size, row_size+1, col_size+1, device=matching_scores.device, dtype=torch.bool)
-            padded_active_mask[:,:-1,:-1] = active_mask
-            padded_active_mask[:, :-1, -1] = torch.logical_and(~ padded_active_mask[:, :-1, -1], active_mask.any(dim=-1))
-            padded_active_mask[:, -1, :-1] = torch.logical_and(~ padded_active_mask[:, -1, :-1], active_mask.any(dim=-2))
-            padded_active_mask[:, -1, -1] = ~ padded_active_mask[:, -1, -1]
-
-            if mode == 'sigmoid':
-                result = torch.sigmoid(place_holder)
-            
-            else: # 'softmax'
-                place_holder = place_holder * padded_active_mask + -1e12 * (~ padded_active_mask)
-                result = nn.functional.softmax(place_holder.reshape(batch_size, -1), dim=-1).reshape(batch_size, row_size+1, col_size+1)
-            
-            # Remove inactive parts
-            result = result * padded_active_mask
         
-        elif mode in ['sigmoid', 'softmax'] and self.no_slack_variable:
-            if mode == 'sigmoid':
-                result = torch.sigmoid(matching_scores) # (B, N+M, N+M)
-            
-            else: # 'softmax'
-                result = matching_scores * active_mask + -1e12 * (~ active_mask)
-                result = nn.functional.softmax(result.reshape(batch_size, -1), dim=-1).reshape(batch_size, row_size, col_size) # (B, N+M, N+M)
-            
-            # Remove inactive parts
-            result = result * active_mask
+        elif mode == 'softmax':
+            # Calculate active mask
+            place_holder_active_mask = torch.zeros(batch_size, row_size+1, col_size+1, device=matching_scores.device, dtype=torch.bool) # (B, N+M+1, N+M+1)
+            place_holder_active_mask[:, :-1, :-1] = active_mask # (B, N+M, N+M)
+            place_holder_active_mask[:, :-1, -1] = active_mask.any(dim=-1) # (B, N+M)
+            place_holder_active_mask[:, -1, :-1] = active_mask.any(dim=-2) # (B, N+M)
+            place_holder_active_mask[:, -1, -1] = True
+
+            # Calculate padded matching scores
+            place_holder = torch.zeros(batch_size, row_size+1, col_size+1, device=matching_scores.device) # (B, N+M+1, N+M+1)
+            place_holder[:, :-1, :-1] = matching_scores # (B, N+M, N+M)
+            place_holder[:, :-1, -1] = self.slack_variable.expand(batch_size, row_size)
+            place_holder[:, -1, :] = self.slack_variable.expand(batch_size, col_size+1)
+            place_holder = place_holder * place_holder_active_mask + -1e12 * (~place_holder_active_mask)
+
+            row_softmax_matching_scores = nn.functional.softmax(place_holder, dim=-1)
+            col_softmax_matching_scores = nn.functional.softmax(place_holder, dim=-2)
+            softmax_matching_scores = (row_softmax_matching_scores + col_softmax_matching_scores) / 2
+            softmax_matching_scores[:, :-1, -1] = row_softmax_matching_scores[:, :-1, -1] # Fill the last column with the row softmax matching scores
+            softmax_matching_scores[:, -1, :-1] = col_softmax_matching_scores[:, -1, :-1] # Fill the last row with the col softmax matching scores
+            softmax_matching_scores = softmax_matching_scores * place_holder_active_mask
+
+            result = softmax_matching_scores
+
         
         elif mode == 'none':
-            assert self.no_slack_variable is True, "no_slack_variable must be True when matching_norm_mode is none"
             result = matching_scores
         
         return result
+    
     
     @torch.no_grad()
     def progress_evaluation(self, in_dict, out_dict, mode):
@@ -875,7 +848,7 @@ class EquiAssem(pl.LightningModule):
                                           topk=self.infer_topk)
         else:
             # fine_matching predict Rt to move points from src_points to ref_points
-            estimated_transform = self.fine_matching(src_pcd.unsqueeze(0), trg_pcd.unsqueeze(0), postprocessed_matching_scores_drop.unsqueeze(0), no_exp=(self.matching_norm_mode in ['sigmoid', 'softmax']))
+            estimated_transform = self.fine_matching(src_pcd.unsqueeze(0), trg_pcd.unsqueeze(0), postprocessed_matching_scores_drop.unsqueeze(0), no_exp=(self.matching_norm_mode != 'sinkhorn'))
 
         # estimated_transform: target_point = R * source_point + t
         out_dict['estimated_rotat'] = estimated_transform[:3, :3] # R, (3,3)
