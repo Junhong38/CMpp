@@ -156,8 +156,8 @@ class CircleLoss(nn.Module):
         """
 
         # Masking the inactive points
-        pos_mask = (coords_dist < self.pos_radius) * active_mask
-        neg_mask = (coords_dist > self.safe_radius) * active_mask
+        pos_mask = torch.logical_and(coords_dist < self.pos_radius, active_mask)
+        neg_mask = torch.logical_and(coords_dist > self.safe_radius, active_mask)
 
         # Calculate Positive/Negative feats_dist distribution
         with torch.no_grad():
