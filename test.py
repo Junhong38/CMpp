@@ -73,8 +73,9 @@ def test(args):
                       mlp_mode=args.mlp_mode,
                       move_smaller=args.move_smaller,
 
-                      matching_norm_mode=args.matching_norm_mode,
                       matching_score_mode=args.matching_score_mode,
+                      matching_norm_mode=args.matching_norm_mode,
+                      learnable_softmax_temperature=args.learnable_softmax_temperature,
                         
                       infer_match_option=args.infer_match_option,
                       infer_topk=args.infer_topk,
@@ -175,8 +176,9 @@ if __name__ == '__main__':
 
 
     # Sinkhorn/Matching experments
-    parser.add_argument('--matching_norm_mode', type=str, default='sinkhorn', choices=['sinkhorn', 'softmax', 'none'])
     parser.add_argument('--matching_score_mode', type=str, default='CM', choices=['CM', 'cossim'])
+    parser.add_argument('--matching_norm_mode', type=str, default='sinkhorn', choices=['sinkhorn', 'softmax', 'none'])
+    parser.add_argument('--learnable_softmax_temperature', action='store_true', help='If True, use learnable temperature for softmax')
 
     
     # Inference arguments
@@ -223,6 +225,9 @@ if __name__ == '__main__':
     print("================================================")
     print(f"args: {args}")
     print("================================================")
+
+    if args.learnable_softmax_temperature:
+        assert args.matching_norm_mode == 'softmax', f"learnable_softmax_temperature is only allowed when matching_norm_mode is softmax, but got {args.matching_norm_mode}"
 
 
     test(args)

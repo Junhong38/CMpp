@@ -76,8 +76,9 @@ def main(args):
                       mlp_mode=args.mlp_mode,
                       move_smaller=args.move_smaller,
 
-                      matching_norm_mode=args.matching_norm_mode,
                       matching_score_mode=args.matching_score_mode,
+                      matching_norm_mode=args.matching_norm_mode,
+                      learnable_softmax_temperature=args.learnable_softmax_temperature,
                         
                       infer_match_option='topk', # Fix match option value during training
                       infer_topk=128, # Fix topk value during training
@@ -298,8 +299,9 @@ if __name__ == '__main__':
 
 
     # Sinkhorn/Matching experments
-    parser.add_argument('--matching_norm_mode', type=str, default='sinkhorn', choices=['sinkhorn', 'softmax', 'none'])
     parser.add_argument('--matching_score_mode', type=str, default='CM', choices=['CM', 'cossim'])
+    parser.add_argument('--matching_norm_mode', type=str, default='sinkhorn', choices=['sinkhorn', 'softmax', 'none'])
+    parser.add_argument('--learnable_softmax_temperature', action='store_true', help='If True, use learnable temperature for softmax')
 
 
     # Visualization arguments
@@ -357,6 +359,9 @@ if __name__ == '__main__':
     
     if args.load_ori != '':
         assert args.double_bacbone != 'none', "load_ori is only allowed when double_bacbone is not none"
+    
+    if args.learnable_softmax_temperature:
+        assert args.matching_norm_mode == 'softmax', f"learnable_softmax_temperature is only allowed when matching_norm_mode is softmax, but got {args.matching_norm_mode}"
     
     
     main(args)

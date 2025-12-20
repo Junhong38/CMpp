@@ -70,8 +70,9 @@ class EquiAssem(pl.LightningModule):
             mlp_mode='CMpp',
             move_smaller=False,
 
-            matching_norm_mode='sinkhorn',
             matching_score_mode='CM',
+            matching_norm_mode='sinkhorn',
+            learnable_softmax_temperature=False,
             
             # RANSAC arguments
             infer_match_option='topk',
@@ -125,8 +126,9 @@ class EquiAssem(pl.LightningModule):
             mlp_mode (str, optional): 'CMpp' or 'half' or 'deep'. Defaults to 'CMpp'.
             move_smaller (bool, optional): Whether to always move the smaller point cloud to the origin. Defaults to False.
 
-            matching_norm_mode (str, optional): ['sinkhorn', 'softmax', 'none']. Defaults to 'sinkhorn'.
             matching_score_mode (str, optional): 'CM' or 'cossim'. Defaults to 'CM'.
+            matching_norm_mode (str, optional): ['sinkhorn', 'softmax', 'none']. Defaults to 'sinkhorn'.
+            learnable_softmax_temperature (bool, optional): Whether to use learnable temperature for softmax. Defaults to False.
 
             # RANSAC arguments
             infer_match_option (str, optional): 'topk' or 'mutual_topk' or 'soft_topk' or 'unidirectional_topk' or 'injective' or 'bijective'. Defaults to 'topk'.
@@ -169,8 +171,9 @@ class EquiAssem(pl.LightningModule):
         print(f"mlp_mode: {mlp_mode}")
         print(f"move_smaller: {move_smaller}")
 
-        print(f"matching_norm_mode: {matching_norm_mode}")
         print(f"matching_score_mode: {matching_score_mode}")
+        print(f"matching_norm_mode: {matching_norm_mode}")
+        print(f"learnable_softmax_temperature: {learnable_softmax_temperature}")
 
         # RANSAC arguments
         print(f"infer_match_option: {infer_match_option}")
@@ -194,8 +197,9 @@ class EquiAssem(pl.LightningModule):
 
         self.move_smaller = move_smaller
 
-        self.matching_norm_mode = matching_norm_mode
         self.matching_score_mode = matching_score_mode
+        self.matching_norm_mode = matching_norm_mode
+        self.learnable_softmax_temperature = learnable_softmax_temperature
 
         # Inference arguments
         self.infer_match_option = infer_match_option
@@ -324,6 +328,11 @@ class EquiAssem(pl.LightningModule):
         elif self.matching_norm_mode == 'softmax':
             self.register_parameter('slack_variable', torch.nn.Parameter(torch.tensor(1.0)))
 
+            if self.learnable_softmax_temperature:
+                self.register_parameter('softmax_temperature', torch.nn.Parameter(torch.tensor(1.5)))
+            else:
+                self.softmax_temperature = 1.0 # We do not use temperature for softmax
+
 
         if not self.use_RANSAC: # If not using RANSAC, use LGR for fine matching
             # LGR
@@ -345,7 +354,13 @@ class EquiAssem(pl.LightningModule):
 
         assert total_steps > 0, "Total steps must be greater than 0"
 
-        optimizer = optim.AdamW(self.parameters(), lr=self.lr, weight_decay=0.)
+        if self.learnable_softmax_temperature:
+            optimizer = torch.optim.AdamW([
+                {'params': [p for n, p in self.named_parameters() if 'softmax_temperature' not in n]},
+                {'params': self.softmax_temperature, 'lr': self.lr * 0.1} 
+                ],  lr=self.lr, weight_decay=0.) # We use 10% of the learning rate for softmax temperature
+        else:
+            optimizer = optim.AdamW(self.parameters(), lr=self.lr, weight_decay=0.)
         
         if self.scheduler_mode == 'cos':
             scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=total_steps, eta_min=1e-3)
@@ -628,7 +643,6 @@ class EquiAssem(pl.LightningModule):
         self.log(f'{mode}/loss', training_loss, prog_bar=True, logger=True, sync_dist=True, rank_zero_only=True, on_step=True, on_epoch=True)
         self.log('current_lr', current_lr, prog_bar=True, logger=True, sync_dist=True, rank_zero_only=True, on_step=True, on_epoch=False)
     
-    
 
     def make_inv_feats(self, oris, oris_batch_info, equi_feats, src_flip=True):
         """Make invariant features
@@ -771,8 +785,8 @@ class EquiAssem(pl.LightningModule):
             place_holder[:, -1, :] = self.slack_variable.expand(batch_size, col_size+1)
             place_holder = place_holder * place_holder_active_mask + -1e12 * (~place_holder_active_mask)
 
-            row_softmax_matching_scores = nn.functional.softmax(place_holder, dim=-1)
-            col_softmax_matching_scores = nn.functional.softmax(place_holder, dim=-2)
+            row_softmax_matching_scores = nn.functional.softmax(place_holder / self.softmax_temperature, dim=-1)
+            col_softmax_matching_scores = nn.functional.softmax(place_holder / self.softmax_temperature, dim=-2)
             softmax_matching_scores = (row_softmax_matching_scores + col_softmax_matching_scores) / 2
             softmax_matching_scores[:, :-1, -1] = row_softmax_matching_scores[:, :-1, -1] # Fill the last column with the row softmax matching scores
             softmax_matching_scores[:, -1, :-1] = col_softmax_matching_scores[:, -1, :-1] # Fill the last row with the col softmax matching scores
