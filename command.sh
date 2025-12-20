@@ -124,6 +124,14 @@ end
 # rm -rf checkpoint/G8NDB3_F_BV0V0_MH_P010M005+N140M145+BH+HNN+NK0+DCOS+AD_MCM+MNSoft_S1P1_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --logpath G8NDB3_F_BV0V0_MH_P010M005+N140M145+BH+HNN+NK0+DCOS+AD_MCM+MNSoft_S1P1_6 --backbone vn_unet --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale full --epochs 0 --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --batch_size 3 --pos_margin 0.05 --neg_margin 1.45 --pos_offset -0.05 --neg_offset -0.05 --balance_mode half --hard_negative none --neg_topk 0 --distance_type cossim --anchor_mode default --matching_score_mode CM --matching_norm_mode softmax --p_loss_weight 1.0 --wandb --wandb_entity CMppProject --wandb_project CMpp
 
 
+# Origin + Softmax (learnable temperature)
+rm -rf checkpoint/G8NDB3_F_BV0V0_MH_P010M005+N140M145+BH+HNN+NK0+DL2+AD_MCM+MNSoftLT_S1P1_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --logpath G8NDB3_F_BV0V0_MH_P010M005+N140M145+BH+HNN+NK0+DL2+AD_MCM+MNSoftLT_S1P1_6 --backbone vn_unet --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale full --epochs 0 --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --batch_size 3 --pos_margin 0.05 --neg_margin 1.45 --pos_offset -0.05 --neg_offset -0.05 --balance_mode half --hard_negative none --neg_topk 0 --distance_type l2 --anchor_mode default --matching_score_mode CM --matching_norm_mode softmax --learnable_softmax_temperature --p_loss_weight 1.0 --wandb --wandb_entity CMppProject --wandb_project CMpp
+
+
+# Origin + Softmax (learnable temperature) + Distance: cossim
+rm -rf checkpoint/G8NDB3_F_BV0V0_MH_P010M005+N140M145+BH+HNN+NK0+DCOS+AD_MCM+MNSoftLT_S1P1_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --logpath G8NDB3_F_BV0V0_MH_P010M005+N140M145+BH+HNN+NK0+DCOS+AD_MCM+MNSoftLT_S1P1_6 --backbone vn_unet --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale full --epochs 0 --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --batch_size 3 --pos_margin 0.05 --neg_margin 1.45 --pos_offset -0.05 --neg_offset -0.05 --balance_mode half --hard_negative none --neg_topk 0 --distance_type cossim --anchor_mode default --matching_score_mode CM --matching_norm_mode softmax --learnable_softmax_temperature --p_loss_weight 1.0 --wandb --wandb_entity CMppProject --wandb_project CMpp
+
+
 # Origin + Softmax + Distance: cossim + P0.005/N1.45 no offset
 # rm -rf checkpoint/G8NDB3_F_BV0V0_MH_P0005M0005+N145M145+BH+HNN+NK0+DCOS+AD_MCM+MNSoft_S1P1_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --logpath G8NDB3_F_BV0V0_MH_P0005M0005+N145M145+BH+HNN+NK0+DCOS+AD_MCM+MNSoft_S1P1_6 --backbone vn_unet --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale full --epochs 0 --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --batch_size 3 --pos_margin 0.005 --neg_margin 1.45 --pos_offset 0.0 --neg_offset 0.0 --balance_mode half --hard_negative none --neg_topk 0 --distance_type cossim --anchor_mode default --matching_score_mode CM --matching_norm_mode softmax --p_loss_weight 1.0 --wandb --wandb_entity CMppProject --wandb_project CMpp
 
