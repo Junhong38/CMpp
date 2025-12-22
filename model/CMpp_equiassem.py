@@ -329,7 +329,7 @@ class EquiAssem(pl.LightningModule):
             self.register_parameter('slack_variable', torch.nn.Parameter(torch.tensor(1.0)))
 
             if self.learnable_softmax_temperature:
-                self.register_parameter('softmax_temperature', torch.nn.Parameter(torch.tensor(1.5)))
+                self.register_parameter('softmax_temperature', torch.nn.Parameter(torch.tensor(1.0)))
             else:
                 self.softmax_temperature = 1.0 # We do not use temperature for softmax
 
@@ -635,6 +635,9 @@ class EquiAssem(pl.LightningModule):
         if pos_neg_distribution is not None:
             log_pos_neg_distribution = {f'{mode}-dist/{k}': v for k, v in pos_neg_distribution.items()}
             log_dict.update(log_pos_neg_distribution)
+        
+        if self.matching_norm_mode == 'softmax':
+            log_dict[f'{mode}/softmax_temperature'] = self.softmax_temperature.item()
 
         training_loss = log_dict.pop(f'{mode}/loss')
         current_lr = self.trainer.optimizers[0].param_groups[0]['lr']
