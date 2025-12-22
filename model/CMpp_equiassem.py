@@ -329,7 +329,7 @@ class EquiAssem(pl.LightningModule):
             self.register_parameter('slack_variable', torch.nn.Parameter(torch.tensor(1.0)))
 
             if self.learnable_softmax_temperature:
-                self.register_parameter('softmax_temperature', torch.nn.Parameter(torch.tensor(1.0)))
+                self.register_parameter('softmax_temperature', torch.nn.Parameter(torch.tensor(2.0)))
             else:
                 self.softmax_temperature = 1.0 # We do not use temperature for softmax
 
