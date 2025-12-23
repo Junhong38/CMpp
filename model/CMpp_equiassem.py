@@ -637,7 +637,7 @@ class EquiAssem(pl.LightningModule):
             log_dict.update(log_pos_neg_distribution)
         
         if self.matching_norm_mode == 'softmax':
-            log_dict[f'{mode}/softmax_temperature'] = self.softmax_temperature.item()
+            log_dict[f'{mode}/softmax_temperature'] = self.softmax_temperature.item() if self.learnable_softmax_temperature else self.softmax_temperature
 
         training_loss = log_dict.pop(f'{mode}/loss')
         current_lr = self.trainer.optimizers[0].param_groups[0]['lr']
