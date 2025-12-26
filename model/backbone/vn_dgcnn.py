@@ -221,3 +221,156 @@ class EQCNN_equi_unet(nn.Module):
         return equi_feat
 
 
+class EQCNN_equi_unet_v2(nn.Module): 
+
+    def __init__(self, feat_dim, pooling='mean', k=20):
+        super(EQCNN_equi_unet_v2, self).__init__()
+        self.k = k
+
+        if pooling == 'max':
+            raise NotImplementedError("Max pooling not implemented")
+        elif pooling == 'mean':
+            self.pool1_1 = mean_pool
+            self.pool1_2 = mean_pool
+            self.pool2_1 = mean_pool
+            self.pool2_2 = mean_pool
+            self.pool3_1 = mean_pool
+            self.pool3_2 = mean_pool
+            self.pool4_1 = mean_pool
+            self.pool4_2 = mean_pool
+            self.pool5_1 = mean_pool
+            self.pool5_2 = mean_pool
+            self.pool6_1 = mean_pool
+            self.pool6_2 = mean_pool
+            self.pool7_1 = mean_pool
+            self.pool7_2 = mean_pool
+            self.pool8_1 = mean_pool
+            self.pool8_2 = mean_pool
+        
+        # Encoder
+        self.conv1_1 = VNLinearLeakyReLU(2, 64//3)
+        self.conv1_2 = VNLinearLeakyReLU(64//3*2, 64//3)
+
+        self.downsample1 = TransitionDown(64//3, 64//3, stride=2, nsample=16)
+        self.conv2_1 = VNLinearLeakyReLU(64//3*2, 128//3)
+        self.conv2_2 = VNLinearLeakyReLU(128//3*2, 128//3)
+
+        self.downsample2 = TransitionDown(128//3, 128//3, stride=2, nsample=16)
+        self.conv3_1 = VNLinearLeakyReLU(128//3*2, 256//3)
+        self.conv3_2 = VNLinearLeakyReLU(256//3*2, 256//3)
+
+        self.downsample3 = TransitionDown(256//3, 256//3, stride=2, nsample=16)
+        self.conv4_1 = VNLinearLeakyReLU(256//3*2, 512//3)
+        self.conv4_2 = VNLinearLeakyReLU(512//3*2, 512//3)
+
+        # Mid
+        self.conv5_1 = VNLinearLeakyReLU(512//3*2, 512//3)
+        self.conv5_2 = VNLinearLeakyReLU(512//3*2, 512//3)
+    
+        # Decoder
+        self.upsample1 = TransitionUp(512//3, 256//3)
+        self.conv6_1 = VNLinearLeakyReLU(256//3*2, 256//3)
+        self.conv6_2 = VNLinearLeakyReLU(256//3*2, 256//3)
+
+        self.upsample2 = TransitionUp(256//3, 128//3)
+        self.conv7_1 = VNLinearLeakyReLU(128//3*2, 128//3)
+        self.conv7_2 = VNLinearLeakyReLU(128//3*2, 128//3)
+
+        self.upsample3 = TransitionUp(128//3, 64//3)
+        self.conv8_1 = VNLinearLeakyReLU(64//3*2, 64//3)
+        self.conv8_2 = VNLinearLeakyReLU(64//3*2, 64//3)
+
+        # Proj
+        self.conv9 = VNLinearLeakyReLU(64//3, feat_dim//3, dim=4, share_nonlinearity=True)
+    
+    def forward(self, x, batch_scaled_batch_info):
+        """EQCNN_equi_unet
+
+        Args:
+            x (torch.Tensor): (B, N+M, 3)
+            batch_info (torch.Tensor): (B, N+M)
+
+        Returns:
+            equi_feat (torch.Tensor): (B, feat_dim//3, 3, N+M)
+        """
+
+        p1 = x.reshape(-1, 3) # (B*(N+M), 3)
+        x1 = x.transpose(2, 1).unsqueeze(1) # (B, 1, 3, N+M)
+        b1 = batch_scaled_batch_info # (B, N+M)
+        o1 = batch2offset(batch_scaled_batch_info.reshape(-1)).int() # (B*num_of_objs, ) 
+        
+        ### ENCODER 1
+        x1 = get_graph_feature(x1, batch_info=b1, k=self.k) # (B, 2, 3, N+M, k) 
+        x1 = self.conv1_1(x1) # (B, 2, 3, N+M, k)  -> (B, C', 3, N+M, k)
+        x1 = self.pool1_1(x1) # (B, C', 3, N+M, k) -> (B, C', 3, N+M)
+        x1 = get_graph_feature(x1, batch_info=b1, k=self.k)
+        x1 = self.conv1_2(x1)
+        x1 = self.pool1_2(x1)
+
+        ### ENCODER 2
+        p2, x2, b2, o2 = self.downsample1(p1, x1, b1, o1) # (B*sampled_points, 3), (B, C', 3, sampled_points), (B*num_parts, )
+        x2 = get_graph_feature(x2, batch_info=b2, k=self.k)
+        x2 = self.conv2_1(x2)
+        x2 = self.pool2_1(x2)
+        x2 = get_graph_feature(x2, batch_info=b2, k=self.k)
+        x2 = self.conv2_2(x2)
+        x2 = self.pool2_2(x2)
+
+        ### ENCODER 3
+        p3, x3, b3, o3 = self.downsample2(p2, x2, b2, o2)
+        x3 = get_graph_feature(x3, batch_info=b3, k=self.k)
+        x3 = self.conv3_1(x3)
+        x3 = self.pool3_1(x3)
+        x3 = get_graph_feature(x3, batch_info=b3, k=self.k)
+        x3 = self.conv3_2(x3)
+        x3 = self.pool3_2(x3)
+
+        ### ENCODER 4
+        p4, x4, b4, o4 = self.downsample3(p3, x3, b3, o3)
+        x4 = get_graph_feature(x4, batch_info=b4, k=self.k)
+        x4 = self.conv4_1(x4)
+        x4 = self.pool4_1(x4)
+        x4 = get_graph_feature(x4, batch_info=b4, k=self.k)
+        x4 = self.conv4_2(x4)
+        x4 = self.pool4_2(x4)
+
+        ### MID
+        x4 = get_graph_feature(x4, batch_info=b4, k=self.k)
+        x4 = self.conv5_1(x4)
+        x4 = self.pool5_1(x4)
+        x4 = get_graph_feature(x4, batch_info=b4, k=self.k)
+        x4 = self.conv5_2(x4)
+        x4 = self.pool5_2(x4)
+
+        ### DECODER 1
+        x5 = self.upsample1((p3, x3, o3), (p4, x4, o4)) 
+        x5 = get_graph_feature(x5.contiguous(), batch_info=b3, k=self.k)
+        x5 = self.conv6_1(x5)
+        x5 = self.pool6_1(x5)
+        x5 = get_graph_feature(x5, batch_info=b3, k=self.k)
+        x5 = self.conv6_2(x5)
+        x5 = self.pool6_2(x5)
+
+        ### DECODER 2
+        x6 = self.upsample2((p2, x2, o2), (p3, x5, o3))
+        x6 = get_graph_feature(x6.contiguous(), batch_info=b2, k=self.k)
+        x6 = self.conv7_1(x6)
+        x6 = self.pool7_1(x6)
+        x6 = get_graph_feature(x6, batch_info=b2, k=self.k)
+        x6 = self.conv7_2(x6)
+        x6 = self.pool7_2(x6)
+
+        ### DECODER 3
+        x7 = self.upsample3((p1, x1, o1), (p2, x6, o2))
+        x7 = get_graph_feature(x7.contiguous(), batch_info=b1, k=self.k)
+        x7 = self.conv8_1(x7)
+        x7 = self.pool8_1(x7)
+        x7 = get_graph_feature(x7, batch_info=b1, k=self.k)
+        x7 = self.conv8_2(x7)
+        x7 = self.pool8_2(x7)
+
+        equi_feat = self.conv9(x7)
+
+        return equi_feat
+
+

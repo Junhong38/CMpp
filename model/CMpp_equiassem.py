@@ -10,7 +10,7 @@ import torch.nn as nn
 import torch.optim as optim
 from einops import rearrange
 
-from model.backbone.vn_dgcnn import EQCNN_equi_unet
+from model.backbone.vn_dgcnn import EQCNN_equi_unet, EQCNN_equi_unet_v2
 from model.backbone.vn_layers import VNLinear, VNLinearLeakyReLU
 from model.loss import CircleLoss, PointMatchingLoss, OrientationLoss
 from model.learnable_sinkhorn import LearnableLogOptimalTransport
@@ -245,11 +245,15 @@ class EquiAssem(pl.LightningModule):
         # VN BACKBONE
         if backbone == 'vn_unet':
             self.backbone = EQCNN_equi_unet(feat_dim=self.feat_dim, pooling="mean", k=n_knn)
+        elif backbone == 'vn_unet_v2':
+            self.backbone = EQCNN_equi_unet_v2(feat_dim=self.feat_dim, pooling="mean", k=n_knn)
         else:
             raise NotImplementedError("DGCNN backbone not implemented")
         
         if double_bacbone == 'vn_unet':
             self.ori_backbone = EQCNN_equi_unet(feat_dim=self.feat_dim, pooling="mean", k=n_knn)
+        elif double_bacbone == 'vn_unet_v2':
+            self.ori_backbone = EQCNN_equi_unet_v2(feat_dim=self.feat_dim, pooling="mean", k=n_knn)
         elif double_bacbone == 'none':
             self.ori_backbone = None
         else:
