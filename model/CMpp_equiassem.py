@@ -19,8 +19,8 @@ from model.local_global_registration import LocalGlobalRegistration
 from RANSAC.ransac import _RANSAC
 
 from common.rotation import ortho2rotation
-from common.utils import save_pc, instance_wise_results_to_json
-from common.viz import draw_frames, draw_normal_error_histogram, draw_test_results_histogram
+from common.utils import instance_wise_results_to_json
+from common.viz import save_pcd_for_light_visualization, draw_frames, draw_normal_error_histogram, draw_test_results_histogram
 from common.misc import extract_all_objects, batch_scaling
 
 from pytorch3d.ops import iterative_closest_point
@@ -100,7 +100,7 @@ class EquiAssem(pl.LightningModule):
             pos_offset (float, optional): Offset for positive samples in loss computation. Defaults to 0.0.
             neg_offset (float, optional): Offset for negative samples in loss computation. Defaults to 0.0.
             log_scale (int, optional): Log scaling factor for loss computation. Defaults to 24.
-            balance_mode (str, optional): 'none' or 'half' or 'only_hard'. Defaults to 'none'.
+            balance_mode (str, optional): 'none' or 'half' or 'all_hard'. Defaults to 'none'.
             hard_negative (str, optional): 'none' or 'mix' or 'topk'. Defaults to 'none'.
             negative (str, optional): 'none' or 'topk'. Defaults to 'none'.
             distance_type (str, optional): 'l2' or 'cossim'. Defaults to 'l2'.
@@ -424,10 +424,10 @@ class EquiAssem(pl.LightningModule):
 
     def on_test_epoch_end(self):
         instance_score_dict = dict()
-
+        
         for output in self.test_step_outputs:
-            
             metric_dict = dict()
+            
             for k, v in output.items():
                 if k == 'filepath':
                     continue
@@ -435,7 +435,6 @@ class EquiAssem(pl.LightningModule):
                     metric_dict[k] = v
             
             instance_score_dict[output['filepath']] = metric_dict
-
         
         # Multi-GPU support
         if self.trainer.world_size > 1:
@@ -448,11 +447,11 @@ class EquiAssem(pl.LightningModule):
         else:
             total_instance_score_dict = instance_score_dict
             
-
         if self.trainer.global_rank == 0:
             result_avg_dict = dict()
             for metric_name in total_instance_score_dict[list(total_instance_score_dict.keys())[0]].keys():
                 result_avg_dict[f'val/{metric_name}'] = torch.stack([output[metric_name].cpu() for output in total_instance_score_dict.values()])
+            
             avg_result = {k: v.sum() / v.size(0) for k, v in result_avg_dict.items()}
             self.test_results = avg_result
             self.log_dict(avg_result, logger=True, sync_dist=False, batch_size=1,)
@@ -464,14 +463,9 @@ class EquiAssem(pl.LightningModule):
             # Make histogram for each metric
             draw_test_results_histogram(total_instance_score_dict, self.ckp_dir, 'test_metrics_histogram')
 
-            
         # Wait for all processes to reach this point
         if self.trainer.world_size > 1:
             torch.distributed.barrier()
-        
-        
-
-
     
     
     # @torch.no_grad()
@@ -906,13 +900,16 @@ class EquiAssem(pl.LightningModule):
                                           match_option=self.infer_match_option, 
                                           RANSAC_type=self.RANSAC_type, 
                                           topk=self.infer_topk)
+            used_corr = None
+
         else:
             # fine_matching predict Rt to move points from src_points to ref_points
-            estimated_transform = self.fine_matching(src_pcd.unsqueeze(0), trg_pcd.unsqueeze(0), postprocessed_matching_scores_drop.unsqueeze(0), no_exp=(self.matching_norm_mode != 'sinkhorn'))
+            estimated_transform, used_corr = self.fine_matching(src_pcd.unsqueeze(0), trg_pcd.unsqueeze(0), postprocessed_matching_scores_drop.unsqueeze(0), no_exp=(self.matching_norm_mode != 'sinkhorn'))
 
         # estimated_transform: target_point = R * source_point + t
         out_dict['estimated_rotat'] = estimated_transform[:3, :3] # R, (3,3)
         out_dict['estimated_trans'] = estimated_transform[:3, 3] # t, (3)
+        out_dict['used_corr'] = used_corr # (K, 2)
 
         # Evaluation
         eval_dict = self.evaluate_prediction(in_dict, split_input_dict, out_dict, mode)
@@ -951,6 +948,7 @@ class EquiAssem(pl.LightningModule):
         grtr_relative_trsfm = [x for x in in_dict['relative_trsfm']['0-1']] # (3, 3), (3)
         src_pcd, trg_pcd = split_input_dict['src_pcd'], split_input_dict['trg_pcd'] # (N, 3), (M, 3)
         gt_corr = split_input_dict['gt_corr'] # (corr, 2)
+        used_corr = out_dict['used_corr'] # (K, 2)
 
 
         # Move larger point cloud
@@ -963,6 +961,7 @@ class EquiAssem(pl.LightningModule):
             pred_relative_trsfm = pred_relative_trsfm[0].T, -  pred_relative_trsfm[0].T @ pred_relative_trsfm[1]
             grtr_relative_trsfm = grtr_relative_trsfm[0].T, -  grtr_relative_trsfm[0].T @ grtr_relative_trsfm[1]
             gt_corr = torch.stack([gt_corr[:,1], gt_corr[:,0]], dim=1) # (P,) stack (P,) -> (P,2)
+            used_corr = torch.stack([used_corr[:,1], used_corr[:,0]], dim=1) # (K, 2)
             is_swap_triggered = True
        
         else:
@@ -1010,14 +1009,12 @@ class EquiAssem(pl.LightningModule):
             os.makedirs(vis_hist_folder, exist_ok=True)
 
             # PCD light visualization
-            pcds_pred_for_viz = [] + pcds_pred
-            pcds_grtr_for_viz = [] + pcds_grtr
-            pcds_pred_for_viz.append(pcds_pred[0][gt_corr[:,0]])
-            pcds_pred_for_viz.append(pcds_pred[1][gt_corr[:,1]])
-            pcds_grtr_for_viz.append(pcds_grtr[0][gt_corr[:,0]])
-            pcds_grtr_for_viz.append(pcds_grtr[1][gt_corr[:,1]])
-            save_pc(f'{vis_folder}/E{self.current_epoch}_{in_dict["eval_idx"][0].item()}_{in_dict["obj_class"][0]}_{round(eval_result["crd"].item(),3)}_pred.ply', pcds_pred_for_viz)
-            save_pc(f"{vis_folder}/E{self.current_epoch}_{in_dict['eval_idx'][0].item()}_{in_dict['obj_class'][0]}_{round(eval_result['crd'].item(),3)}_grtr.ply", pcds_grtr_for_viz)
+            save_pcd_for_light_visualization(pcds_pred, gt_corr,f'{vis_folder}/E{self.current_epoch}_{in_dict["eval_idx"][0].item()}_{in_dict["obj_class"][0]}_{round(eval_result["crd"].item(),3)}_pred.ply')
+            save_pcd_for_light_visualization(pcds_grtr, gt_corr, f'{vis_folder}/E{self.current_epoch}_{in_dict['eval_idx'][0].item()}_{in_dict['obj_class'][0]}_{round(eval_result['crd'].item(),3)}_grtr.ply')
+
+            # PCD light visualization for used correspondences
+            save_pcd_for_light_visualization(pcds_pred, used_corr, f'{vis_folder}/E{self.current_epoch}_{in_dict['eval_idx'][0].item()}_{in_dict['obj_class'][0]}_{round(eval_result['crd'].item(),3)}_pred_top{self.infer_topk}.ply')
+            save_pcd_for_light_visualization(pcds_grtr, used_corr, f'{vis_folder}/E{self.current_epoch}_{in_dict['eval_idx'][0].item()}_{in_dict['obj_class'][0]}_{round(eval_result['crd'].item(),3)}_grtr_top{self.infer_topk}.ply')
 
             # MESH AND FRAME VISUALIZATION
             output_src_ori, output_trg_ori = split_input_dict['src_ori'], split_input_dict['trg_ori'] # (N, 3, 3), (M, 3, 3)

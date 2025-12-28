@@ -329,4 +329,4 @@ class LocalGlobalRegistration(nn.Module):
         """
 
         estimated_transform = self.local_to_global_registration(src_points, ref_points, pred_corr, score_mat)
-        return estimated_transform
+        return estimated_transform, pred_corr

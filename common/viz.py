@@ -2,6 +2,7 @@ import os
 import numpy as np
 import open3d as o3d
 from scipy.spatial.transform import Rotation as R
+import torch
 
 # Set matplotlib backend before any other matplotlib imports
 # This must be done in every process (including worker processes)
@@ -329,3 +330,39 @@ def draw_test_results_histogram(test_results, dir_path, filename):
         plt.title(f'{metric_name} Histogram')
         plt.savefig(os.path.join(dir_path, f"{filename}_{metric_name}.png"))
         plt.close()
+
+
+def save_pcd_for_light_visualization(pcd_tensors: list, gt_corr: torch.Tensor, filename: str):
+    """
+    Args:
+        pcd_tensors (list of torch.Tensor): each element is (N, 3)
+        gt_corr (torch.Tensor): (K, 2)
+    
+    Returns:
+        list of torch.Tensor: each element is (N, 3)
+    """
+    pcds_for_viz = [] + pcd_tensors
+    pcds_for_viz.append(pcd_tensors[0][gt_corr[:,0]])
+    pcds_for_viz.append(pcd_tensors[1][gt_corr[:,1]])
+    save_pc(filename, pcds_for_viz)
+
+
+def save_pc(filename: str, pcd_tensors: list):
+    colors = list(global_colors_for_objs.values())
+
+    pcds = []
+    for i, tensor_ in enumerate(pcd_tensors):
+        if tensor_.size()[0] == 1:
+            tensor_ = tensor_.squeeze(0)
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = o3d.utility.Vector3dVector(tensor_.cpu().numpy())
+        pcd.paint_uniform_color(colors[i % len(colors)])  # Assign color based on index
+        pcds.append(pcd)
+    
+    combined_cloud = o3d.geometry.PointCloud()
+    for pcd in pcds:
+        combined_cloud += pcd
+    
+    o3d.io.write_point_cloud(filename, combined_cloud)
+
+

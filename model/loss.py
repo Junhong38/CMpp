@@ -88,7 +88,7 @@ class CircleLoss(nn.Module):
             neg_mask = torch.logical_and(pure_neg_mask, bigger_than_kth_neg_score)
         
 
-        if (self.balance_mode in ['half', 'only_hard']):
+        if (self.balance_mode in ['half', 'all_hard']):
             # Do not overlap with hard negatives
             neg_mask = torch.logical_and(neg_mask, ~hard_neg_mask)
 
@@ -108,7 +108,7 @@ class CircleLoss(nn.Module):
                 num_of_sampled_negs = num_of_sampled_negs * (~zero_num_of_pos) + 0 * zero_num_of_pos
                 num_of_sampled_hards = num_of_sampled_hards * (~zero_num_of_pos) + 0 * zero_num_of_pos
 
-            elif self.balance_mode == 'only_hard':
+            elif self.balance_mode == 'all_hard':
                 # Use all hard negatives, but make balance between negative and positive samples.
                 num_of_sampled_negs = num_of_pos # (B, )
                 num_of_sampled_hards = num_of_hard_negs # (B, )

@@ -22,23 +22,6 @@ def check_inf_or_nan(tensor, message: str, log=None):
 
 
 
-def save_pc(filename: str, pcd_tensors: list):
-    colors = list(global_colors_for_objs.values())
-
-    pcds = []
-    for i, tensor_ in enumerate(pcd_tensors):
-        if tensor_.size()[0] == 1:
-            tensor_ = tensor_.squeeze(0)
-        pcd = o3d.geometry.PointCloud()
-        pcd.points = o3d.utility.Vector3dVector(tensor_.cpu().numpy())
-        pcd.paint_uniform_color(colors[i % len(colors)])  # Assign color based on index
-        pcds.append(pcd)
-    
-    combined_cloud = o3d.geometry.PointCloud()
-    for pcd in pcds:
-        combined_cloud += pcd
-    
-    o3d.io.write_point_cloud(filename, combined_cloud)
 
 
 def fix_randseed(seed):
