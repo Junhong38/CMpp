@@ -307,3 +307,25 @@ def draw_normal_error_histogram(normal_error_hist, dir_path, filename):
     plt.savefig(os.path.join(dir_path, f"{filename}.png"))
     plt.close()
 
+
+
+def draw_test_results_histogram(test_results, dir_path, filename):
+    """
+    Draw test results histogram.
+
+    Args:
+        test_results (dict): test results
+            - key: case_name / val: dict of (metric_name: metric_value)
+        dir_path (str): directory path to save
+        filename (str): filename to save
+    """
+    metric_names = list(test_results[list(test_results.keys())[0]].keys())
+
+    for metric_name in metric_names:
+        metric_values = [metric_dict[metric_name].detach().cpu().item() for metric_dict in test_results.values()]
+        plt.hist(metric_values, bins=100)
+        plt.xlabel(metric_name)
+        plt.ylabel('Count')
+        plt.title(f'{metric_name} Histogram')
+        plt.savefig(os.path.join(dir_path, f"{filename}_{metric_name}.png"))
+        plt.close()

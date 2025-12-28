@@ -19,8 +19,8 @@ from model.local_global_registration import LocalGlobalRegistration
 from RANSAC.ransac import _RANSAC
 
 from common.rotation import ortho2rotation
-from common.utils import save_pc
-from common.viz import draw_frames, draw_normal_error_histogram
+from common.utils import save_pc, instance_wise_results_to_json
+from common.viz import draw_frames, draw_normal_error_histogram, draw_test_results_histogram
 from common.misc import extract_all_objects, batch_scaling
 
 from pytorch3d.ops import iterative_closest_point
@@ -422,20 +422,56 @@ class EquiAssem(pl.LightningModule):
         return loss_dict
 
 
-    def on_test_epoch_end(self):    
-        # avg_loss among all data
-        losses = {
-            f'val/{k}': torch.stack([output[k] for output in self.test_step_outputs])
-            for k in self.test_step_outputs[0].keys()
-        }
-        avg_loss = {k: (v).sum() / v.size(0) for k, v in losses.items()}
-        print('; '.join([f'{k}: {v.item():.6f}' for k, v in avg_loss.items()]))
+    def on_test_epoch_end(self):
+        instance_score_dict = dict()
+
+        for output in self.test_step_outputs:
+            
+            metric_dict = dict()
+            for k, v in output.items():
+                if k == 'filepath':
+                    continue
+                else:
+                    metric_dict[k] = v
+            
+            instance_score_dict[output['filepath']] = metric_dict
+
+        
+        # Multi-GPU support
+        if self.trainer.world_size > 1:
+            place_holder_list = [None for _ in range(self.trainer.world_size)]
+            torch.distributed.all_gather_object(place_holder_list, instance_score_dict)
+
+            total_instance_score_dict = dict()
+            for gpu_i_result in place_holder_list:
+                total_instance_score_dict.update(gpu_i_result)
+        else:
+            total_instance_score_dict = instance_score_dict
+            
+
+        if self.trainer.global_rank == 0:
+            result_avg_dict = dict()
+            for metric_name in total_instance_score_dict[list(total_instance_score_dict.keys())[0]].keys():
+                result_avg_dict[f'val/{metric_name}'] = torch.stack([output[metric_name].cpu() for output in total_instance_score_dict.values()])
+            avg_result = {k: v.sum() / v.size(0) for k, v in result_avg_dict.items()}
+            self.test_results = avg_result
+            self.log_dict(avg_result, logger=True, sync_dist=False, batch_size=1,)
+            self.test_step_outputs.clear()
+
+            # Json dump for instance-wise results
+            instance_wise_results_to_json(total_instance_score_dict, self.ckp_dir, 'test_results')
+
+            # Make histogram for each metric
+            draw_test_results_histogram(total_instance_score_dict, self.ckp_dir, 'test_metrics_histogram')
+
+            
+        # Wait for all processes to reach this point
+        if self.trainer.world_size > 1:
+            torch.distributed.barrier()
+        
+        
 
 
-        # this is a hack to get results outside `Trainer.test()` function
-        self.test_results = avg_loss
-        self.log_dict(avg_loss, logger=True, sync_dist=True, batch_size=1,)
-        self.test_step_outputs.clear()
     
     
     # @torch.no_grad()
@@ -623,6 +659,9 @@ class EquiAssem(pl.LightningModule):
             out_dict['active_mask'] = active_mask
             out_dict, eval_dict = self.progress_evaluation(in_dict, out_dict, mode)
             loss.update(eval_dict)
+
+            if mode == 'test':
+                loss['filepath'] = in_dict['filepath'][0]
 
         # in training we log for every step
         if mode == 'train':
@@ -955,15 +994,18 @@ class EquiAssem(pl.LightningModule):
             self.visualize and \
             (self.current_epoch % self.viz_epoch == 0 or self.current_epoch == self.trainer.max_epochs-1) and \
             in_dict['eval_idx'][0].item() == 0) or \
-            (mode =='test' and self.visualize and in_dict['eval_idx'][0].item() == 0):
+            (mode =='test' and self.visualize):
             # Do not visualize in sanity checking
             # Only rank 0 should do visualization to avoid file I/O conflicts in DDP
             # Visualize for every self.viz_epoch
             # However, if it is the last epoch, then visualize
             # Also, only visualize first batch
 
-            vis_folder = os.path.join(self.ckp_dir, 'vis', mode) # For mesh visualization
-            vis_hist_folder = os.path.join(self.ckp_dir, 'vis_hist', mode) # For normal error histogram visualization
+            # Name of case
+            case_name = in_dict["filepath"][0].replace('/', '_')
+
+            vis_folder = os.path.join(self.ckp_dir, 'vis', f'GPU_{self.trainer.global_rank}', mode, case_name) # For mesh visualization
+            vis_hist_folder = os.path.join(self.ckp_dir, 'vis_hist', f'GPU_{self.trainer.global_rank}', mode, case_name) # For normal error histogram visualization
             os.makedirs(vis_folder, exist_ok=True)
             os.makedirs(vis_hist_folder, exist_ok=True)
 

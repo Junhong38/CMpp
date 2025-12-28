@@ -3,6 +3,8 @@ import random
 import numpy as np
 import open3d as o3d
 import torch
+import json
+import os
 
 from common.viz import global_colors_for_objs
 
@@ -79,3 +81,25 @@ def to_cuda(batch):
 def to_cpu(tensor):
     return tensor.detach().clone().cpu()
 
+
+
+def instance_wise_results_to_json(instance_wise_results, dir_path, filename):
+    """
+    Save instance-wise results to json file.
+
+    Args:
+        instance_wise_results (dict): instance-wise results
+        dir_path (str): directory path to save
+        filename (str): filename to save
+    """
+    json_results = dict()
+
+    for k, dict_v in instance_wise_results.items():
+        placeholder_dict = dict()
+        for k_, v_ in dict_v.items():
+            placeholder_dict[k_] = v_.detach().cpu().item()
+        json_results[k] = placeholder_dict
+
+
+    with open(os.path.join(dir_path, f"{filename}.json"), 'w') as f:
+        json.dump(json_results, f, indent=4)
