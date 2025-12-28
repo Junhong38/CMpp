@@ -74,7 +74,7 @@ def instance_wise_results_to_json(instance_wise_results, dir_path, filename):
     for k, dict_v in instance_wise_results.items():
         placeholder_dict = dict()
         for k_, v_ in dict_v.items():
-            placeholder_dict[k_] = v_.detach().cpu().item()
+            placeholder_dict[k_] = v_.cpu().item()
         json_results[k] = placeholder_dict
 
 

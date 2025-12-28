@@ -323,7 +323,7 @@ def draw_test_results_histogram(test_results, dir_path, filename):
     metric_names = list(test_results[list(test_results.keys())[0]].keys())
 
     for metric_name in metric_names:
-        metric_values = [metric_dict[metric_name].detach().cpu().item() for metric_dict in test_results.values()]
+        metric_values = [metric_dict[metric_name].cpu().item() for metric_dict in test_results.values()]
         plt.hist(metric_values, bins=100)
         plt.xlabel(metric_name)
         plt.ylabel('Count')

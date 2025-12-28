@@ -455,14 +455,16 @@ class EquiAssem(pl.LightningModule):
             avg_result = {k: v.sum() / v.size(0) for k, v in result_avg_dict.items()}
             self.test_results = avg_result
             self.log_dict(avg_result, logger=True, sync_dist=False, batch_size=1,)
-            self.test_step_outputs.clear()
-
+            
             # Json dump for instance-wise results
             instance_wise_results_to_json(total_instance_score_dict, self.ckp_dir, 'test_results')
 
             # Make histogram for each metric
             draw_test_results_histogram(total_instance_score_dict, self.ckp_dir, 'test_metrics_histogram')
 
+        
+        self.test_step_outputs.clear()
+        
         # Wait for all processes to reach this point
         if self.trainer.world_size > 1:
             torch.distributed.barrier()
