@@ -1,12 +1,9 @@
 r""" Helper functions """
 import random
 import numpy as np
-import open3d as o3d
 import torch
 import json
 import os
-
-from common.viz import global_colors_for_objs
 
 
 def check_inf_or_nan(tensor, message: str, log=None):
@@ -19,9 +16,6 @@ def check_inf_or_nan(tensor, message: str, log=None):
         log(f'DEBUG/{str(message)}-mean', tensor.mean().item(), prog_bar=False, logger=True, sync_dist=True, rank_zero_only=True, on_step=True, on_epoch=False, batch_size=1)
         log(f'DEBUG/{str(message)}-max', tensor.max().item(), prog_bar=False, logger=True, sync_dist=True, rank_zero_only=True, on_step=True, on_epoch=False, batch_size=1)
         log(f'DEBUG/{str(message)}-min', tensor.min().item(), prog_bar=False, logger=True, sync_dist=True, rank_zero_only=True, on_step=True, on_epoch=False, batch_size=1)
-
-
-
 
 
 def fix_randseed(seed):
