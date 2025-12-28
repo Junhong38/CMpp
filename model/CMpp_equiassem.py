@@ -100,7 +100,7 @@ class EquiAssem(pl.LightningModule):
             pos_offset (float, optional): Offset for positive samples in loss computation. Defaults to 0.0.
             neg_offset (float, optional): Offset for negative samples in loss computation. Defaults to 0.0.
             log_scale (int, optional): Log scaling factor for loss computation. Defaults to 24.
-            balance_mode (str, optional): 'none' or 'half' or 'all_hard'. Defaults to 'none'.
+            balance_mode (str, optional): 'none' or 'half' or 'all_hard' or 'double'. Defaults to 'none'.
             hard_negative (str, optional): 'none' or 'mix' or 'topk'. Defaults to 'none'.
             negative (str, optional): 'none' or 'topk'. Defaults to 'none'.
             distance_type (str, optional): 'l2' or 'cossim'. Defaults to 'l2'.

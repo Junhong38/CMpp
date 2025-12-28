@@ -283,7 +283,7 @@ if __name__ == '__main__':
     parser.add_argument('--pos_offset', type=float, default=0.0, help='Offset for positive samples in Circle loss computation')
     parser.add_argument('--neg_offset', type=float, default=0.0, help='Offset for negative samples in Circle loss computation')
     parser.add_argument('--log_scale', type=float, default=24, help='Log scale for Circle loss computation')
-    parser.add_argument('--balance_mode', type=str, default='none', choices=['none', 'half', 'all_hard'])
+    parser.add_argument('--balance_mode', type=str, default='none', choices=['none', 'half', 'all_hard', 'double'])
     parser.add_argument('--hard_negative', type=str, default='none', choices=['none', 'mix'])
     parser.add_argument('--neg_topk', type=int, default=0, help='')
     parser.add_argument('--distance_type', type=str, default='l2', choices=['l2', 'cossim'])

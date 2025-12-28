@@ -113,6 +113,13 @@ class CircleLoss(nn.Module):
                 num_of_sampled_negs = num_of_pos # (B, )
                 num_of_sampled_hards = num_of_hard_negs # (B, )
             
+
+            elif self.balance_mode == 'double':
+                print("------------------------------------------------------")
+                # Use all hard negatives, but make balance between negative and positive samples.
+                num_of_sampled_negs = num_of_pos # (B, )
+                num_of_sampled_hards = num_of_pos # (B, )
+            
             else:
                 raise NotImplementedError(f"Balance mode {self.balance_mode} not implemented")
 
