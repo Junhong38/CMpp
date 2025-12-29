@@ -73,16 +73,10 @@ class CircleLoss(nn.Module):
         if self.neg_topk > 0:
             # Do not overlap with hard negatives
             pure_neg_mask = torch.logical_and(neg_mask, ~ hard_neg_mask)
-            
-            # Only sample topk neg samples. Value K will be same as the number of positive samples.
-            # If default topk value is bigger than, choose default value.
-            num_of_pos = pos_mask.reshape(batch_size, -1).sum(dim=-1) # (B, N+M, N+M) -> (B, (N+M)*(N+M)) -> (B, )
-            topk = num_of_pos.max()
-            topk = max(topk, self.neg_topk)
 
             # To find topk neg score from each batch, we need to fill redundant scores with minimum score.
             postprocessed_for_neg = matching_scores * pure_neg_mask + matching_scores.min() * (~pure_neg_mask)
-            topk_neg_score = postprocessed_for_neg.reshape(batch_size, -1).topk(k=topk, dim=-1)[0] # (B, N+M, N+M) -> (B, (N+M)*(N+M)) -> (B, topk)
+            topk_neg_score = postprocessed_for_neg.reshape(batch_size, -1).topk(k=self.neg_topk, dim=-1)[0] # (B, N+M, N+M) -> (B, (N+M)*(N+M)) -> (B, topk)
             kth_biggest_neg_score = topk_neg_score[:, -1] # (B, topk) -> (B, )
             bigger_than_kth_neg_score = matching_scores >= kth_biggest_neg_score[:, None, None]
 

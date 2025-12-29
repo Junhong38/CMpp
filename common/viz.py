@@ -348,10 +348,10 @@ def save_pcd_for_light_visualization(pcd_tensors: list, gt_corr: torch.Tensor, u
     num_src_pcd, num_trg_pcd = src_pcd.shape[0], trg_pcd.shape[0]
 
     placeholder_gt_corr = torch.zeros(num_src_pcd, num_trg_pcd, dtype=torch.bool)
-    placeholder_gt_corr[gt_corr[:,0], gt_corr[:,1]] = 1
+    placeholder_gt_corr[gt_corr[:,0], gt_corr[:,1]] = True
 
     placeholder_used_corr = torch.zeros(num_src_pcd, num_trg_pcd, dtype=torch.bool)
-    placeholder_used_corr[used_corr[:,0], used_corr[:,1]] = 1
+    placeholder_used_corr[used_corr[:,0], used_corr[:,1]] = True
 
     intersection_mask = torch.logical_and(placeholder_gt_corr, placeholder_used_corr)
 
@@ -366,7 +366,9 @@ def save_pcd_for_light_visualization(pcd_tensors: list, gt_corr: torch.Tensor, u
     pcds_for_viz.append(trg_pcd[used_corr_for_viz[:,1]]) # Green
     pcds_for_viz.append(src_pcd[intersection_mask_for_viz[:,0]]) # Purple
     pcds_for_viz.append(trg_pcd[intersection_mask_for_viz[:,1]]) # Yellow
-    save_pc(filename, pcds_for_viz)
+
+    len_of_gt = len(gt_corr_for_viz)
+    save_pc(f"{filename}_GTCorrlen{len_of_gt}.ply", pcds_for_viz)
 
 
 
@@ -375,8 +377,9 @@ def save_pc(filename: str, pcd_tensors: list):
 
     pcds = []
     for i, tensor_ in enumerate(pcd_tensors):
-        if tensor_.size()[0] == 1:
-            tensor_ = tensor_.squeeze(0)
+        if len(tensor_.shape) == 0:
+            continue
+
         pcd = o3d.geometry.PointCloud()
         pcd.points = o3d.utility.Vector3dVector(tensor_.cpu().numpy())
         pcd.paint_uniform_color(colors[i % len(colors)])  # Assign color based on index

@@ -61,6 +61,8 @@ def main(args):
                       o_loss_weight=args.o_loss_weight,
 
                       visualize=args.visualize,
+                      viz_metric_name='none', # This is not used for training
+                      viz_metric_threshold=0.0, # This is not used for training
                       viz_train_epoch=args.viz_train_epoch,
                       viz_epoch=args.viz_epoch,
                       viz_max_arrow_num=args.viz_max_arrow_num,

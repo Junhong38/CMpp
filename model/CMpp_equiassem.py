@@ -55,6 +55,8 @@ class EquiAssem(pl.LightningModule):
             o_loss_weight=1.0,
 
             visualize=False, 
+            viz_metric_name='none',
+            viz_metric_threshold=0.0,
             viz_train_epoch=0,
             viz_epoch=30, 
             viz_max_arrow_num=0, 
@@ -112,6 +114,8 @@ class EquiAssem(pl.LightningModule):
             o_loss_weight (float, optional): Weight for orientation loss. Defaults to 1.0.
             
             visualize (bool, optional): Whether to save visualization results. Defaults to False.
+            viz_metric_name (str, optional): 'none' or 'crd' or 'cd' or 'rrmse_geo' or 'trmse_geo'. Defaults to 'none'.
+            viz_metric_threshold (float, optional): Threshold for visualization. Defaults to 0.0.
             viz_train_epoch (int, optional): Epoch for visualizing the negative hard mask during training. Defaults to 0.
             viz_epoch (int, optional): Epoch for mesh visualization. Defaults to 30.
             viz_max_arrow_num (int, optional): Maximum number of arrows for visualization. Defaults to 0.
@@ -158,6 +162,8 @@ class EquiAssem(pl.LightningModule):
         print(f"o_loss_weight: {o_loss_weight}")
         
         print(f"visualize: {visualize}")
+        print(f"viz_metric_name: {viz_metric_name}")
+        print(f"viz_metric_threshold: {viz_metric_threshold}")
         print(f"viz_train_epoch: {viz_train_epoch}")
         print(f"viz_epoch: {viz_epoch}")
         print(f"viz_max_arrow_num: {viz_max_arrow_num}")
@@ -190,6 +196,8 @@ class EquiAssem(pl.LightningModule):
         self.lr = lr
         self.scheduler_mode = scheduler_mode
         self.visualize = visualize
+        self.viz_metric_name = viz_metric_name
+        self.viz_metric_threshold = viz_metric_threshold
         self.viz_train_epoch = viz_train_epoch
         self.viz_epoch = viz_epoch
         self.viz_max_arrow_num = viz_max_arrow_num
@@ -395,7 +403,7 @@ class EquiAssem(pl.LightningModule):
 
 
     def training_step(self, in_dict, batch_idx):
-        _, loss_dict = self.forward_pass(in_dict, mode='train')
+        _, loss_dict = self.forward_pass(in_dict, mode='train', batch_idx=batch_idx)
         if torch.isnan(loss_dict['loss']):
             assert False, "Loss is NaN, Stop training"
         return loss_dict['loss']
@@ -475,7 +483,7 @@ class EquiAssem(pl.LightningModule):
     
     
     # @torch.no_grad()
-    def forward_pass(self, in_dict, mode):
+    def forward_pass(self, in_dict, mode, batch_idx=0):
         """
         Args:
             Assumption: Batch size is 1
@@ -650,8 +658,8 @@ class EquiAssem(pl.LightningModule):
                     # This is for checking the normal error
                     loss['n_error'], _, loss['n_suc_rate'] = self._normal_error(in_dict, out_dict, success_criterion_in_degree=self.success_criterion_in_degree)
 
-                    if (self.viz_train_epoch > 0 and (self.current_epoch % self.viz_train_epoch == 0 or self.current_epoch == self.trainer.max_epochs-1)):
-                        visualize_negative_hard_mask(in_dict, neg_hard_mask_for_viz['neg_mask'], neg_hard_mask_for_viz['hard_neg_mask'], active_mask, self.ckp_dir, self.trainer.global_rank, self.pos_radius)
+                    if (self.viz_train_epoch > 0 and batch_idx == 0 and (self.current_epoch % self.viz_train_epoch == 0 or self.current_epoch == self.trainer.max_epochs-1)):
+                        visualize_negative_hard_mask(in_dict, neg_hard_mask_for_viz['neg_mask'], neg_hard_mask_for_viz['hard_neg_mask'], active_mask, self.ckp_dir, self.current_epoch, self.trainer.global_rank, self.pos_radius)
                     
         
 
@@ -1002,12 +1010,20 @@ class EquiAssem(pl.LightningModule):
         # (d) Compute Normal Error
         eval_result['n_error'], normal_error_hist, eval_result['n_suc_rate'] = self._normal_error(in_dict, out_dict, success_criterion_in_degree=self.success_criterion_in_degree)
 
+        if mode == 'test':
+            if self.viz_metric_name == 'none':
+                # Visualization is only depend on self.visualize
+                metric_based_visualization = True
+            else:
+                # Only visualize if the metric is greater than the threshold
+                metric_based_visualization = eval_result[self.viz_metric_name] >= self.viz_metric_threshold
+
         if (mode =='val' and (not self.trainer.sanity_checking) and \
             self.trainer.global_rank == 0 and \
             self.visualize and \
             (self.current_epoch % self.viz_epoch == 0 or self.current_epoch == self.trainer.max_epochs-1) and \
             in_dict['eval_idx'][0].item() == 0) or \
-            (mode =='test' and self.visualize):
+            (mode =='test' and self.visualize and metric_based_visualization):
             # Do not visualize in sanity checking
             # Only rank 0 should do visualization to avoid file I/O conflicts in DDP
             # Visualize for every self.viz_epoch
@@ -1023,8 +1039,8 @@ class EquiAssem(pl.LightningModule):
             os.makedirs(vis_hist_folder, exist_ok=True)
 
             # PCD light visualization
-            save_pcd_for_light_visualization(pcds_pred, gt_corr, used_corr, f'{vis_folder}/E{self.current_epoch}_{in_dict['eval_idx'][0].item()}_{in_dict['obj_class'][0]}_{round(eval_result['crd'].item(),3)}_pred_top{self.infer_topk}.ply')
-            save_pcd_for_light_visualization(pcds_grtr, gt_corr, used_corr, f'{vis_folder}/E{self.current_epoch}_{in_dict['eval_idx'][0].item()}_{in_dict['obj_class'][0]}_{round(eval_result['crd'].item(),3)}_grtr_top{self.infer_topk}.ply')
+            save_pcd_for_light_visualization(pcds_pred, gt_corr, used_corr, f'{vis_folder}/E{self.current_epoch}_{in_dict['eval_idx'][0].item()}_{in_dict['obj_class'][0]}_{round(eval_result['crd'].item(),3)}_pred_top{self.infer_topk}')
+            save_pcd_for_light_visualization(pcds_grtr, gt_corr, used_corr, f'{vis_folder}/E{self.current_epoch}_{in_dict['eval_idx'][0].item()}_{in_dict['obj_class'][0]}_{round(eval_result['crd'].item(),3)}_grtr_top{self.infer_topk}')
 
             # MESH AND FRAME VISUALIZATION
             output_src_ori, output_trg_ori = split_input_dict['src_ori'], split_input_dict['trg_ori'] # (N, 3, 3), (M, 3, 3)
