@@ -20,7 +20,7 @@ from RANSAC.ransac import _RANSAC
 
 from common.rotation import ortho2rotation
 from common.utils import instance_wise_results_to_json
-from common.viz import save_pcd_for_light_visualization, draw_frames, draw_normal_error_histogram, draw_test_results_histogram
+from common.viz import visualize_negative_hard_mask, save_pcd_for_light_visualization, draw_frames, draw_normal_error_histogram, draw_test_results_histogram
 from common.misc import extract_all_objects, batch_scaling
 
 from pytorch3d.ops import iterative_closest_point
@@ -55,6 +55,7 @@ class EquiAssem(pl.LightningModule):
             o_loss_weight=1.0,
 
             visualize=False, 
+            viz_train_epoch=0,
             viz_epoch=30, 
             viz_max_arrow_num=0, 
             ckp_dir=None, 
@@ -111,6 +112,7 @@ class EquiAssem(pl.LightningModule):
             o_loss_weight (float, optional): Weight for orientation loss. Defaults to 1.0.
             
             visualize (bool, optional): Whether to save visualization results. Defaults to False.
+            viz_train_epoch (int, optional): Epoch for visualizing the negative hard mask during training. Defaults to 0.
             viz_epoch (int, optional): Epoch for mesh visualization. Defaults to 30.
             viz_max_arrow_num (int, optional): Maximum number of arrows for visualization. Defaults to 0.
             ckp_dir (str, optional): Checkpoint directory. Defaults to None.
@@ -156,6 +158,7 @@ class EquiAssem(pl.LightningModule):
         print(f"o_loss_weight: {o_loss_weight}")
         
         print(f"visualize: {visualize}")
+        print(f"viz_train_epoch: {viz_train_epoch}")
         print(f"viz_epoch: {viz_epoch}")
         print(f"viz_max_arrow_num: {viz_max_arrow_num}")
         print(f"ckp_dir: {ckp_dir}")
@@ -187,6 +190,7 @@ class EquiAssem(pl.LightningModule):
         self.lr = lr
         self.scheduler_mode = scheduler_mode
         self.visualize = visualize
+        self.viz_train_epoch = viz_train_epoch
         self.viz_epoch = viz_epoch
         self.viz_max_arrow_num = viz_max_arrow_num
         self.ckp_dir = ckp_dir
@@ -623,8 +627,8 @@ class EquiAssem(pl.LightningModule):
         if mode in ['train', 'val']: # Do not calculate for test
             # 8. Calculate Loss
             if self.flip_normal:
-                src_move_circle_loss, src_coords_dist, pos_neg_distribution = self.circle_loss(pcd_raw, shape_feats, shape_matching_scores, active_mask)
-                trg_move_circle_loss, _, _ = self.circle_loss(pcd_raw, symmetric_shape_feats, symmetric_shape_matching_scores, active_mask)
+                src_move_circle_loss, src_coords_dist, pos_neg_distribution, neg_hard_mask_for_viz = self.circle_loss(pcd_raw, shape_feats, shape_matching_scores, active_mask)
+                trg_move_circle_loss, _, _, _ = self.circle_loss(pcd_raw, symmetric_shape_feats, symmetric_shape_matching_scores, active_mask)
 
                 src_move_matching_scores = self.matching_loss(matching_scores, src_coords_dist, active_mask, matching_norm_mode=self.matching_norm_mode).float() if self.p_loss_weight != 0 else torch.tensor(0.).to(matching_scores.device)
                 trg_move_matching_scores = self.matching_loss(symmetric_matching_scores, src_coords_dist, active_mask, matching_norm_mode=self.matching_norm_mode).float() if self.p_loss_weight != 0 else torch.tensor(0.).to(symmetric_matching_scores.device)
@@ -633,7 +637,7 @@ class EquiAssem(pl.LightningModule):
                 loss['p_loss'] = (src_move_matching_scores + trg_move_matching_scores) / 2
             
             else:
-                loss['s_loss'], coords_dist, pos_neg_distribution = self.circle_loss(pcd_raw, shape_feats, shape_matching_scores, active_mask)
+                loss['s_loss'], coords_dist, pos_neg_distribution, neg_hard_mask_for_viz = self.circle_loss(pcd_raw, shape_feats, shape_matching_scores, active_mask)
                 loss['p_loss'] = self.matching_loss(matching_scores, coords_dist, active_mask, matching_norm_mode=self.matching_norm_mode).float() if self.p_loss_weight != 0 else torch.tensor(0.).to(matching_scores.device)
             
             loss['o_loss'] = self.orientation_loss(oris, gt_normals, batch_scaled_pcd_batch_info, gt_corr, gt_corr_bincount_info)
@@ -645,6 +649,11 @@ class EquiAssem(pl.LightningModule):
                 with torch.no_grad():
                     # This is for checking the normal error
                     loss['n_error'], _, loss['n_suc_rate'] = self._normal_error(in_dict, out_dict, success_criterion_in_degree=self.success_criterion_in_degree)
+
+                    if (self.viz_train_epoch > 0 and (self.current_epoch % self.viz_train_epoch == 0 or self.current_epoch == self.trainer.max_epochs-1)):
+                        visualize_negative_hard_mask(in_dict, neg_hard_mask_for_viz['neg_mask'], neg_hard_mask_for_viz['hard_neg_mask'], active_mask, self.ckp_dir, self.trainer.global_rank, self.pos_radius)
+                        exit("stop")
+                    
         
 
         # 9. Evaluation

@@ -61,6 +61,7 @@ def main(args):
                       o_loss_weight=args.o_loss_weight,
 
                       visualize=args.visualize,
+                      viz_train_epoch=args.viz_train_epoch,
                       viz_epoch=args.viz_epoch,
                       viz_max_arrow_num=args.viz_max_arrow_num,
                       ckp_dir=ckp_dir,
@@ -306,6 +307,7 @@ if __name__ == '__main__':
 
     # Visualization arguments
     parser.add_argument('--visualize', action='store_true')
+    parser.add_argument('--viz_train_epoch', type=int, default=0, help='This is for visualizing the negative hard mask during training')
     parser.add_argument('--viz_epoch', type=int, default=30, help='Epoch for visualization. This only works when visualize is True')
     parser.add_argument('--viz_max_arrow_num', type=int, default=0, help='Maximum number of arrows for visualization. This only works when visualize is True')
     parser.add_argument('--debug', action='store_true')

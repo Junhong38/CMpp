@@ -85,10 +85,13 @@ class CircleLoss(nn.Module):
             topk_neg_score = postprocessed_for_neg.reshape(batch_size, -1).topk(k=topk, dim=-1)[0] # (B, N+M, N+M) -> (B, (N+M)*(N+M)) -> (B, topk)
             kth_biggest_neg_score = topk_neg_score[:, -1] # (B, topk) -> (B, )
             bigger_than_kth_neg_score = matching_scores >= kth_biggest_neg_score[:, None, None]
-            neg_mask = torch.logical_and(pure_neg_mask, bigger_than_kth_neg_score)
+
+            # Add topk negatives to hard negative mask
+            topk_hard_neg_mask = torch.logical_and(pure_neg_mask, bigger_than_kth_neg_score)
+            hard_neg_mask = torch.logical_or(hard_neg_mask, topk_hard_neg_mask)
         
 
-        if (self.balance_mode in ['half', 'all_hard']):
+        if (self.balance_mode in ['half', 'all_hard', 'double']):
             # Do not overlap with hard negatives
             neg_mask = torch.logical_and(neg_mask, ~hard_neg_mask)
 
@@ -115,7 +118,6 @@ class CircleLoss(nn.Module):
             
 
             elif self.balance_mode == 'double':
-                print("------------------------------------------------------")
                 # Use all hard negatives, but make balance between negative and positive samples.
                 num_of_sampled_negs = num_of_pos # (B, )
                 num_of_sampled_hards = num_of_pos # (B, )
@@ -139,11 +141,12 @@ class CircleLoss(nn.Module):
             neg_nonsampled = neg_indices[non_sampled_part_for_negs] # (num_of_non_sampled_parts, 3)
             neg_mask[neg_nonsampled[:,0], neg_nonsampled[:,1], neg_nonsampled[:,2]] = False
 
+        backup_neg_mask = neg_mask
         neg_mask = torch.logical_or(neg_mask, hard_neg_mask) 
         avg_num_of_hard_negs = hard_neg_mask.reshape(batch_size, -1).sum(dim=-1).float().mean().item()
         avg_num_of_negs = neg_mask.reshape(batch_size, -1).sum(dim=-1).float().mean().item()
-        
-        return neg_mask, avg_num_of_hard_negs, avg_num_of_negs
+
+        return neg_mask, avg_num_of_hard_negs, avg_num_of_negs, backup_neg_mask, hard_neg_mask
     
     
     def get_circle_loss(self, coords_dist, feats_dist, matching_scores, active_mask):
@@ -185,7 +188,8 @@ class CircleLoss(nn.Module):
                 'neg_max': neg_dists.max().item() if does_neg_mask_exist else 0,
             }
         
-        neg_mask, pos_neg_distribution['num_of_hard_neg'], pos_neg_distribution['num_of_neg'] = self.negative_sampling(matching_scores, pos_mask, neg_mask)
+        neg_hard_mask_for_viz = dict()
+        neg_mask, pos_neg_distribution['num_of_hard_neg'], pos_neg_distribution['num_of_neg'], neg_hard_mask_for_viz['neg_mask'], neg_hard_mask_for_viz['hard_neg_mask'] = self.negative_sampling(matching_scores, pos_mask, neg_mask)
 
         if self.anchor_mode == 'default':
             # get anchors that have both positive and negative pairs
@@ -237,7 +241,7 @@ class CircleLoss(nn.Module):
 
         circle_loss = (anchor_loss_row + anchor_loss_col) / 2
         
-        return circle_loss, pos_neg_distribution
+        return circle_loss, pos_neg_distribution, neg_hard_mask_for_viz
 
 
     def forward(self, pcd_raw, feats, matching_scores, active_mask):
@@ -288,12 +292,12 @@ class CircleLoss(nn.Module):
         feats_dist = feats_dist * active_mask # Remove inactive points
 
         # Calculate circle loss and feature matching recall (FMR)
-        circle_loss, pos_neg_distribution = self.get_circle_loss(coords_dist, feats_dist, matching_scores, active_mask)
+        circle_loss, pos_neg_distribution, neg_hard_mask_for_viz = self.get_circle_loss(coords_dist, feats_dist, matching_scores, active_mask)
 
         if torch.isnan(circle_loss):
             assert False, "Circle loss is nan"
         
-        return circle_loss, coords_dist, pos_neg_distribution
+        return circle_loss, coords_dist, pos_neg_distribution, neg_hard_mask_for_viz
 
 
 class PointMatchingLoss(nn.Module):

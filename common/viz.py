@@ -4,6 +4,8 @@ import open3d as o3d
 from scipy.spatial.transform import Rotation as R
 import torch
 
+from common.misc import extract_all_objects
+
 # Set matplotlib backend before any other matplotlib imports
 # This must be done in every process (including worker processes)
 import matplotlib
@@ -19,7 +21,8 @@ global_colors_for_objs = {
     "cyan": [0.0, 1.0, 1.0],
     "orange": [1.0, 0.5, 0.0],
     "green": [0.0, 1.0, 0.0],
-    "purple": [0.5, 0.0, 1.0]
+    "purple": [0.5, 0.0, 1.0],
+    "yellow": [1.0, 1.0, 0.0],
 }
 
 
@@ -359,10 +362,54 @@ def save_pc(filename: str, pcd_tensors: list):
         pcd.paint_uniform_color(colors[i % len(colors)])  # Assign color based on index
         pcds.append(pcd)
     
+    print(f"length of pcds: {len(pcds)}")
+    
     combined_cloud = o3d.geometry.PointCloud()
     for pcd in pcds:
         combined_cloud += pcd
     
     o3d.io.write_point_cloud(filename, combined_cloud)
+
+
+def visualize_negative_hard_mask(in_dict, neg_mask, hard_neg_mask, active_mask, dir_path, current_epoch, global_rank, pos_radius=0.018):
+    """
+    Args:
+        in_dict (dict): input dictionary
+        neg_mask (torch.Tensor): (B, N+M, N+M)
+        hard_neg_mask (torch.Tensor): (B, N+M, N+M)
+        active_mask (torch.Tensor): (B, N+M, N+M)
+        dir_path (str): directory path to save
+        global_rank (int): global rank
+        pos_radius (float): radius for positive samples
+    """
+    # Only take care of the first instance in the batch
+    src_pcd_raw, trg_pcd_raw = extract_all_objects(in_dict['pcd'][0], in_dict['pcd_batch_info'][0]) # (N, 3), (M, 3)
+    num_src_pcd, num_trg_pcd = src_pcd_raw.shape[0], trg_pcd_raw.shape[0]
+
+    corrd_dist = torch.cdist(src_pcd_raw, trg_pcd_raw, p=2) # (N, M)
+
+    pos_mask = corrd_dist < pos_radius
+    processed_neg_mask = neg_mask[0][active_mask[0]] # (N*M)
+    processed_hard_neg_mask = hard_neg_mask[0][active_mask[0]] # (N*M)
+    processed_neg_mask = processed_neg_mask.reshape(num_src_pcd, num_trg_pcd) # (N, M)
+    processed_hard_neg_mask = processed_hard_neg_mask.reshape(num_src_pcd, num_trg_pcd) # (N, M)
+
+    gt_corr = torch.nonzero(pos_mask) # (N*M, 2)
+    hard_neg_corr = torch.nonzero(processed_hard_neg_mask) # (N*M, 2)
+    neg_corr = torch.nonzero(processed_neg_mask) # (N*M, 2)
+
+    pcd_list_for_viz = [src_pcd_raw, trg_pcd_raw] # Red, Blue
+    pcd_list_for_viz.append(src_pcd_raw[gt_corr[:,0]]) # Magenta
+    pcd_list_for_viz.append(trg_pcd_raw[gt_corr[:,1]]) # Cyan
+    pcd_list_for_viz.append(src_pcd_raw[hard_neg_corr[:,0]]) # Orange
+    pcd_list_for_viz.append(trg_pcd_raw[hard_neg_corr[:,1]]) # Green
+    pcd_list_for_viz.append(src_pcd_raw[neg_corr[:,0]]) # Purple
+    pcd_list_for_viz.append(trg_pcd_raw[neg_corr[:,1]]) # Yellow
+
+    # Make folder
+    vis_folder = os.path.join(dir_path, 'vis', f'GPU_{global_rank}', 'train', f'E{current_epoch}')
+    os.makedirs(vis_folder, exist_ok=True)
+    save_pc(os.path.join(vis_folder, f"E{current_epoch}_neg_hard_mask.ply"), pcd_list_for_viz)
+
 
 
