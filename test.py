@@ -58,6 +58,7 @@ def test(args):
                       o_loss_weight=0.0, # We don't need to use this parameter for testing
 
                       visualize=args.visualize,
+                      viz_train_epoch=0, # We don't need to use this parameter for testing
                       viz_epoch=args.viz_epoch,
                       viz_max_arrow_num=args.viz_max_arrow_num,
                       ckp_dir=ckp_dir,

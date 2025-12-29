@@ -652,7 +652,6 @@ class EquiAssem(pl.LightningModule):
 
                     if (self.viz_train_epoch > 0 and (self.current_epoch % self.viz_train_epoch == 0 or self.current_epoch == self.trainer.max_epochs-1)):
                         visualize_negative_hard_mask(in_dict, neg_hard_mask_for_viz['neg_mask'], neg_hard_mask_for_viz['hard_neg_mask'], active_mask, self.ckp_dir, self.trainer.global_rank, self.pos_radius)
-                        exit("stop")
                     
         
 
@@ -875,7 +874,6 @@ class EquiAssem(pl.LightningModule):
         src_ori, trg_ori = extract_all_objects(out_dict['oris'][0], in_dict['pcd_batch_info'][0]) # (N, 3, 3), (M, 3, 3)
         gt_src_normals, gt_trg_normals = extract_all_objects(in_dict['gt_normals'][0].float(), in_dict['pcd_batch_info'][0]) # (N, 3), (M, 3)
         num_src_pcd, num_trg_pcd = src_pcd.shape[0], trg_pcd.shape[0] # (N), (M)
-        gt_corr = in_dict['gt_correspondence'] # (corr, 2)
         out_shape_matching_scores = out_dict['shape_matching_scores'][0] # (N+M, N+M)
         out_matching_scores_drop = out_dict['matching_scores_drop'][0] # (N+M, N+M)
         out_active_mask = out_dict['active_mask'][0] # (N+M, N+M)
@@ -886,8 +884,13 @@ class EquiAssem(pl.LightningModule):
         postprocessed_shape_matching_scores = postprocessed_shape_matching_scores.reshape(num_src_pcd, num_trg_pcd) # (N, M)
         postprocessed_matching_scores_drop = postprocessed_matching_scores_drop.reshape(num_src_pcd, num_trg_pcd) # (N, M)
 
+        # Calculate ground truth correspondence
+        gt_corr = torch.nonzero(torch.cdist(src_pcd_raw, trg_pcd_raw, p=2) < self.pos_radius) # (corr, 2)
+
         # Save split tensors for evaluating prediction
         split_input_dict = {
+            'src_pcd_raw': src_pcd_raw, # (N, 3)
+            'trg_pcd_raw': trg_pcd_raw, # (M, 3)
             'src_pcd': src_pcd, # (N, 3)
             'trg_pcd': trg_pcd, # (M, 3)
             'src_ori': src_ori, # (N, 3, 3)
@@ -1020,12 +1023,8 @@ class EquiAssem(pl.LightningModule):
             os.makedirs(vis_hist_folder, exist_ok=True)
 
             # PCD light visualization
-            save_pcd_for_light_visualization(pcds_pred, gt_corr,f'{vis_folder}/E{self.current_epoch}_{in_dict["eval_idx"][0].item()}_{in_dict["obj_class"][0]}_{round(eval_result["crd"].item(),3)}_pred.ply')
-            save_pcd_for_light_visualization(pcds_grtr, gt_corr, f'{vis_folder}/E{self.current_epoch}_{in_dict['eval_idx'][0].item()}_{in_dict['obj_class'][0]}_{round(eval_result['crd'].item(),3)}_grtr.ply')
-
-            # PCD light visualization for used correspondences
-            save_pcd_for_light_visualization(pcds_pred, used_corr, f'{vis_folder}/E{self.current_epoch}_{in_dict['eval_idx'][0].item()}_{in_dict['obj_class'][0]}_{round(eval_result['crd'].item(),3)}_pred_top{self.infer_topk}.ply')
-            save_pcd_for_light_visualization(pcds_grtr, used_corr, f'{vis_folder}/E{self.current_epoch}_{in_dict['eval_idx'][0].item()}_{in_dict['obj_class'][0]}_{round(eval_result['crd'].item(),3)}_grtr_top{self.infer_topk}.ply')
+            save_pcd_for_light_visualization(pcds_pred, gt_corr, used_corr, f'{vis_folder}/E{self.current_epoch}_{in_dict['eval_idx'][0].item()}_{in_dict['obj_class'][0]}_{round(eval_result['crd'].item(),3)}_pred_top{self.infer_topk}.ply')
+            save_pcd_for_light_visualization(pcds_grtr, gt_corr, used_corr, f'{vis_folder}/E{self.current_epoch}_{in_dict['eval_idx'][0].item()}_{in_dict['obj_class'][0]}_{round(eval_result['crd'].item(),3)}_grtr_top{self.infer_topk}.ply')
 
             # MESH AND FRAME VISUALIZATION
             output_src_ori, output_trg_ori = split_input_dict['src_ori'], split_input_dict['trg_ori'] # (N, 3, 3), (M, 3, 3)

@@ -335,7 +335,7 @@ def draw_test_results_histogram(test_results, dir_path, filename):
         plt.close()
 
 
-def save_pcd_for_light_visualization(pcd_tensors: list, gt_corr: torch.Tensor, filename: str):
+def save_pcd_for_light_visualization(pcd_tensors: list, gt_corr: torch.Tensor, used_corr: torch.Tensor, filename: str):
     """
     Args:
         pcd_tensors (list of torch.Tensor): each element is (N, 3)
@@ -344,10 +344,30 @@ def save_pcd_for_light_visualization(pcd_tensors: list, gt_corr: torch.Tensor, f
     Returns:
         list of torch.Tensor: each element is (N, 3)
     """
-    pcds_for_viz = [] + pcd_tensors
-    pcds_for_viz.append(pcd_tensors[0][gt_corr[:,0]])
-    pcds_for_viz.append(pcd_tensors[1][gt_corr[:,1]])
+    src_pcd, trg_pcd = pcd_tensors
+    num_src_pcd, num_trg_pcd = src_pcd.shape[0], trg_pcd.shape[0]
+
+    placeholder_gt_corr = torch.zeros(num_src_pcd, num_trg_pcd, dtype=torch.bool)
+    placeholder_gt_corr[gt_corr[:,0], gt_corr[:,1]] = 1
+
+    placeholder_used_corr = torch.zeros(num_src_pcd, num_trg_pcd, dtype=torch.bool)
+    placeholder_used_corr[used_corr[:,0], used_corr[:,1]] = 1
+
+    intersection_mask = torch.logical_and(placeholder_gt_corr, placeholder_used_corr)
+
+    gt_corr_for_viz = torch.nonzero(intersection_mask)
+    used_corr_for_viz = torch.nonzero(placeholder_used_corr)
+    intersection_mask_for_viz = torch.nonzero(intersection_mask)
+
+    pcds_for_viz = [src_pcd, trg_pcd] # Red, Blue
+    pcds_for_viz.append(src_pcd[gt_corr_for_viz[:,0]]) # Magenta
+    pcds_for_viz.append(trg_pcd[gt_corr_for_viz[:,1]]) # Cyan
+    pcds_for_viz.append(src_pcd[used_corr_for_viz[:,0]]) # Orange
+    pcds_for_viz.append(trg_pcd[used_corr_for_viz[:,1]]) # Green
+    pcds_for_viz.append(src_pcd[intersection_mask_for_viz[:,0]]) # Purple
+    pcds_for_viz.append(trg_pcd[intersection_mask_for_viz[:,1]]) # Yellow
     save_pc(filename, pcds_for_viz)
+
 
 
 def save_pc(filename: str, pcd_tensors: list):
@@ -361,8 +381,6 @@ def save_pc(filename: str, pcd_tensors: list):
         pcd.points = o3d.utility.Vector3dVector(tensor_.cpu().numpy())
         pcd.paint_uniform_color(colors[i % len(colors)])  # Assign color based on index
         pcds.append(pcd)
-    
-    print(f"length of pcds: {len(pcds)}")
     
     combined_cloud = o3d.geometry.PointCloud()
     for pcd in pcds:

@@ -235,5 +235,7 @@ rm -rf checkpoint/G8NDB3_F_BV0V0_MH_P0075M0075+N145M145+BD+HNM+NK0+DCOS+AD_MCM+M
 
 
 rm -rf checkpoint/IMPLE/ && CUDA_VISIBLE_DEVICES=0 python main.py --logpath IMPLE --backbone vn_unet --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale full --epochs 0 --gpus 0 --n_worker 6 --batch_size 3 --pos_margin 0.075 --neg_margin 1.45 --pos_offset 0.0 --neg_offset 0.0 --balance_mode none --hard_negative none --neg_topk 500 --distance_type cossim --anchor_mode default --matching_score_mode CM --matching_norm_mode softmax --p_loss_weight 1.0
+rm -rf checkpoint/IMPLE/ && CUDA_VISIBLE_DEVICES=0 python test.py --load checkpoint_backup/G8NDB3_F_BV0V0_MH_P0075M0075+N145M145+BH+HNN+NK0+DCOS+AD_MCM+MNSoft_S1P1_6/models/last.ckpt --logpath IMPLE --backbone vn_unet --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale full --gpus 0 --n_worker 6 --matching_score_mode CM --matching_norm_mode softmax --move_smaller --n_pts 5000 --infer_topk 128
+rm -rf checkpoint/IMPLE/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python test.py --load checkpoint_backup/G8NDB3_F_BV0V0_MH_P0075M0075+N145M145+BH+HNN+NK0+DCOS+AD_MCM+MNSoft_S1P1_6/models/last.ckpt --logpath IMPLE --backbone vn_unet --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale full --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --matching_score_mode CM --matching_norm_mode softmax --move_smaller --n_pts 5000 --infer_topk 128
 
 
