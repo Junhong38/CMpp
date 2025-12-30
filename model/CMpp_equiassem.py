@@ -942,6 +942,9 @@ class EquiAssem(pl.LightningModule):
         # Calculate ratio of GT among topk scores
         eval_dict['gt_among_topk'] = self.calculate_ratio_of_gt_among_topk_scores(src_pcd_raw, trg_pcd_raw, postprocessed_matching_scores_drop, topk=self.infer_topk, pos_radius=self.pos_radius)
 
+        # log size of gt_corr
+        eval_dict['gt_corr_size'] = torch.tensor(gt_corr.shape[0]).to(used_corr.device)
+
         return out_dict, eval_dict
     
 

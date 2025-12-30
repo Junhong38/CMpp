@@ -46,7 +46,7 @@ if __name__ == '__main__':
 
     # Dataset arguments
     parser.add_argument('--json_path', type=str, default='checkpoint_test_backup/TOP128NP5000_LOAD_G8NDB3_F_BV0V0_MH_P0075M0075+N145M145+BH+HNN+NK0+DCOS+AD_MCM+MNSoft_S1P1_6/models/test_results.json')
-    parser.add_argument('--metric_name', type=str, default='crd', choices=['crd', 'cd', 'rrmse_geo', 'trmse_geo'])
+    parser.add_argument('--metric_name', type=str, default='crd', choices=['crd', 'cd', 'rrmse_geo', 'trmse_geo', 'gt_corr_size'])
     parser.add_argument('--threshold', type=float, default=0.01)
     args = parser.parse_args()
     print(f"args: {args}")
@@ -55,5 +55,8 @@ if __name__ == '__main__':
 
 
 """
+python check_result_json.py --json_path checkpoint/TOP128NP5000/models/test_results.json --metric_name gt_corr_size --threshold 100
+python check_result_json.py --json_path checkpoint/TOP128NP5000/models/test_results.json --metric_name rrmse_geo --threshold 16
+
 python check_result_json.py --metric_name rrmse_geo --threshold 16
 """

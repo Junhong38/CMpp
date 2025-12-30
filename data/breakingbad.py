@@ -14,7 +14,7 @@ from common.misc import bincount2batch
 
 class DatasetBreakingBad(Dataset):
     def __init__(self, datapath, data_category, sub_category, split, scale='full', multiplicity=1,
-                 min_part=2, max_part=2, min_n_pts=256, n_pts=5000, overlap_radius=0.018):
+                 min_part=2, max_part=2, min_n_pts=256, n_pts=5000, overlap_radius=0.018, sampling_mode='random'):
         """Dataset for Breaking Bad
 
         Args:
@@ -29,6 +29,7 @@ class DatasetBreakingBad(Dataset):
             min_n_pts (int): minimum number of points to sample
             n_pts (int): number of points to sample
             overlap_radius (float): overlap radius for correspondence
+            sampling_mode (str): ['random', 'mesh'], candidates are fixed by argparse
         """
         # Assertion
         assert split in ['train', 'val', 'test'], f"split must be in ['train', 'val', 'test'], but got {split}"
@@ -45,6 +46,7 @@ class DatasetBreakingBad(Dataset):
         self.n_pts = n_pts
 
         self.overlap_radius = overlap_radius
+        self.sampling_mode = sampling_mode
 
         if self.split == 'test': 
             split = 'val'
@@ -71,7 +73,7 @@ class DatasetBreakingBad(Dataset):
         print(f"datapath: {self.datapath} | data_category: {self.data_category} | sub_category: {self.sub_category}")
         print(f"scale: {scale} | multiplicity: {self.multiplicity}")
         print(f"min_part: {self.min_part} | max_part: {self.max_part} | min_n_pts: {self.min_n_pts} | n_pts: {self.n_pts}")
-        print(f"overlap_radius: {self.overlap_radius}")
+        print(f"overlap_radius: {self.overlap_radius}, sampling_mode: {self.sampling_mode}")
         print("================================================")
         
 
@@ -278,8 +280,20 @@ class DatasetBreakingBad(Dataset):
         faces = []
         for mesh, n_pts in zip(meshes, counts):
             if self.split in ['val', 'test']: 
-                sampled_pts, face_idx = trimesh.sample.sample_surface_even(mesh, n_pts, seed=idx) # (N, 3), (N, )
-            else: 
+                if self.sampling_mode == 'random':
+                    sampled_pts, face_idx = trimesh.sample.sample_surface_even(mesh, n_pts, seed=idx) # (N, 3), (N, )
+                
+                elif self.sampling_mode == 'mesh':
+                    sampled_pts = mesh.vertices # (N, 3)
+                    face_idx = mesh.vertex_faces[:,0] # (N, )
+
+                    selection_mask = torch.randperm(face_idx.shape[0]) < n_pts
+                    sampled_pts = sampled_pts[selection_mask]
+                    face_idx = face_idx[selection_mask]
+
+                else:
+                    raise ValueError(f"Invalid sampling mode: {self.sampling_mode}")
+            else:
                 sampled_pts, face_idx = trimesh.sample.sample_surface_even(mesh, n_pts) # (N, 3), (N, )
 
             sampled_pts = torch.tensor(sampled_pts).float() # (N, 3)

@@ -27,7 +27,7 @@ def test(args):
 
 
     # Dataset initialization
-    GADataset.initialize(args.datapath, args.data_category, args.sub_category, args.scale, 1, args.min_part, args.max_part, args.min_n_pts, args.n_pts, args.overlap_radius)
+    GADataset.initialize(args.datapath, args.data_category, args.sub_category, args.scale, 1, args.min_part, args.max_part, args.min_n_pts, args.n_pts, args.overlap_radius, args.sampling_mode)
     dataloader_val = GADataset.build_dataloader(1, args.n_worker, 'val')
 
 
@@ -128,7 +128,7 @@ def test(args):
 
     if model.trainer.global_rank == 0:
         results = model.test_results
-        results = {k[5:]: v.detach().cpu().numpy() for k, v in results.items()}
+        results = {k[4:]: v.detach().cpu().numpy() for k, v in results.items()}
         print('--------------------------------')
         print(results)
         print('--------------------------------')
@@ -152,6 +152,7 @@ if __name__ == '__main__':
     parser.add_argument('--min_n_pts', type=int, default=256)
     parser.add_argument('--n_pts', type=int, default=5000)
     parser.add_argument('--overlap_radius', type=float, default=0.018)
+    parser.add_argument('--sampling_mode', type=str, default='random', choices=['random', 'mesh'], help='Sampling mode for point cloud sampling, only for testing')
 
 
     # Training arguments
