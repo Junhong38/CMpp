@@ -280,7 +280,7 @@ class DatasetBreakingBad(Dataset):
         faces = []
         for mesh, n_pts in zip(meshes, counts):
             if self.split in ['val', 'test']: 
-                if self.sampling_mode == 'random':
+                if self.sampling_mode in ['random', 'same']:
                     sampled_pts, face_idx = trimesh.sample.sample_surface_even(mesh, n_pts, seed=idx) # (N, 3), (N, )
                 
                 elif self.sampling_mode == 'mesh':
@@ -291,8 +291,6 @@ class DatasetBreakingBad(Dataset):
                     sampled_pts = sampled_pts[selection_mask]
                     face_idx = face_idx[selection_mask]
 
-                else:
-                    raise ValueError(f"Invalid sampling mode: {self.sampling_mode}")
             else:
                 sampled_pts, face_idx = trimesh.sample.sample_surface_even(mesh, n_pts) # (N, 3), (N, )
 
@@ -308,6 +306,33 @@ class DatasetBreakingBad(Dataset):
             
             pcds.append(sampled_pts)
             faces.append(face_idx)
+        
+        if self.sampling_mode == 'same':
+            for ith_part in range(len(pcds)):
+                for jth_part in range(len(pcds)):
+                    if ith_part == jth_part:
+                        continue
+                    
+                    (closest_points, distances, triangle_id) = meshes[jth_part].nearest.on_surface(pcds[ith_part]) # numpy array, (N, 3), (N, ), (N, )
+                    located_on_same_surface = distances <= 1e-6
+
+                    selected_points = torch.tensor(closest_points[located_on_same_surface]).float()
+                    selected_face_idx = triangle_id[located_on_same_surface]
+
+                    # Remove duplicate points
+                    is_duplicate = (torch.cdist(selected_points, pcds[jth_part], p=2) <= 1e-6).sum(dim=1) > 0
+                    selected_points = selected_points[~ is_duplicate]
+                    selected_face_idx = selected_face_idx[~ is_duplicate.numpy()]
+
+                    pcds[jth_part] = torch.cat([pcds[jth_part], selected_points], dim=0)
+                    faces[jth_part] = np.concatenate([faces[jth_part], selected_face_idx], axis=0)
+            
+
+            for ith_part in range(len(pcds)):
+                current_n_pts = pcds[ith_part].shape[0]
+                selected_indices = torch.randperm(current_n_pts)[:counts[ith_part]]
+                pcds[ith_part] = pcds[ith_part][selected_indices]
+                faces[ith_part] = faces[ith_part][selected_indices.numpy()] 
 
 
         # Augment train dataset

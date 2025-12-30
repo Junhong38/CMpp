@@ -30,7 +30,7 @@ def main(args):
     print(f"checkpoint directory (ckp_dir): {ckp_dir}")
 
     # Dataset initialization
-    GADataset.initialize(args.datapath, args.data_category, args.sub_category, args.scale, args.multiplicity, args.min_part, args.max_part, args.min_n_pts, args.n_pts, args.overlap_radius)
+    GADataset.initialize(args.datapath, args.data_category, args.sub_category, args.scale, args.multiplicity, args.min_part, args.max_part, args.min_n_pts, args.n_pts, args.overlap_radius, args.sampling_mode)
     dataloader_trn = GADataset.build_dataloader(args.batch_size, args.n_worker, 'train')
     dataloader_val = GADataset.build_dataloader(1, args.n_worker, 'val')
 
@@ -247,6 +247,7 @@ if __name__ == '__main__':
     parser.add_argument('--min_n_pts', type=int, default=256)
     parser.add_argument('--n_pts', type=int, default=5000)
     parser.add_argument('--overlap_radius', type=float, default=0.018)
+    parser.add_argument('--sampling_mode', type=str, default='random', choices=['random', 'same'], help='Sampling mode for point cloud sampling')
     
 
     # Training arguments
