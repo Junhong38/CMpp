@@ -247,7 +247,7 @@ if __name__ == '__main__':
     parser.add_argument('--min_n_pts', type=int, default=256)
     parser.add_argument('--n_pts', type=int, default=5000)
     parser.add_argument('--overlap_radius', type=float, default=0.018)
-    parser.add_argument('--sampling_mode', type=str, default='random', choices=['random', 'same'], help='Sampling mode for point cloud sampling')
+    parser.add_argument('--sampling_mode', type=str, default='random', choices=['random'], help='Sampling mode for point cloud sampling')
     
 
     # Training arguments
