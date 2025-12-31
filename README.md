@@ -30,6 +30,9 @@ pip install git+'https://github.com/otaheri/chamfer_distance'
 # compile pointops
 cd pointcept_libs/pointops2/
 python setup.py install
+
+# install additional lib
+pip install rtree
 ```
 
 ### Useful commands

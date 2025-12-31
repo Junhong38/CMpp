@@ -429,6 +429,13 @@ class EquiAssem(pl.LightningModule):
 
 
     def test_step(self, in_dict, batch_idx):
+        """
+        if batch_idx == 0:
+            _, loss_dict = self.forward_pass(in_dict, mode='test')
+            self.test_step_outputs.append(loss_dict)
+        else:
+            exit("stop")
+        """
         _, loss_dict = self.forward_pass(in_dict, mode='test')
         self.test_step_outputs.append(loss_dict)
         return loss_dict
@@ -1020,6 +1027,7 @@ class EquiAssem(pl.LightningModule):
             else:
                 # Only visualize if the metric is greater than the threshold
                 metric_based_visualization = eval_result[self.viz_metric_name] >= self.viz_metric_threshold
+                # metric_based_visualization = in_dict['filepath'][0] == 'everyday/Bottle/d851cbc873de1c4d3b6eb309177a6753/mode_1'
 
         if (mode =='val' and (not self.trainer.sanity_checking) and \
             self.trainer.global_rank == 0 and \
@@ -1095,6 +1103,7 @@ class EquiAssem(pl.LightningModule):
                                         filename=f'E{self.current_epoch}_{in_dict["eval_idx"].item()}_{in_dict["obj_class"][0]}_{round(eval_result["n_error"].item(),3)}_hist.png')
             
 
+            # exit("stop")
         return eval_result
     
 

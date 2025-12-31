@@ -280,7 +280,7 @@ class DatasetBreakingBad(Dataset):
         faces = []
         for mesh, n_pts in zip(meshes, counts):
             if self.split in ['val', 'test']: 
-                if self.sampling_mode in ['random', 'same']:
+                if self.sampling_mode in ['random', 'same_prev', 'same']:
                     sampled_pts, face_idx = trimesh.sample.sample_surface_even(mesh, n_pts, seed=idx) # (N, 3), (N, )
                 
                 elif self.sampling_mode == 'mesh':
@@ -304,36 +304,18 @@ class DatasetBreakingBad(Dataset):
                 sampled_pts = torch.cat([sampled_pts, torch.tensor(extra_pts).float()], dim=0) # (N + N', 3)
                 face_idx = np.concatenate([face_idx, extra_face_idx], axis=0) # (N + N', )
             
+            assert sampled_pts.shape[0] == face_idx.shape[0], f"sampled_pts.shape[0]: {sampled_pts.shape[0]}, face_idx.shape[0]: {face_idx.shape[0]}"
+            assert sampled_pts.shape[0] == n_pts, f"sampled_pts.shape[0]: {sampled_pts.shape[0]}, n_pts: {n_pts}"
+
             pcds.append(sampled_pts)
             faces.append(face_idx)
         
+        
         if self.sampling_mode == 'same':
-            for ith_part in range(len(pcds)):
-                for jth_part in range(len(pcds)):
-                    if ith_part == jth_part:
-                        continue
-                    
-                    (closest_points, distances, triangle_id) = meshes[jth_part].nearest.on_surface(pcds[ith_part]) # numpy array, (N, 3), (N, ), (N, )
-                    located_on_same_surface = distances <= 1e-6
-
-                    selected_points = torch.tensor(closest_points[located_on_same_surface]).float()
-                    selected_face_idx = triangle_id[located_on_same_surface]
-
-                    # Remove duplicate points
-                    is_duplicate = (torch.cdist(selected_points, pcds[jth_part], p=2) <= 1e-6).sum(dim=1) > 0
-                    selected_points = selected_points[~ is_duplicate]
-                    selected_face_idx = selected_face_idx[~ is_duplicate.numpy()]
-
-                    pcds[jth_part] = torch.cat([pcds[jth_part], selected_points], dim=0)
-                    faces[jth_part] = np.concatenate([faces[jth_part], selected_face_idx], axis=0)
-            
-
-            for ith_part in range(len(pcds)):
-                current_n_pts = pcds[ith_part].shape[0]
-                selected_indices = torch.randperm(current_n_pts)[:counts[ith_part]]
-                pcds[ith_part] = pcds[ith_part][selected_indices]
-                faces[ith_part] = faces[ith_part][selected_indices.numpy()] 
-
+            pcds, faces = self._post_process_for_same_sampling_mode(idx, pcds, faces, meshes, counts)
+        elif self.sampling_mode == 'same_prev':
+            pcds, faces = self._post_process_for_same_prev_sampling_mode(idx, pcds, faces, meshes, counts)
+        
 
         # Augment train dataset
         if self.split == 'train' and random.random() > 0.5:
@@ -342,6 +324,130 @@ class DatasetBreakingBad(Dataset):
             faces.reverse()
         
         return filepath, n_frac, anchor_idx, meshes, pcds, faces
+    
+
+    def _post_process_for_same_prev_sampling_mode(self, instance_idx, pcds, faces, meshes, counts):
+        """
+        Post-process for same previous sampling mode
+        Args:
+            instance_idx (int): instance index
+            pcds (list): list of point clouds
+            faces (list): list of faces
+            meshes (list): list of meshes
+            counts (list): list of counts
+        """
+
+        for ith_part in range(len(pcds)):
+            for jth_part in range(len(pcds)):
+                if ith_part == jth_part:
+                    continue
+                
+                (closest_points, distances, triangle_id) = meshes[jth_part].nearest.on_surface(pcds[ith_part]) # numpy array, (N, 3), (N, ), (N, )
+                located_on_same_surface = distances <= 1e-6
+
+                selected_points = torch.tensor(closest_points[located_on_same_surface]).float()
+                selected_face_idx = triangle_id[located_on_same_surface]
+
+                # Remove duplicate points
+                is_duplicate = (torch.cdist(selected_points, pcds[jth_part], p=2) <= 1e-6).sum(dim=1) > 0
+                selected_points = selected_points[~ is_duplicate]
+                selected_face_idx = selected_face_idx[~ is_duplicate.numpy()]
+
+                pcds[jth_part] = torch.cat([pcds[jth_part], selected_points], dim=0)
+                faces[jth_part] = np.concatenate([faces[jth_part], selected_face_idx], axis=0)
+            
+
+        for ith_part in range(len(pcds)):
+            current_n_pts = pcds[ith_part].shape[0]
+            selected_indices = torch.randperm(current_n_pts)[:counts[ith_part]]
+            pcds[ith_part] = pcds[ith_part][selected_indices]
+            faces[ith_part] = faces[ith_part][selected_indices.numpy()] 
+        
+        # Check if the number of points is correct
+        for ith_part in range(len(pcds)):
+            assert pcds[ith_part].shape[0] == counts[ith_part], f"pcds[ith_part].shape[0]: {pcds[ith_part].shape[0]}, counts[ith_part]: {counts[ith_part]}"
+            assert faces[ith_part].shape[0] == counts[ith_part], f"faces[ith_part].shape[0]: {faces[ith_part].shape[0]}, counts[ith_part]: {counts[ith_part]}"
+        
+        return pcds, faces
+
+    def _post_process_for_same_sampling_mode(self, instance_idx, pcds, faces, meshes, counts):
+        """
+        Post-process for same sampling mode
+        Args:
+            instance_idx (int): instance index
+            pcds (list): list of point clouds
+            faces (list): list of faces
+            meshes (list): list of meshes
+            counts (list): list of counts
+
+        Returns:
+            tuple: (pcds, faces)
+                - pcds (list): list of point clouds
+                - faces (list): list of faces
+        """
+
+        for ith_part in range(len(pcds)):
+            for jth_part in range(ith_part+1, len(pcds)):
+                # Check if the points are on the same surface which is mating surface
+                (closest_points, distances, triangle_id) = meshes[jth_part].nearest.on_surface(pcds[ith_part]) # numpy array, (N, 3), (N, ), (N, )
+                located_on_same_surface = distances <= 1e-6 # If the distance is less than 1e-6, then the point is on the mating surface
+                mating_part_pcds = torch.tensor(closest_points[located_on_same_surface]).float()
+                mating_part_faces_idx = triangle_id[located_on_same_surface]
+
+                # Remove points that are already in the selected_face_idx
+                is_same_face = torch.tensor([face_idx in mating_part_faces_idx for face_idx in faces[jth_part]])
+                is_different_face = ~ is_same_face
+                non_mating_part_pcds = pcds[jth_part][is_different_face]
+                non_mating_part_faces_idx = faces[jth_part][is_different_face.numpy()]
+
+                # To achieve target size of points, we need to do post-processing
+                size_of_non_mating_part = non_mating_part_pcds.shape[0]
+                size_of_mating_part = mating_part_pcds.shape[0]
+                current_size_of_pcds = size_of_non_mating_part + size_of_mating_part
+
+                if current_size_of_pcds > counts[jth_part]: # Too many points, so we need to remove some points
+                    trg_size = size_of_non_mating_part - (current_size_of_pcds - counts[jth_part]) # We need to remove (current_size_of_pcds - counts[jth_part]) points from the non-mating part
+                    selected_indices = torch.randperm(size_of_non_mating_part)[:trg_size] # Randomly select
+                    non_mating_part_pcds = non_mating_part_pcds[selected_indices]
+                    non_mating_part_faces_idx = non_mating_part_faces_idx[selected_indices.numpy()]
+                
+                elif current_size_of_pcds < counts[jth_part]: # Not enough points, so we need to sample more points
+                    trg_size_for_more_sampling = counts[jth_part] - current_size_of_pcds
+                    
+                    additional_sampled_pts = []
+                    additional_sampled_faces_idx = []
+                    iteration_of_sampling = 0
+                    
+                    for ith_new_pcd in range(trg_size_for_more_sampling):
+                        while True: # If a new sampled point is on the mating surface, then we need to sample again
+                            if self.split in ['val', 'test']:
+                                extra_pts, extra_face_idx = trimesh.sample.sample_surface(meshes[jth_part], 1, seed=(instance_idx + jth_part + iteration_of_sampling))
+                            else:
+                                extra_pts, extra_face_idx = trimesh.sample.sample_surface(meshes[jth_part], 1)
+                            
+                            if extra_face_idx in non_mating_part_faces_idx:
+                                additional_sampled_pts.append(extra_pts[0])
+                                additional_sampled_faces_idx.append(extra_face_idx[0])
+                                break
+                            iteration_of_sampling += 1
+                    
+                    additional_sampled_pts = torch.tensor(additional_sampled_pts).float()
+                    additional_sampled_faces_idx = np.array(additional_sampled_faces_idx)
+
+                    non_mating_part_pcds = torch.cat([non_mating_part_pcds, additional_sampled_pts], dim=0)
+                    non_mating_part_faces_idx = np.concatenate([non_mating_part_faces_idx, additional_sampled_faces_idx], axis=0)
+                    
+                # Concatenate the non-mating part and the mating part
+                pcds[jth_part] = torch.cat([non_mating_part_pcds, mating_part_pcds], dim=0)
+                faces[jth_part] = np.concatenate([non_mating_part_faces_idx, mating_part_faces_idx], axis=0)
+            
+        
+        # Check if the number of points is correct
+        for ith_part in range(len(pcds)):
+            assert pcds[ith_part].shape[0] == counts[ith_part], f"pcds[ith_part].shape[0]: {pcds[ith_part].shape[0]}, counts[ith_part]: {counts[ith_part]}"
+            assert faces[ith_part].shape[0] == counts[ith_part], f"faces[ith_part].shape[0]: {faces[ith_part].shape[0]}, counts[ith_part]: {counts[ith_part]}"
+        
+        return pcds, faces
 
 
 def collate_fn(batch):

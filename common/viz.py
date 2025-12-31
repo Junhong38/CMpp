@@ -355,7 +355,7 @@ def save_pcd_for_light_visualization(pcd_tensors: list, gt_corr: torch.Tensor, u
 
     intersection_mask = torch.logical_and(placeholder_gt_corr, placeholder_used_corr)
 
-    gt_corr_for_viz = torch.nonzero(intersection_mask)
+    gt_corr_for_viz = gt_corr
     used_corr_for_viz = torch.nonzero(placeholder_used_corr)
     intersection_mask_for_viz = torch.nonzero(intersection_mask)
 
