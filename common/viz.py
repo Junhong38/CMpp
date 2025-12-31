@@ -419,6 +419,12 @@ def visualize_negative_hard_mask(in_dict, neg_mask, hard_neg_mask, active_mask, 
     hard_neg_corr = torch.nonzero(processed_hard_neg_mask) # (N*M, 2)
     neg_corr = torch.nonzero(processed_neg_mask) # (N*M, 2)
 
+    intersection_mask_for_neg = torch.logical_and(pos_mask, processed_neg_mask)
+    intersection_mask_for_hard = torch.logical_and(pos_mask, processed_hard_neg_mask)
+
+    assert intersection_mask_for_neg.sum() == 0, f"intersection_mask_for_neg: {intersection_mask_for_neg.sum()}"
+    assert intersection_mask_for_hard.sum() == 0, f"intersection_mask_for_hard: {intersection_mask_for_hard.sum()}"
+
     pcd_list_for_viz = [src_pcd_raw, trg_pcd_raw] # Red, Blue
     pcd_list_for_viz.append(src_pcd_raw[gt_corr[:,0]]) # Magenta
     pcd_list_for_viz.append(trg_pcd_raw[gt_corr[:,1]]) # Cyan

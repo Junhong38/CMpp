@@ -184,7 +184,7 @@ class CircleLoss(nn.Module):
         
         neg_hard_mask_for_viz = dict()
         neg_mask, pos_neg_distribution['num_of_hard_neg'], pos_neg_distribution['num_of_neg'], neg_hard_mask_for_viz['neg_mask'], neg_hard_mask_for_viz['hard_neg_mask'] = self.negative_sampling(matching_scores, pos_mask, neg_mask)
-
+        
         if self.anchor_mode == 'default':
             # get anchors that have both positive and negative pairs
             row_sel = ((pos_mask.sum(-1)>0) * (neg_mask.sum(-1)>0)).detach() # (B, N+M, N+M) -> (B, N+M)
