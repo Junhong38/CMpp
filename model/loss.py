@@ -383,13 +383,13 @@ class OrientationLoss(nn.Module):
                 coords_dist = torch.cdist(pcd_raw, pcd_raw, p=2) # (B, N+M, N+M)
 
             gt_corr_mask = torch.logical_and(coords_dist < self.pos_radius, active_mask) # (B, N+M, N+M)
-            gt_corr_map = gt_corr_mask.nonzero()[:0] # (total_corr, 3), where 3 is (batch_index, row_index, col_index)
+            gt_corr_map = gt_corr_mask.nonzero() # (total_corr, 3), where 3 is (batch_index, row_index, col_index)
 
             if len(gt_corr_map) > 0:
                 # Active part is right-upper part of the matrix
                 # Hence, row index(0 - src), colum index (src+1, trg).
                 src_from_mating_surface = oris[gt_corr_map[:,0], gt_corr_map[:,1], :, :] # (total_corr, 3, 3)
-                trg_from_mating_surface = oris[gt_corr_map[:,0], gt_corr_map[:,2], :, :] # (total_corr, 3, 3)                
+                trg_from_mating_surface = oris[gt_corr_map[:,0], gt_corr_map[:,2], :, :] # (total_corr, 3, 3)              
 
                 consistency_loss_2nd = self.loss_fn(src_from_mating_surface[:, 1, :], trg_from_mating_surface[:, 2, :])
                 consistency_loss_3rd = self.loss_fn(src_from_mating_surface[:, 2, :], trg_from_mating_surface[:, 1, :])
