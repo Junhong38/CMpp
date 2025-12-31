@@ -201,19 +201,6 @@ class DatasetBreakingBad(Dataset):
 
         # Read mesh, point cloud of a fractured object
         filepath, n_frac, anchor_idx, mesh, pcd, face = self.read_obj_data(idx)
-
-        # Get all possible pairs. If two parts, then [0,1], [1,0]
-        pair_indices = list(itertools.permutations([i for i in range(self.n_frac[idx])], 2))
-
-        # Get ground-truth correspondences
-        if self.split in ['train', 'val']:
-            matching_inds = get_correspondences(to_o3d_pcd(pcd[0]), to_o3d_pcd(pcd[1]), self.overlap_radius)
-        else:
-            matching_inds = {}
-            for pair_idx in pair_indices:
-                pair_idx0, pair_idx1 = pair_idx
-                matching_inds[f'{pair_idx0}-{pair_idx1}'] = get_correspondences(to_o3d_pcd(pcd[pair_idx0]), to_o3d_pcd(pcd[pair_idx1]), self.overlap_radius)
-            matching_inds = [matching_inds]
         
         # Apply random transformation to sampled points
         pcd_t, mesh_t, gt_trans = self._translate(mesh, pcd)
@@ -237,7 +224,6 @@ class DatasetBreakingBad(Dataset):
                 'pcd_t': concat_pcd_t, # torch.Tensor, (total_N, 3)
                 'gt_normals': concat_gt_normals, # torch.Tensor, (total_N, 3)
                 'pcd_batch_info': pcd_batch_info, # torch.Tensor, (total_N, ), batch index of the point cloud
-                'gt_correspondence': matching_inds, # if test then dict, key: string e.g. '0-1', value: torch.Tensor, (Corr, 2) else torch.Tensor, (Corr, 2)
                 }
         
         if self.split in ['val', 'test']:
@@ -462,16 +448,6 @@ def collate_fn(batch):
 
         elif batch_key in ['pcd', 'pcd_t', 'gt_normals', 'pcd_batch_info']:
             result_batch[batch_key] = torch.stack([a_batch[batch_key] for a_batch in batch], dim=0) # (B, total_N, 3) or (B, total_N, )
-        
-        elif batch_key in ['gt_correspondence']:
-            if isinstance(batch[0][batch_key], dict):
-                assert len(batch) == 1, f"len(batch): {len(batch)}, batch size must be 1 for evaluation"
-                result_batch[batch_key] = batch[0][batch_key] # (Corr, 2)
-            else:
-                list_of_gt_correspondence = [a_batch[batch_key] for a_batch in batch]
-                gt_corr_bincount_info = torch.tensor([len(gt_corr) for gt_corr in list_of_gt_correspondence]) # (B, )
-                result_batch[batch_key] = torch.cat(list_of_gt_correspondence, dim=0) # (total_Corr, 2)
-                result_batch['gt_corr_bincount_info'] = gt_corr_bincount_info
         
         elif batch_key in ['mesh', 'mesh_t', 'mesh_faces', 'relative_trsfm']: # Only for evaluation, So batch size must be 1
             assert len(batch) == 1, f"len(batch): {len(batch)}, batch size must be 1 for evaluation"

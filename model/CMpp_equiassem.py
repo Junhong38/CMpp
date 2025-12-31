@@ -231,7 +231,7 @@ class EquiAssem(pl.LightningModule):
                                       pos_offset=pos_offset, neg_offset=neg_offset,
                                       balance_mode=balance_mode, hard_negative=hard_negative,
                                       neg_topk=neg_topk, distance_type=distance_type, anchor_mode=anchor_mode)
-        self.orientation_loss = OrientationLoss(consistency_loss=consistency_loss)
+        self.orientation_loss = OrientationLoss(consistency_loss=consistency_loss, pos_radius=pos_radius)
         self.matching_loss = PointMatchingLoss(pos_radius=pos_radius, safe_radius=safe_radius)
         
 
@@ -507,9 +507,6 @@ class EquiAssem(pl.LightningModule):
                 - gt_normals (torch.Tensor): (B, N+M, 3)
                 - pcd_batch_info (torch.Tensor): (B, N+M,)
 
-                - gt_correspondence (torch.Tensor): (total_Corr, 2) where total_Corr := Corr_1 + Corr_2 + ... + Corr_B
-                - gt_corr_bincount_info (torch.Tensor): (B, ) where gt_corr_bincount_info[i] shows size of Corr_i
-
                 For evaluation
                     - mesh (list): length is 2, only for two pieces
                         - mesh[0]: (N', 3)
@@ -567,8 +564,6 @@ class EquiAssem(pl.LightningModule):
         gt_normals = in_dict['gt_normals'] # (B, N+M, 3)
         pcd_batch_info = in_dict['pcd_batch_info'] # (B, N+M, )
         batch_scaled_pcd_batch_info = batch_scaling(pcd_batch_info) # (B, N+M, )
-        gt_corr = in_dict['gt_correspondence'] # (total_Corr, 2) where total_Corr := Corr_1 + Corr_2 + ... + Corr_B
-        gt_corr_bincount_info = in_dict['gt_corr_bincount_info'] # (B, ) where gt_corr_bincount_info[i] shows size of Corr_i
 
 
         # 1. SO(3)-Equivariant Feature Extractor
@@ -598,7 +593,7 @@ class EquiAssem(pl.LightningModule):
 
         # Only train the normal vector
         if self.only_train_normal:
-            loss['o_loss'] = self.orientation_loss(oris, gt_normals, batch_scaled_pcd_batch_info, gt_corr, gt_corr_bincount_info)
+            loss['o_loss'] = self.orientation_loss(oris, gt_normals, batch_scaled_pcd_batch_info, None, pcd_raw, self.return_active_mask(pcd_batch_info))
             loss['loss'] = loss['o_loss']
 
             # Compute Normal Error
@@ -642,11 +637,11 @@ class EquiAssem(pl.LightningModule):
         if mode in ['train', 'val']: # Do not calculate for test
             # 8. Calculate Loss
             if self.flip_normal:
-                src_move_circle_loss, src_coords_dist, pos_neg_distribution, neg_hard_mask_for_viz = self.circle_loss(pcd_raw, shape_feats, shape_matching_scores, active_mask)
+                src_move_circle_loss, coords_dist, pos_neg_distribution, neg_hard_mask_for_viz = self.circle_loss(pcd_raw, shape_feats, shape_matching_scores, active_mask)
                 trg_move_circle_loss, _, _, _ = self.circle_loss(pcd_raw, symmetric_shape_feats, symmetric_shape_matching_scores, active_mask)
 
-                src_move_matching_scores = self.matching_loss(matching_scores, src_coords_dist, active_mask, matching_norm_mode=self.matching_norm_mode).float() if self.p_loss_weight != 0 else torch.tensor(0.).to(matching_scores.device)
-                trg_move_matching_scores = self.matching_loss(symmetric_matching_scores, src_coords_dist, active_mask, matching_norm_mode=self.matching_norm_mode).float() if self.p_loss_weight != 0 else torch.tensor(0.).to(symmetric_matching_scores.device)
+                src_move_matching_scores = self.matching_loss(matching_scores, coords_dist, active_mask, matching_norm_mode=self.matching_norm_mode).float() if self.p_loss_weight != 0 else torch.tensor(0.).to(matching_scores.device)
+                trg_move_matching_scores = self.matching_loss(symmetric_matching_scores, coords_dist, active_mask, matching_norm_mode=self.matching_norm_mode).float() if self.p_loss_weight != 0 else torch.tensor(0.).to(symmetric_matching_scores.device)
 
                 loss['s_loss'] = (src_move_circle_loss + trg_move_circle_loss) / 2
                 loss['p_loss'] = (src_move_matching_scores + trg_move_matching_scores) / 2
@@ -655,7 +650,8 @@ class EquiAssem(pl.LightningModule):
                 loss['s_loss'], coords_dist, pos_neg_distribution, neg_hard_mask_for_viz = self.circle_loss(pcd_raw, shape_feats, shape_matching_scores, active_mask)
                 loss['p_loss'] = self.matching_loss(matching_scores, coords_dist, active_mask, matching_norm_mode=self.matching_norm_mode).float() if self.p_loss_weight != 0 else torch.tensor(0.).to(matching_scores.device)
             
-            loss['o_loss'] = self.orientation_loss(oris, gt_normals, batch_scaled_pcd_batch_info, gt_corr, gt_corr_bincount_info)
+            # oris, gt_normals, batch_scaled_batch_info, coords_dist, pcd_raw, active_mask
+            loss['o_loss'] = self.orientation_loss(oris, gt_normals, batch_scaled_pcd_batch_info, coords_dist, pcd_raw, active_mask)
             loss['loss'] = self.o_loss_weight * loss['o_loss'] + self.s_loss_weight * loss['s_loss'] + self.p_loss_weight * loss['p_loss']
             
             out_dict.update(loss)
@@ -667,7 +663,6 @@ class EquiAssem(pl.LightningModule):
 
                     if ((not self.trainer.sanity_checking) and self.viz_train_epoch > 0 and batch_idx == 0 and (self.current_epoch % self.viz_train_epoch == 0 or self.current_epoch == self.trainer.max_epochs-1)):
                         visualize_negative_hard_mask(in_dict, neg_hard_mask_for_viz['neg_mask'], neg_hard_mask_for_viz['hard_neg_mask'], active_mask, self.ckp_dir, self.current_epoch, self.trainer.global_rank, self.pos_radius)
-                    
         
 
         # 9. Evaluation

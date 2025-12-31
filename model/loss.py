@@ -354,12 +354,13 @@ class PointMatchingLoss(nn.Module):
 
 
 class OrientationLoss(nn.Module):
-    def __init__(self, consistency_loss=False):
+    def __init__(self, consistency_loss=False, pos_radius=0.018):
         super(OrientationLoss, self).__init__()
         self.consistency_loss = consistency_loss
+        self.pos_radius = pos_radius
         self.loss_fn = nn.SmoothL1Loss(beta=1.0, reduction='mean')
     
-    def forward(self, oris, gt_normals, batch_scaled_batch_info, gt_corr, gt_corr_bincount_info):
+    def forward(self, oris, gt_normals, batch_scaled_batch_info, coords_dist, pcd_raw, active_mask):
         """
         Assume there are two objects in the batch
 
@@ -367,8 +368,9 @@ class OrientationLoss(nn.Module):
             oris (torch.Tensor): (B, N+M, 3, 3), first basis should be aligned with gt_normals[0]
             gt_normals (torch.Tensor): (B, N+M, 3)
             batch_scaled_batch_info (torch.Tensor): (B, N+M), batch index of the point cloud
-            gt_corr (torch.Tensor): (total_Corr, 2) where total_Corr := Corr_1 + Corr_2 + ... + Corr_B
-            gt_corr_bincount_info (torch.Tensor): (B, ) where gt_corr_bincount_info[i] shows size of Corr_i
+            coords_dist (torch.Tensor): (B, N+M, N+M) or None
+            pcd_raw (torch.Tensor): (B, N+M, 3)
+            active_mask (torch.Tensor): (B, N+M, N+M), True if the point is active
 
         Returns:
             torch.Tensor: (1, ), orientation loss
@@ -376,32 +378,25 @@ class OrientationLoss(nn.Module):
         pred_normal = oris[:, :, 0, :] # (B, N+M, 3)
         normal_loss = self.loss_fn(pred_normal, gt_normals)
 
-        if self.consistency_loss and (not torch.all(gt_corr_bincount_info == 0)): # Make frame from src and trg be consistent with each other
-            batch_size, num_points = oris.shape[:2]
+        if self.consistency_loss: 
+            if coords_dist is None:
+                coords_dist = torch.cdist(pcd_raw, pcd_raw, p=2) # (B, N+M, N+M)
 
-            # We assume there are two objects in the batch
-            obj_bincounts = batch_scaled_batch_info.reshape(-1).bincount().reshape(batch_size, 2) # (B*num_of_objs, ) -> (B, 2), num_of_objs = 2
+            gt_corr_mask = torch.logical_and(coords_dist < self.pos_radius, active_mask) # (B, N+M, N+M)
+            gt_corr_map = gt_corr_mask.nonzero()[:0] # (total_corr, 3), where 3 is (batch_index, row_index, col_index)
 
-            # Distinguish between src and trg
-            obj_idx_base = obj_bincounts[:,0] # (B, )
-            obj_idx_base = obj_idx_base.repeat_interleave(gt_corr_bincount_info) # (B,) -> (total_Corr,)
-            obj_idx_base = torch.stack([torch.zeros_like(obj_idx_base), obj_idx_base], dim=-1) # (total_Corr, 2)
+            if len(gt_corr_map) > 0:
+                # Active part is right-upper part of the matrix
+                # Hence, row index(0 - src), colum index (src+1, trg).
+                src_from_mating_surface = oris[gt_corr_map[:,0], gt_corr_map[:,1], :, :] # (total_corr, 3, 3)
+                trg_from_mating_surface = oris[gt_corr_map[:,0], gt_corr_map[:,2], :, :] # (total_corr, 3, 3)                
 
-            # Distinguish between batch index
-            idx_base = torch.arange(0, batch_size, device=oris.device) * num_points # (B, )
-            idx_base = idx_base.repeat_interleave(gt_corr_bincount_info) # (total_Corr, )
-
-            # Final batch scaled gt_corr
-            batch_scaled_gt_corr = gt_corr + obj_idx_base + idx_base[:, None] # (total_Corr, 2)
-
-            reshaped_oris = oris.reshape(-1, 3, 3) # (B, N+M, 3, 3) -> (B*(N+M), 3, 3)
-
-            src_from_mating_surface = reshaped_oris[batch_scaled_gt_corr[:,0], :, :] # (total_Corr, 3, 3)
-            trg_from_mating_surface = reshaped_oris[batch_scaled_gt_corr[:,1], :, :] # (total_Corr, 3, 3)
-
-            consistency_loss_2nd = self.loss_fn(src_from_mating_surface[:, 1, :], trg_from_mating_surface[:, 2, :])
-            consistency_loss_3rd = self.loss_fn(src_from_mating_surface[:, 2, :], trg_from_mating_surface[:, 1, :])
-            consistency_loss = (consistency_loss_2nd + consistency_loss_3rd) / 2 
+                consistency_loss_2nd = self.loss_fn(src_from_mating_surface[:, 1, :], trg_from_mating_surface[:, 2, :])
+                consistency_loss_3rd = self.loss_fn(src_from_mating_surface[:, 2, :], trg_from_mating_surface[:, 1, :])
+                consistency_loss = (consistency_loss_2nd + consistency_loss_3rd) / 2 
+            
+            else:
+                consistency_loss = torch.tensor(0.).to(pred_normal.device)
         
         else:
             consistency_loss = torch.tensor(0.).to(pred_normal.device)
