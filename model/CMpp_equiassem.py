@@ -600,7 +600,6 @@ class EquiAssem(pl.LightningModule):
             oris = gram_schmidt_with_cross(vecs) # (B, N+M, 2, 3) -> (B, N+M, 3, 3)
         elif self.normal_pred_mode == 'gram':
             oris = gram_schmidt(vecs) # (B, N+M, 3, 3) -> (B, N+M, 3, 3)
-            print(f"vecs: {vecs.shape},vecs:\n{vecs[0,0]},\noris: {oris.shape}, oris:\n{oris[0,0]}")
         else:
             raise ValueError(f"normal_pred_mode must be in ['cross', 'gram'], but got {self.normal_pred_mode}")
         
