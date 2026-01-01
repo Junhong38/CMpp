@@ -219,9 +219,9 @@ rm -rf checkpoint/G8NDB3_F_BV0V0_MH_P0075M0075+N145M145+BD+HNM+NK0+DCOS+AD_MCM+M
 # [ING] Origin + Softmax (temperature, 1.0) + Distance: cossim + positive(0.075, offset 0) / negative(1.45, offset 0) + Hard Negative:TOPK1000 with double and more hard negative
 rm -rf checkpoint/G8NDB3_F_BV0V0_MH_P0075M0075+N145M145+BD+HNNMH+NK1000+DCOS+AD_MCM+MNSoft_S1P1_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --logpath G8NDB3_F_BV0V0_MH_P0075M0075+N145M145+BD+HNNMH+NK1000+DCOS+AD_MCM+MNSoft_S1P1_6 --backbone vn_unet --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale full --epochs 0 --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --batch_size 3 --pos_margin 0.075 --neg_margin 1.45 --pos_offset 0.0 --neg_offset 0.0 --balance_mode double --hard_negative none --neg_topk 1000 --distance_type cossim --anchor_mode default --more_hard_neg --matching_score_mode CM --matching_norm_mode softmax --p_loss_weight 1.0 --viz_train_epoch 30 --wandb --wandb_entity CMppProject --wandb_project CMpp
 
-# [DON
 
-E] Origin + Softmax (temperature, 1.0) + Distance: cossim + positive(0.075, offset 0) / negative(1.45, offset 0) + Hard Negative:mix with double + FILP_NORMAL
+
+# [DONE] Origin + Softmax (temperature, 1.0) + Distance: cossim + positive(0.075, offset 0) / negative(1.45, offset 0) + Hard Negative:mix with double + FILP_NORMAL
 rm -rf checkpoint/G8NDB2_F_BV0V0_MH_P0075M0075+N145M145+BD+HNM+NK0+DCOS+AD_FN_MCM+MNSoft_S1P1_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --logpath G8NDB2_F_BV0V0_MH_P0075M0075+N145M145+BD+HNM+NK0+DCOS+AD_FN_MCM+MNSoft_S1P1_6 --backbone vn_unet --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale full --epochs 0 --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --batch_size 2 --pos_margin 0.075 --neg_margin 1.45 --pos_offset 0.0 --neg_offset 0.0 --balance_mode double --hard_negative mix --neg_topk 0 --distance_type cossim --anchor_mode default --flip_normal --matching_score_mode CM --matching_norm_mode softmax --p_loss_weight 1.0 --viz_train_epoch 30 --wandb --wandb_entity CMppProject --wandb_project CMpp
 
 # [DONE] Origin + Softmax (temperature, 1.0) + Distance: cossim + positive(0.075, offset 0) / negative(1.45, offset 0) + Hard Negative:mix with double + FILP_NORMAL(+ consistency loss)
