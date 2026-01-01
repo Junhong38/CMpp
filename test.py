@@ -67,13 +67,14 @@ def test(args):
                       debug=args.debug, 
                       success_criterion_in_degree=args.success_criterion_in_degree,
                       only_train_normal=False, # We don't need to use this parameter for testing  
-                      flip_normal=args.flip_normal,
+                      flip_normal_mode=args.flip_normal_mode,
                       consistency_loss=False, # We don't need to use this parameter for testing
                         
                       n_knn=args.n_knn,
                       only_one_norm=args.only_one_norm,
                       n_avn=args.n_avn,
                       mlp_mode=args.mlp_mode,
+                      normal_pred_mode=args.normal_pred_mode,
                       move_smaller=args.move_smaller,
 
                       matching_score_mode=args.matching_score_mode,
@@ -169,6 +170,7 @@ if __name__ == '__main__':
     parser.add_argument('--only_one_norm', action='store_true', help='If True, use only one Normalization layer for the equivariant shape feature')
     parser.add_argument('--n_avn', type=int, default=5, help='Number of AVN layers for the equivariant shape feature')
     parser.add_argument('--mlp_mode', type=str, default='CMpp', choices=['CMpp', 'CMpp_half', 'half', 'deep'])
+    parser.add_argument('--normal_pred_mode', type=str, default='cross', choices=['cross', 'gram'])
 
 
     # Only for evaluation metrics
@@ -177,7 +179,7 @@ if __name__ == '__main__':
 
     # Additional experiments
     parser.add_argument('--success_criterion_in_degree', type=int, default=10, help='Success criterion in degree for normal error')
-    parser.add_argument('--flip_normal', action='store_true', help='If True, flip the normal vector of the point cloud')
+    parser.add_argument('--flip_normal_mode', type=str, default='none', choices=['none', 'right', 'mix'])
     parser.add_argument('--move_smaller', action='store_true', help='If True, always move the smaller point cloud to the origin')
 
 

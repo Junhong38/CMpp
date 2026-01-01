@@ -18,7 +18,7 @@ from model.local_global_registration import LocalGlobalRegistration
 
 from RANSAC.ransac import _RANSAC
 
-from common.rotation import ortho2rotation
+from common.rotation import gram_schmidt_with_cross, gram_schmidt
 from common.utils import instance_wise_results_to_json
 from common.viz import visualize_negative_hard_mask, save_pcd_for_light_visualization, draw_frames, draw_normal_error_histogram, draw_test_results_histogram
 from common.misc import extract_all_objects, batch_scaling
@@ -64,13 +64,14 @@ class EquiAssem(pl.LightningModule):
             debug=False,
             success_criterion_in_degree=10,
             only_train_normal=False,
-            flip_normal=False,
+            flip_normal_mode='none',
             consistency_loss=False,
             
             n_knn=20,
             only_one_norm=False,
             n_avn=5,
             mlp_mode='CMpp',
+            normal_pred_mode='cross',
             move_smaller=False,
 
             matching_score_mode='CM',
@@ -123,13 +124,14 @@ class EquiAssem(pl.LightningModule):
             debug (bool, optional): Whether to enable debug mode. Defaults to False.
             success_criterion_in_degree (int, optional): Success criterion in degree for normal error. Defaults to 10.
             only_train_normal (bool, optional): Whether to only train the normal vector, it will be used for stage 1 training. Defaults to False.
-            flip_normal (bool, optional): Whether to flip the normal vector. Defaults to False.
+            flip_normal_mode (str, optional): 'none' or 'right' or 'mix'. Defaults to 'none'.
             consistency_loss (bool, optional): Whether to use consistency loss. Defaults to False.
 
             n_knn (int, optional): Number of nearest neighbors for KNN. Defaults to 20.
             only_one_norm (bool, optional): Whether to use only one Normalization layer for the equivariant shape feature. Defaults to False.
             n_avn (int, optional): Number of AVN layers for the equivariant shape feature. Defaults to 5.
             mlp_mode (str, optional): 'CMpp' or 'half' or 'deep'. Defaults to 'CMpp'.
+            normal_pred_mode (str, optional): 'cross' or 'gram'. Defaults to 'cross'.
             move_smaller (bool, optional): Whether to always move the smaller point cloud to the origin. Defaults to False.
 
             matching_score_mode (str, optional): 'CM' or 'cossim'. Defaults to 'CM'.
@@ -171,13 +173,14 @@ class EquiAssem(pl.LightningModule):
         print(f"debug: {debug}")
         print(f"success_criterion_in_degree: {success_criterion_in_degree}")
         print(f"only_train_normal: {only_train_normal}")
-        print(f"flip_normal: {flip_normal}")
+        print(f"flip_normal_mode: {flip_normal_mode}")
         print(f"consistency_loss: {consistency_loss}")
 
         print(f"n_knn: {n_knn}")
         print(f"only_one_norm: {only_one_norm}")
         print(f"n_avn: {n_avn}")
         print(f"mlp_mode: {mlp_mode}")
+        print(f"normal_pred_mode: {normal_pred_mode}")
         print(f"move_smaller: {move_smaller}")
 
         print(f"matching_score_mode: {matching_score_mode}")
@@ -205,7 +208,8 @@ class EquiAssem(pl.LightningModule):
         self.debug = debug
         self.success_criterion_in_degree = success_criterion_in_degree
         self.only_train_normal = only_train_normal
-        self.flip_normal = flip_normal
+        self.flip_normal_mode = flip_normal_mode
+        self.normal_pred_mode = normal_pred_mode
 
         self.move_smaller = move_smaller
 
@@ -231,7 +235,7 @@ class EquiAssem(pl.LightningModule):
                                       pos_offset=pos_offset, neg_offset=neg_offset,
                                       balance_mode=balance_mode, hard_negative=hard_negative,
                                       neg_topk=neg_topk, distance_type=distance_type, anchor_mode=anchor_mode)
-        self.orientation_loss = OrientationLoss(consistency_loss=consistency_loss, pos_radius=pos_radius)
+        self.orientation_loss = OrientationLoss(consistency_loss=consistency_loss, pos_radius=pos_radius, normal_pred_mode=normal_pred_mode)
         self.matching_loss = PointMatchingLoss(pos_radius=pos_radius, safe_radius=safe_radius)
         
 
@@ -272,7 +276,12 @@ class EquiAssem(pl.LightningModule):
             raise NotImplementedError("DGCNN backbone not implemented")
 
         # Layer for predicting frame vectors
-        self.proj = VNLinear(2 * (self.feat_dim//3), 2)
+        if self.normal_pred_mode == 'cross':
+            self.proj = VNLinear(2 * (self.feat_dim//3), 2)
+        elif self.normal_pred_mode == 'gram':
+            self.proj = VNLinear(2 * (self.feat_dim//3), 3)
+        else:
+            raise ValueError(f"normal_pred_mode must be in ['cross', 'gram'], but got {self.normal_pred_mode}")
 
         # Layer for Equivariant feature
         if n_avn > 0:
@@ -587,7 +596,14 @@ class EquiAssem(pl.LightningModule):
 
 
         # 4. Gram Schmidt & Cross-product, this is for making three basis vectors by using two predicted vectors
-        oris = ortho2rotation(vecs) # (B, N+M, 2, 3) -> (B, N+M, 3, 3)
+        if self.normal_pred_mode == 'cross':
+            oris = gram_schmidt_with_cross(vecs) # (B, N+M, 2, 3) -> (B, N+M, 3, 3)
+        elif self.normal_pred_mode == 'gram':
+            oris = gram_schmidt(vecs) # (B, N+M, 3, 3) -> (B, N+M, 3, 3)
+            print(f"vecs: {vecs.shape},vecs:\n{vecs[0,0]},\noris: {oris.shape}, oris:\n{oris[0,0]}")
+        else:
+            raise ValueError(f"normal_pred_mode must be in ['cross', 'gram'], but got {self.normal_pred_mode}")
+        
         out_dict['oris'] = oris
 
 
@@ -609,20 +625,20 @@ class EquiAssem(pl.LightningModule):
         
         # 5. Invariant Features
         inv_feats = self.make_inv_feats(oris, pcd_batch_info, equi_feats, src_flip=True) # (B, C*3, N+M)
-        if self.flip_normal and mode in ['train', 'val']:
+        if self.flip_normal_mode != 'none' and mode in ['train', 'val']:
             symmetric_inv_feats = self.make_inv_feats(oris, pcd_batch_info, equi_feats, src_flip=False) # (B, C*3, N+M)
         
 
         # 6. SHAPE DESCRIPTOR 
         shape_feats = self.shape_mlp(inv_feats) # (B, C*3, N+M) -> (B, D, N+M)
-        if self.flip_normal and mode in ['train', 'val']:
+        if self.flip_normal_mode != 'none' and mode in ['train', 'val']:
             symmetric_shape_feats = self.shape_mlp(symmetric_inv_feats) # (B, C*3, N+M) -> (B, D, N+M)
         
 
         # 7. Calculate Matching Scores
         active_mask = self.return_active_mask(pcd_batch_info)
         shape_matching_scores = self.calculate_matching_score(shape_feats, active_mask, eps=1e-8, mode=self.matching_score_mode)
-        if self.flip_normal and mode in ['train', 'val']:
+        if self.flip_normal_mode != 'none' and mode in ['train', 'val']:
             symmetric_shape_matching_scores = self.calculate_matching_score(symmetric_shape_feats, active_mask, eps=1e-8, mode=self.matching_score_mode)
         
 
@@ -630,13 +646,13 @@ class EquiAssem(pl.LightningModule):
         # Optimal Transport is in log space, so inside registration, there is exp operation
         matching_scores = self.multibatch_optimal_transport(shape_matching_scores, pcd_batch_info, active_mask, mode=self.matching_norm_mode) # (B, N+M+1, N+M+1) if mode is ['sinkhorn', 'softmax'], otherwise (B, N+M, N+M)
         matching_scores_drop = matching_scores[:,:-1,:-1] if self.matching_norm_mode in ['sinkhorn', 'softmax'] else matching_scores # (B, N+M, N+M)
-        if self.flip_normal and mode in ['train', 'val']:
+        if self.flip_normal_mode != 'none' and mode in ['train', 'val']:
             symmetric_matching_scores = self.multibatch_optimal_transport(symmetric_shape_matching_scores, pcd_batch_info, active_mask, mode=self.matching_norm_mode) # (B, N+M+1, N+M+1) if mode is ['sinkhorn', 'softmax'], otherwise (B, N+M, N+M)
         
 
         if mode in ['train', 'val']: # Do not calculate for test
             # 8. Calculate Loss
-            if self.flip_normal:
+            if self.flip_normal_mode != 'none':
                 src_move_circle_loss, coords_dist, pos_neg_distribution, neg_hard_mask_for_viz = self.circle_loss(pcd_raw, shape_feats, shape_matching_scores, active_mask)
                 trg_move_circle_loss, _, _, _ = self.circle_loss(pcd_raw, symmetric_shape_feats, symmetric_shape_matching_scores, active_mask)
 
@@ -718,9 +734,12 @@ class EquiAssem(pl.LightningModule):
             inv_feats (torch.Tensor): (B, C*3, N)
         """
 
-        if self.flip_normal:
+        if self.flip_normal_mode in ['right', 'mix']:
             # (B, N+M, 3, 3)
-            postprocessed_oris = torch.stack([- oris[:, :, 0, :], oris[:, :, 2, :], oris[:, :, 1, :]], dim=-2)
+            if self.flip_normal_mode == 'right':
+                postprocessed_oris = torch.stack([- oris[:, :, 0, :], oris[:, :, 2, :], oris[:, :, 1, :]], dim=-2)
+            elif self.flip_normal_mode == 'mix':
+                postprocessed_oris = torch.stack([- oris[:, :, 0, :], oris[:, :, 1, :], oris[:, :, 2, :]], dim=-2)
 
             if src_flip: # Flip the normal vector of src
                 # We assume there are two objects in the batch
@@ -731,8 +750,11 @@ class EquiAssem(pl.LightningModule):
                 trg_batch_info = oris_batch_info == 1 # (B, N+M, )
                 result_oris = postprocessed_oris * trg_batch_info[:,:,None,None] + oris * (~ trg_batch_info)[:,:,None,None]
         
-        else:
+        elif self.flip_normal_mode == 'none':
             result_oris = oris
+        
+        else:
+            raise ValueError(f"flip_normal_mode must be in ['right', 'mix', 'none'], but got {self.flip_normal_mode}")
         
         # (B, C, 3, N) -> (B, N, C, 3) @ (B, N, 3, 3) -> (B, N, 3, 3) => (B, N, C, 3)
         inv_feats = torch.matmul(equi_feats.permute(0, 3, 1, 2).float(), result_oris.transpose(-2,-1).float()) 
