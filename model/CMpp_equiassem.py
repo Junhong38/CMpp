@@ -49,12 +49,13 @@ class EquiAssem(pl.LightningModule):
             neg_topk=0,
             distance_type='l2',
             anchor_mode='default',
+            more_hard_neg=False,
 
             s_loss_weight=1.0, 
             p_loss_weight=1.0, 
             o_loss_weight=1.0,
 
-            visualize=False, 
+            visualize_mode='none', 
             viz_metric_name='none',
             viz_metric_threshold=0.0,
             viz_train_epoch=0,
@@ -109,12 +110,13 @@ class EquiAssem(pl.LightningModule):
             negative (str, optional): 'none' or 'topk'. Defaults to 'none'.
             distance_type (str, optional): 'l2' or 'cossim'. Defaults to 'l2'.
             anchor_mode (str, optional): 'default' or 'all_pos'. Defaults to 'default'.
+            more_hard_neg (bool, optional): Whether to use more hard negative samples. Defaults to False.
 
             s_loss_weight (float, optional): Weight for shape loss. Defaults to 1.0.
             p_loss_weight (float, optional): Weight for point matching loss. Defaults to 1.0.
             o_loss_weight (float, optional): Weight for orientation loss. Defaults to 1.0.
             
-            visualize (bool, optional): Whether to save visualization results. Defaults to False.
+            visualize_mode (str, optional): 'none' or 'light' or 'all'. Defaults to 'none'.
             viz_metric_name (str, optional): 'none' or 'crd' or 'cd' or 'rrmse_geo' or 'trmse_geo'. Defaults to 'none'.
             viz_metric_threshold (float, optional): Threshold for visualization. Defaults to 0.0.
             viz_train_epoch (int, optional): Epoch for visualizing the negative hard mask during training. Defaults to 0.
@@ -163,7 +165,7 @@ class EquiAssem(pl.LightningModule):
         print(f"p_loss_weight: {p_loss_weight}")
         print(f"o_loss_weight: {o_loss_weight}")
         
-        print(f"visualize: {visualize}")
+        print(f"visualize_mode: {visualize_mode}")
         print(f"viz_metric_name: {viz_metric_name}")
         print(f"viz_metric_threshold: {viz_metric_threshold}")
         print(f"viz_train_epoch: {viz_train_epoch}")
@@ -198,7 +200,7 @@ class EquiAssem(pl.LightningModule):
 
         self.lr = lr
         self.scheduler_mode = scheduler_mode
-        self.visualize = visualize
+        self.visualize_mode = visualize_mode
         self.viz_metric_name = viz_metric_name
         self.viz_metric_threshold = viz_metric_threshold
         self.viz_train_epoch = viz_train_epoch
@@ -230,11 +232,12 @@ class EquiAssem(pl.LightningModule):
         
         # Objectives
         self.pos_radius = pos_radius
+        self.safe_radius = safe_radius
         self.circle_loss = CircleLoss(pos_radius=pos_radius, safe_radius=safe_radius, 
                                       log_scale=log_scale, pos_margin=pos_margin, neg_margin=neg_margin, 
                                       pos_offset=pos_offset, neg_offset=neg_offset,
                                       balance_mode=balance_mode, hard_negative=hard_negative,
-                                      neg_topk=neg_topk, distance_type=distance_type, anchor_mode=anchor_mode)
+                                      neg_topk=neg_topk, more_hard_neg=more_hard_neg, distance_type=distance_type, anchor_mode=anchor_mode)
         self.orientation_loss = OrientationLoss(consistency_loss=consistency_loss, pos_radius=pos_radius, normal_pred_mode=normal_pred_mode)
         self.matching_loss = PointMatchingLoss(pos_radius=pos_radius, safe_radius=safe_radius)
         
@@ -677,7 +680,8 @@ class EquiAssem(pl.LightningModule):
                     loss['n_error'], _, loss['n_suc_rate'] = self._normal_error(in_dict, out_dict, success_criterion_in_degree=self.success_criterion_in_degree)
 
                     if ((not self.trainer.sanity_checking) and self.viz_train_epoch > 0 and batch_idx == 0 and (self.current_epoch % self.viz_train_epoch == 0 or self.current_epoch == self.trainer.max_epochs-1)):
-                        visualize_negative_hard_mask(in_dict, neg_hard_mask_for_viz['neg_mask'], neg_hard_mask_for_viz['hard_neg_mask'], active_mask, self.ckp_dir, self.current_epoch, self.trainer.global_rank, self.pos_radius)
+                        visualize_negative_hard_mask(in_dict, neg_hard_mask_for_viz['neg_mask'], neg_hard_mask_for_viz['hard_neg_mask'], active_mask, self.ckp_dir, self.current_epoch, self.trainer.global_rank, self.pos_radius, self.safe_radius)
+                        # exit("stop")
         
 
         # 9. Evaluation
@@ -1047,10 +1051,10 @@ class EquiAssem(pl.LightningModule):
 
         if (mode =='val' and (not self.trainer.sanity_checking) and \
             self.trainer.global_rank == 0 and \
-            self.visualize and \
+            (self.visualize_mode != 'none') and \
             (self.current_epoch % self.viz_epoch == 0 or self.current_epoch == self.trainer.max_epochs-1) and \
             in_dict['eval_idx'][0].item() == 0) or \
-            (mode =='test' and self.visualize and metric_based_visualization):
+            (mode =='test' and (self.visualize_mode != 'none') and metric_based_visualization):
             # Do not visualize in sanity checking
             # Only rank 0 should do visualization to avoid file I/O conflicts in DDP
             # Visualize for every self.viz_epoch
@@ -1069,54 +1073,56 @@ class EquiAssem(pl.LightningModule):
             save_pcd_for_light_visualization(pcds_pred, gt_corr, used_corr, f'{vis_folder}/E{self.current_epoch}_{in_dict['eval_idx'][0].item()}_{in_dict['obj_class'][0]}_{round(eval_result['crd'].item(),3)}_pred_top{self.infer_topk}')
             save_pcd_for_light_visualization(pcds_grtr, gt_corr, used_corr, f'{vis_folder}/E{self.current_epoch}_{in_dict['eval_idx'][0].item()}_{in_dict['obj_class'][0]}_{round(eval_result['crd'].item(),3)}_grtr_top{self.infer_topk}')
 
+
             # MESH AND FRAME VISUALIZATION
-            output_src_ori, output_trg_ori = split_input_dict['src_ori'], split_input_dict['trg_ori'] # (N, 3, 3), (M, 3, 3)
-            gt_src_normals, gt_trg_normals = split_input_dict['gt_src_normals'], split_input_dict['gt_trg_normals'] # (N, 3), (M, 3)
-            src_mesh_verts, trg_mesh_verts = in_dict['mesh_t'][0].float(), in_dict['mesh_t'][1].float() # (N,3), (M,3)
-            src_mesh_faces, trg_mesh_faces = in_dict['mesh_faces'][0].float(), in_dict['mesh_faces'][1].float() # (F,3), (F',3)
-            
-            if is_swap_triggered: # To move smaller one, we swap src and trg in the above part
-                output_src_ori, output_trg_ori = output_trg_ori, output_src_ori
-                gt_src_normals, gt_trg_normals = gt_trg_normals, gt_src_normals
-                src_mesh_verts, trg_mesh_verts = trg_mesh_verts, src_mesh_verts
-                src_mesh_faces, trg_mesh_faces = trg_mesh_faces, src_mesh_faces
-            
-            mesh_faces_for_viz = [src_mesh_faces, trg_mesh_faces]
+            if self.visualize_mode == 'all':
+                output_src_ori, output_trg_ori = split_input_dict['src_ori'], split_input_dict['trg_ori'] # (N, 3, 3), (M, 3, 3)
+                gt_src_normals, gt_trg_normals = split_input_dict['gt_src_normals'], split_input_dict['gt_trg_normals'] # (N, 3), (M, 3)
+                src_mesh_verts, trg_mesh_verts = in_dict['mesh_t'][0].float(), in_dict['mesh_t'][1].float() # (N,3), (M,3)
+                src_mesh_faces, trg_mesh_faces = in_dict['mesh_faces'][0].float(), in_dict['mesh_faces'][1].float() # (F,3), (F',3)
+                
+                if is_swap_triggered: # To move smaller one, we swap src and trg in the above part
+                    output_src_ori, output_trg_ori = output_trg_ori, output_src_ori
+                    gt_src_normals, gt_trg_normals = gt_trg_normals, gt_src_normals
+                    src_mesh_verts, trg_mesh_verts = trg_mesh_verts, src_mesh_verts
+                    src_mesh_faces, trg_mesh_faces = trg_mesh_faces, src_mesh_faces
+                
+                mesh_faces_for_viz = [src_mesh_faces, trg_mesh_faces]
 
-            reshaped_output_src_ori = output_src_ori.reshape(-1,3) # (N,3,3) -> (N*3,3)
-            reshaped_output_trg_ori = output_trg_ori.reshape(-1,3) # (M,3,3) -> (M*3,3)
+                reshaped_output_src_ori = output_src_ori.reshape(-1,3) # (N,3,3) -> (N*3,3)
+                reshaped_output_trg_ori = output_trg_ori.reshape(-1,3) # (M,3,3) -> (M*3,3)
 
-            zero_trans = torch.zeros(3).to(grtr_relative_trsfm[0].device)
+                zero_trans = torch.zeros(3).to(grtr_relative_trsfm[0].device)
 
-            # Rotate by using gt
-            _, rot_frame_ori_in_gt = self._pairwise_mating(reshaped_output_src_ori, reshaped_output_trg_ori, grtr_relative_trsfm[0], zero_trans)
-            _, rot_gt_normals_in_gt = self._pairwise_mating(gt_src_normals, gt_trg_normals, grtr_relative_trsfm[0], zero_trans)
-            _, rot_mesh_verts_in_gt = self._pairwise_mating(src_mesh_verts, trg_mesh_verts, grtr_relative_trsfm[0], grtr_relative_trsfm[1])
+                # Rotate by using gt
+                _, rot_frame_ori_in_gt = self._pairwise_mating(reshaped_output_src_ori, reshaped_output_trg_ori, grtr_relative_trsfm[0], zero_trans)
+                _, rot_gt_normals_in_gt = self._pairwise_mating(gt_src_normals, gt_trg_normals, grtr_relative_trsfm[0], zero_trans)
+                _, rot_mesh_verts_in_gt = self._pairwise_mating(src_mesh_verts, trg_mesh_verts, grtr_relative_trsfm[0], grtr_relative_trsfm[1])
 
 
-            # DRAW FRAME by using gt
-            draw_frames(mesh_verts=rot_mesh_verts_in_gt, mesh_faces=mesh_faces_for_viz, 
-                        frame_ori=rot_frame_ori_in_gt, gt_normals=rot_gt_normals_in_gt, pcds_list=pcds_grtr, dir_path=vis_folder,
-                        filename=f'E{self.current_epoch}_{in_dict["eval_idx"].item()}_{in_dict["obj_class"][0]}_{round(eval_result["crd"].item(),3)}_in_gt',
-                        viz_max_arrow_num=self.viz_max_arrow_num,
-                        viz_piece=True, viz_full=True)
+                # DRAW FRAME by using gt
+                draw_frames(mesh_verts=rot_mesh_verts_in_gt, mesh_faces=mesh_faces_for_viz, 
+                            frame_ori=rot_frame_ori_in_gt, gt_normals=rot_gt_normals_in_gt, pcds_list=pcds_grtr, dir_path=vis_folder,
+                            filename=f'E{self.current_epoch}_{in_dict["eval_idx"].item()}_{in_dict["obj_class"][0]}_{round(eval_result["crd"].item(),3)}_in_gt',
+                            viz_max_arrow_num=self.viz_max_arrow_num,
+                            viz_piece=True, viz_full=True)
 
-            # Rotate by using pred
-            _, rot_frame_ori_in_pred = self._pairwise_mating(reshaped_output_src_ori, reshaped_output_trg_ori, pred_relative_trsfm[0], zero_trans)
-            _, rot_gt_normals_in_pred = self._pairwise_mating(gt_src_normals, gt_trg_normals, pred_relative_trsfm[0], zero_trans)
-            _, rot_mesh_verts_in_pred = self._pairwise_mating(src_mesh_verts, trg_mesh_verts, pred_relative_trsfm[0], pred_relative_trsfm[1])
+                # Rotate by using pred
+                _, rot_frame_ori_in_pred = self._pairwise_mating(reshaped_output_src_ori, reshaped_output_trg_ori, pred_relative_trsfm[0], zero_trans)
+                _, rot_gt_normals_in_pred = self._pairwise_mating(gt_src_normals, gt_trg_normals, pred_relative_trsfm[0], zero_trans)
+                _, rot_mesh_verts_in_pred = self._pairwise_mating(src_mesh_verts, trg_mesh_verts, pred_relative_trsfm[0], pred_relative_trsfm[1])
 
-            # DRAW FRAME by using prediction
-            draw_frames(mesh_verts=rot_mesh_verts_in_pred, mesh_faces=mesh_faces_for_viz, 
-                        frame_ori=rot_frame_ori_in_pred, gt_normals=rot_gt_normals_in_pred, pcds_list=pcds_pred, dir_path=vis_folder,
-                        filename=f'E{self.current_epoch}_{in_dict["eval_idx"].item()}_{in_dict["obj_class"][0]}_{round(eval_result["crd"].item(),3)}_in_pred',
-                        viz_max_arrow_num=self.viz_max_arrow_num,
-                        viz_piece=False, viz_full=True)
-            
+                # DRAW FRAME by using prediction
+                draw_frames(mesh_verts=rot_mesh_verts_in_pred, mesh_faces=mesh_faces_for_viz, 
+                            frame_ori=rot_frame_ori_in_pred, gt_normals=rot_gt_normals_in_pred, pcds_list=pcds_pred, dir_path=vis_folder,
+                            filename=f'E{self.current_epoch}_{in_dict["eval_idx"].item()}_{in_dict["obj_class"][0]}_{round(eval_result["crd"].item(),3)}_in_pred',
+                            viz_max_arrow_num=self.viz_max_arrow_num,
+                            viz_piece=False, viz_full=True)
+                
 
-            # DRAW NORMAL ERROR HISTOGRAM
-            draw_normal_error_histogram(normal_error_hist=normal_error_hist, dir_path=vis_hist_folder, 
-                                        filename=f'E{self.current_epoch}_{in_dict["eval_idx"].item()}_{in_dict["obj_class"][0]}_{round(eval_result["n_error"].item(),3)}_hist.png')
+                # DRAW NORMAL ERROR HISTOGRAM
+                draw_normal_error_histogram(normal_error_hist=normal_error_hist, dir_path=vis_hist_folder, 
+                                            filename=f'E{self.current_epoch}_{in_dict["eval_idx"].item()}_{in_dict["obj_class"][0]}_{round(eval_result["n_error"].item(),3)}_hist.png')
             
 
             # exit("stop")

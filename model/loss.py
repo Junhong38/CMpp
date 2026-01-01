@@ -5,7 +5,7 @@ import torch.nn.functional as F
 class CircleLoss(nn.Module):
 
     def __init__(self, pos_radius=0.018, safe_radius=0.03, log_scale=24, pos_margin=0.1, neg_margin=1.4, pos_offset=0.0, neg_offset=0.0,
-                 balance_mode='none', hard_negative='none', neg_topk=0, distance_type='l2', anchor_mode='default'):
+                 balance_mode='none', hard_negative='none', neg_topk=0, more_hard_neg=False, distance_type='l2', anchor_mode='default'):
 
 
         super(CircleLoss,self).__init__()
@@ -17,6 +17,7 @@ class CircleLoss(nn.Module):
         self.balance_mode = balance_mode
         self.hard_negative = hard_negative
         self.neg_topk = neg_topk
+        self.more_hard_neg = more_hard_neg
         self.distance_type = distance_type
         self.anchor_mode = anchor_mode
 
@@ -36,23 +37,28 @@ class CircleLoss(nn.Module):
         print(f"neg_optimal: {self.neg_optimal}, neg_margin: {self.neg_margin}")
         print(f"pos_offset: {self.pos_offset}, neg_offset: {self.neg_offset}")
         print(f"balance_mode: {self.balance_mode}")
-        print(f"hard_negative: {self.hard_negative}, neg_topk: {self.neg_topk}")
+        print(f"hard_negative: {self.hard_negative}, neg_topk: {self.neg_topk}, more_hard_neg: {self.more_hard_neg}")
         print(f"distance_type: {self.distance_type}, anchor_mode: {self.anchor_mode}")
         print("------------------------------------------------------")
 
 
-    def negative_sampling(self, matching_scores, pos_mask, neg_mask):
+    def negative_sampling(self, matching_scores, pos_mask, neg_mask, coords_dist, active_mask):
         """
         Args:
             matching_scores (torch.Tensor): (B, N+M, N+M), This already removed inactive points
             pos_mask (torch.Tensor): (B, N+M, N+M)
             neg_mask (torch.Tensor): (B, N+M, N+M)
+            coords_dist (torch.Tensor): (B, N+M, N+M)
+            active_mask (torch.Tensor): (B, N+M, N+M)
         
         Returns:
             neg_mask (torch.Tensor): (B, N+M, N+M)
             hard_neg_mask (torch.Tensor): (B, N+M, N+M)
         """
         batch_size, num_row, num_col = matching_scores.shape
+
+        if self.more_hard_neg:
+            more_hard_neg_pool = torch.logical_and(coords_dist > self.safe_radius * 1.5, active_mask) # (B, N+M, N+M)
 
         if self.hard_negative == 'mix': # Hard negative sampling
             # To find smallest pos score from each batch, we need to fill redundant scores with maximum score.
@@ -65,6 +71,9 @@ class CircleLoss(nn.Module):
             # We want to divide pos and neg completely.
             # So, if neg sample has bigger score than smallest pos sample, it is a hard negative.
             hard_neg_mask = torch.logical_and(neg_mask, bigger_than_smallest_pos_score)
+
+            if self.more_hard_neg:
+                hard_neg_mask = torch.logical_and(hard_neg_mask, more_hard_neg_pool)
         
         else: # 'none'
             hard_neg_mask = torch.zeros_like(neg_mask, dtype=torch.bool)
@@ -73,6 +82,9 @@ class CircleLoss(nn.Module):
         if self.neg_topk > 0:
             # Do not overlap with hard negatives
             pure_neg_mask = torch.logical_and(neg_mask, ~ hard_neg_mask)
+
+            if self.more_hard_neg:
+                pure_neg_mask = torch.logical_and(pure_neg_mask, more_hard_neg_pool)
 
             # To find topk neg score from each batch, we need to fill redundant scores with minimum score.
             postprocessed_for_neg = matching_scores * pure_neg_mask + matching_scores.min() * (~pure_neg_mask)
@@ -183,7 +195,8 @@ class CircleLoss(nn.Module):
             }
         
         neg_hard_mask_for_viz = dict()
-        neg_mask, pos_neg_distribution['num_of_hard_neg'], pos_neg_distribution['num_of_neg'], neg_hard_mask_for_viz['neg_mask'], neg_hard_mask_for_viz['hard_neg_mask'] = self.negative_sampling(matching_scores, pos_mask, neg_mask)
+        neg_mask, pos_neg_distribution['num_of_hard_neg'], pos_neg_distribution['num_of_neg'], neg_hard_mask_for_viz['neg_mask'], neg_hard_mask_for_viz['hard_neg_mask'] = \
+            self.negative_sampling(matching_scores, pos_mask, neg_mask, coords_dist, active_mask)
         
         if self.anchor_mode == 'default':
             # get anchors that have both positive and negative pairs

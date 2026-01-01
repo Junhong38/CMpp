@@ -55,12 +55,13 @@ def main(args):
                       neg_topk=args.neg_topk,
                       distance_type=args.distance_type,
                       anchor_mode=args.anchor_mode,
+                      more_hard_neg=args.more_hard_neg,
 
                       s_loss_weight=args.s_loss_weight,
                       p_loss_weight=args.p_loss_weight,
                       o_loss_weight=args.o_loss_weight,
 
-                      visualize=args.visualize,
+                      visualize_mode=args.visualize_mode,
                       viz_metric_name='none', # This is not used for training
                       viz_metric_threshold=0.0, # This is not used for training
                       viz_train_epoch=args.viz_train_epoch,
@@ -294,6 +295,7 @@ if __name__ == '__main__':
     parser.add_argument('--neg_topk', type=int, default=0, help='')
     parser.add_argument('--distance_type', type=str, default='l2', choices=['l2', 'cossim'])
     parser.add_argument('--anchor_mode', type=str, default='default', choices=['default', 'all_pos', 'all'])
+    parser.add_argument('--more_hard_neg', action='store_true', help='')
 
 
     # Additional experiments
@@ -311,7 +313,7 @@ if __name__ == '__main__':
 
 
     # Visualization arguments
-    parser.add_argument('--visualize', action='store_true')
+    parser.add_argument('--visualize_mode', type=str, default='none', choices=['none', 'light', 'all'])
     parser.add_argument('--viz_train_epoch', type=int, default=0, help='This is for visualizing the negative hard mask during training')
     parser.add_argument('--viz_epoch', type=int, default=30, help='Epoch for visualization. This only works when visualize is True')
     parser.add_argument('--viz_max_arrow_num', type=int, default=0, help='Maximum number of arrows for visualization. This only works when visualize is True')

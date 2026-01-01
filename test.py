@@ -52,12 +52,13 @@ def test(args):
                       neg_topk=0, # We don't need to use this parameter for testing
                       distance_type='cossim', # We don't need to use this parameter for testing
                       anchor_mode='default', # We don't need to use this parameter for testing
+                      more_hard_neg=False, # We don't need to use this parameter for testing
 
                       s_loss_weight=0.0, # We don't need to use this parameter for testing
                       p_loss_weight=0.0, # We don't need to use this parameter for testing
                       o_loss_weight=0.0, # We don't need to use this parameter for testing
 
-                      visualize=args.visualize,
+                      visualize_mode=args.visualize_mode,
                       viz_metric_name=args.viz_metric_name,
                       viz_metric_threshold=args.viz_metric_threshold,
                       viz_train_epoch=0, # We don't need to use this parameter for testing
@@ -199,7 +200,7 @@ if __name__ == '__main__':
 
 
     # Visualization arguments
-    parser.add_argument('--visualize', action='store_true')
+    parser.add_argument('--visualize_mode', type=str, default='none', choices=['none', 'light', 'all'])
     parser.add_argument('--viz_metric_name', type=str, default='crd', choices=['none', 'crd', 'cd', 'rrmse_geo', 'trmse_geo'])
     parser.add_argument('--viz_metric_threshold', type=float, default=0.0)
     parser.add_argument('--viz_epoch', type=int, default=30, help='Epoch for visualization. This only works when visualize is True')
