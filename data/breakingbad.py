@@ -402,9 +402,9 @@ class DatasetBreakingBad(Dataset):
                     
                     additional_sampled_pts = []
                     additional_sampled_faces_idx = []
-                    iteration_of_sampling = 0
-                    
+
                     for ith_new_pcd in range(trg_size_for_more_sampling):
+                        iteration_of_sampling = 0
                         while True: # If a new sampled point is on the mating surface, then we need to sample again
                             if self.split in ['val', 'test']:
                                 extra_pts, extra_face_idx = trimesh.sample.sample_surface(meshes[jth_part], 1, seed=(instance_idx + jth_part + iteration_of_sampling))
@@ -415,6 +415,7 @@ class DatasetBreakingBad(Dataset):
                                 additional_sampled_pts.append(extra_pts[0])
                                 additional_sampled_faces_idx.append(extra_face_idx[0])
                                 break
+                            
                             iteration_of_sampling += 1
                     
                     additional_sampled_pts = torch.tensor(additional_sampled_pts).float()

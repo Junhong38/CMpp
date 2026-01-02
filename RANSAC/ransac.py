@@ -22,6 +22,7 @@ def _RANSAC(in_dict, shape_matching_scores, src_pcd, trg_pcd, src_predicted_fram
         trg_predicted_frame (torch.Tensor, optional): (M, 3, 3) target predicted frame. Defaults to None.
         match_option (str, optional): 'topk' or 'mutual_topk' or 'soft_topk'. Defaults to 'topk'.
         RANSAC_type (str, optional): 'default' or 'score_dependent'. Defaults to 'default'.
+        topk (int, optional): Topk value for matching. Defaults to 128.
     """
     matching_scores_before_Sinkhorn = shape_matching_scores # (N, M)
                     
@@ -47,7 +48,6 @@ def _RANSAC(in_dict, shape_matching_scores, src_pcd, trg_pcd, src_predicted_fram
     # Get initial matches
     src_idx, trg_idx = initial_matches[:, 0], initial_matches[:, 1] # (K, ), (K, )
 
-
     # Score thresholding for initial matches
     # Score is consine similarity between shape features from src and trg
     # Hence, if the score is less than 0.0, then the correspondence is not good
@@ -55,10 +55,13 @@ def _RANSAC(in_dict, shape_matching_scores, src_pcd, trg_pcd, src_predicted_fram
     score_mask = matching_scores_before_Sinkhorn[src_idx, trg_idx] >= score_threshold # (K, )
     src_idx, trg_idx = src_idx[score_mask], trg_idx[score_mask] # (K_filtered, ), (K_filtered, )
 
+    # Real used correspondences
+    used_corr = torch.stack([src_idx, trg_idx], dim=1) # (K_filtered, 2)
+
 
     # Prepare to run RANSAC
-    src_corr_pts = src_pcd[:, src_idx] # (K_filtered, 3)
-    trg_corr_pts = trg_pcd[:, trg_idx] # (K_filtered, 3)
+    src_corr_pts = src_pcd[src_idx, :] # (K_filtered, 3)
+    trg_corr_pts = trg_pcd[trg_idx, :] # (K_filtered, 3)
 
 
     # RANSAC
@@ -91,7 +94,8 @@ def _RANSAC(in_dict, shape_matching_scores, src_pcd, trg_pcd, src_predicted_fram
     else:
         src_normal = src_predicted_frame[:,0,:] # (N, 3, 3) -> (N, 3), select only predicted normal
         trg_normal = trg_predicted_frame[:,0,:] # (M, 3, 3) -> (M, 3), 
-        
+    
+    
     inl_R, inl_t, inliers = ransac_function(src_corr_pts, trg_corr_pts, 
                                             src_pcd.squeeze(0), trg_pcd.squeeze(0),
                                             src_normal, trg_normal,
@@ -105,4 +109,4 @@ def _RANSAC(in_dict, shape_matching_scores, src_pcd, trg_pcd, src_predicted_fram
     estimated_transform[:3, 3] = inl_t
 
 
-    return estimated_transform
+    return estimated_transform, used_corr

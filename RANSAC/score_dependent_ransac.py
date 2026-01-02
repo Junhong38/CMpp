@@ -131,6 +131,8 @@ def ransac_rigid(
     best_rotation = None
     best_translation = None
 
+    unique_src_pcd = torch.unique(src_corr_pcd, dim=0)
+
 
     # RANSAC Iterations
     for _ in range(num_iters):
@@ -140,8 +142,13 @@ def ransac_rigid(
             trg_sample = trg_corr_pcd.index_select(0, indices)
             if matching_choice == 'many-to-one':
                 break
-            if torch.unique(src_sample, dim=0).size(0) == src_sample.size(0):
-                break
+            
+            if len(unique_src_pcd) < 3:
+                if torch.unique(src_sample, dim=0).size(0) == len(unique_src_pcd):
+                    break
+            else:
+                if torch.unique(src_sample, dim=0).size(0) == src_sample.size(0):
+                    break
 
         try:
             rotation, translation = estimate_rigid_transform(src_sample, trg_sample)
@@ -175,7 +182,7 @@ def ransac_rigid(
     if best_score is None:
         raise RuntimeError("Failed to estimate a valid transform via RANSAC.")
 
-    print(f"max_total_score: {max_total_score}")
+    # print(f"max_total_score: {max_total_score}")
     # print(f"best_rotation: {best_rotation}")
     # print(f"best_translation: {best_translation}")
 

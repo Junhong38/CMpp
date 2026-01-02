@@ -454,6 +454,8 @@ class EquiAssem(pl.LightningModule):
 
 
     def on_test_epoch_end(self):
+        print(f"self.global_rank: {self.trainer.global_rank} DONE")
+
         instance_score_dict = dict()
         
         for output in self.test_step_outputs:
@@ -477,7 +479,9 @@ class EquiAssem(pl.LightningModule):
                 total_instance_score_dict.update(gpu_i_result)
         else:
             total_instance_score_dict = instance_score_dict
-            
+        
+        print(f"self.global_rank: {self.trainer.global_rank} ALL GATHER OBJECT DONE")
+
         if self.trainer.global_rank == 0:
             result_avg_dict = dict()
             for metric_name in total_instance_score_dict[list(total_instance_score_dict.keys())[0]].keys():
@@ -495,6 +499,8 @@ class EquiAssem(pl.LightningModule):
 
         
         self.test_step_outputs.clear()
+
+        print(f"self.global_rank: {self.trainer.global_rank} LOG_DICT DONE")
         
         # Wait for all processes to reach this point
         if self.trainer.world_size > 1:
@@ -940,16 +946,15 @@ class EquiAssem(pl.LightningModule):
         trg_predicted_frame = trg_ori if self.use_predicted_normal else None # (M, 3, 3)
 
         if self.use_RANSAC:
-            estimated_transform = _RANSAC(in_dict=in_dict, 
-                                          shape_matching_scores=postprocessed_shape_matching_scores, 
-                                          src_pcd=src_pcd, 
-                                          trg_pcd=trg_pcd, 
-                                          src_predicted_frame=src_predicted_frame,
-                                          trg_predicted_frame=trg_predicted_frame,
-                                          match_option=self.infer_match_option, 
-                                          RANSAC_type=self.RANSAC_type, 
-                                          topk=self.infer_topk)
-            used_corr = None
+            estimated_transform, used_corr = _RANSAC(in_dict=in_dict, 
+                                                     shape_matching_scores=postprocessed_shape_matching_scores, 
+                                                     src_pcd=src_pcd, 
+                                                     trg_pcd=trg_pcd, 
+                                                     src_predicted_frame=src_predicted_frame,
+                                                     trg_predicted_frame=trg_predicted_frame,
+                                                     match_option=self.infer_match_option, 
+                                                     RANSAC_type=self.RANSAC_type, 
+                                                     topk=self.infer_topk)
 
         else:
             # fine_matching predict Rt to move points from src_points to ref_points
@@ -970,7 +975,7 @@ class EquiAssem(pl.LightningModule):
         eval_dict['gt_among_topk'] = self.calculate_ratio_of_gt_among_topk_scores(src_pcd_raw, trg_pcd_raw, postprocessed_matching_scores_drop, topk=self.infer_topk, pos_radius=self.pos_radius)
 
         # log size of gt_corr
-        eval_dict['gt_corr_size'] = torch.tensor(gt_corr.shape[0]).to(used_corr.device)
+        eval_dict['gt_corr_size'] = torch.tensor(gt_corr.shape[0]).to(src_pcd_raw.device)
 
         return out_dict, eval_dict
     
@@ -1276,7 +1281,7 @@ class EquiAssem(pl.LightningModule):
         rrmse_geo, trmse_geo = 0., 0.
         for r1, r2, t1, t2 in zip(rotat1, rotat2, trans1, trans2):
             # pred_rotat^T @ gt_rotat
-            relative_rotat = r1.T @ r2
+            relative_rotat = r1 @ r2.T
 
             # tr(R) = 1 + 2cos(θ) -> θ = acos((tr(R) - 1) / 2), torch.acos is in radian, so we need to convert to degree
             rrmse_geo += torch.rad2deg(torch.acos(torch.clamp(0.5 * (torch.trace(relative_rotat) - 1.0), -1.0, 1.0)))
