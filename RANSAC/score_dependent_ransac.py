@@ -126,7 +126,7 @@ def ransac_rigid(
     device = src_corr_pcd.device
 
     N = src_corr_pcd.shape[0]
-    max_total_score = 0.0
+    max_total_score = - torch.inf
     best_score = None
     best_rotation = None
     best_translation = None
