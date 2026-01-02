@@ -367,11 +367,11 @@ class PointMatchingLoss(nn.Module):
 
 
 class OrientationLoss(nn.Module):
-    def __init__(self, consistency_loss=False, pos_radius=0.018, normal_pred_mode='cross'):
+    def __init__(self, consistency_loss=False, pos_radius=0.018, flip_normal_mode='none'):
         super(OrientationLoss, self).__init__()
         self.consistency_loss = consistency_loss
         self.pos_radius = pos_radius
-        self.normal_pred_mode = normal_pred_mode
+        self.flip_normal_mode = flip_normal_mode
         self.loss_fn = nn.SmoothL1Loss(beta=1.0, reduction='mean')
     
     def forward(self, oris, gt_normals, batch_scaled_batch_info, coords_dist, pcd_raw, active_mask):
@@ -405,17 +405,19 @@ class OrientationLoss(nn.Module):
                 src_from_mating_surface = oris[gt_corr_map[:,0], gt_corr_map[:,1], :, :] # (total_corr, 3, 3)
                 trg_from_mating_surface = oris[gt_corr_map[:,0], gt_corr_map[:,2], :, :] # (total_corr, 3, 3)              
 
-                if self.normal_pred_mode == 'cross':
+                if self.flip_normal_mode == 'right':
                     consistency_loss_2nd = self.loss_fn(src_from_mating_surface[:, 1, :], trg_from_mating_surface[:, 2, :])
                     consistency_loss_3rd = self.loss_fn(src_from_mating_surface[:, 2, :], trg_from_mating_surface[:, 1, :])
-                elif self.normal_pred_mode == 'gram':
+                    consistency_loss = (consistency_loss_2nd + consistency_loss_3rd) / 2 
+                elif self.flip_normal_mode == 'rightv2':
+                    consistency_loss_2nd = self.loss_fn(src_from_mating_surface[:, 1, :], trg_from_mating_surface[:, 1, :])
+                    consistency_loss = consistency_loss_2nd
+                elif self.flip_normal_mode == 'mix':
                     consistency_loss_2nd = self.loss_fn(src_from_mating_surface[:, 1, :], trg_from_mating_surface[:, 1, :])
                     consistency_loss_3rd = self.loss_fn(src_from_mating_surface[:, 2, :], trg_from_mating_surface[:, 2, :])
+                    consistency_loss = (consistency_loss_2nd + consistency_loss_3rd) / 2 
                 else:
                     raise ValueError(f"normal_pred_mode must be in ['cross', 'gram'], but got {self.normal_pred_mode}")
-                
-                consistency_loss = (consistency_loss_2nd + consistency_loss_3rd) / 2 
-            
             else:
                 consistency_loss = torch.tensor(0.).to(pred_normal.device)
         

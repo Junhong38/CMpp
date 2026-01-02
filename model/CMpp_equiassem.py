@@ -126,7 +126,7 @@ class EquiAssem(pl.LightningModule):
             debug (bool, optional): Whether to enable debug mode. Defaults to False.
             success_criterion_in_degree (int, optional): Success criterion in degree for normal error. Defaults to 10.
             only_train_normal (bool, optional): Whether to only train the normal vector, it will be used for stage 1 training. Defaults to False.
-            flip_normal_mode (str, optional): 'none' or 'right' or 'mix'. Defaults to 'none'.
+            flip_normal_mode (str, optional): 'none' or 'right' or 'rightv2' or 'mix'. Defaults to 'none'.
             consistency_loss (bool, optional): Whether to use consistency loss. Defaults to False.
 
             n_knn (int, optional): Number of nearest neighbors for KNN. Defaults to 20.
@@ -238,7 +238,7 @@ class EquiAssem(pl.LightningModule):
                                       pos_offset=pos_offset, neg_offset=neg_offset,
                                       balance_mode=balance_mode, hard_negative=hard_negative,
                                       neg_topk=neg_topk, more_hard_neg=more_hard_neg, distance_type=distance_type, anchor_mode=anchor_mode)
-        self.orientation_loss = OrientationLoss(consistency_loss=consistency_loss, pos_radius=pos_radius, normal_pred_mode=normal_pred_mode)
+        self.orientation_loss = OrientationLoss(consistency_loss=consistency_loss, pos_radius=pos_radius, flip_normal_mode=flip_normal_mode)
         self.matching_loss = PointMatchingLoss(pos_radius=pos_radius, safe_radius=safe_radius)
         
 
@@ -743,13 +743,15 @@ class EquiAssem(pl.LightningModule):
             inv_feats (torch.Tensor): (B, C*3, N)
         """
 
-        if self.flip_normal_mode in ['right', 'mix']:
+        if self.flip_normal_mode in ['right', 'rightv2', 'mix']:
             # (B, N+M, 3, 3)
             if self.flip_normal_mode == 'right':
                 postprocessed_oris = torch.stack([- oris[:, :, 0, :], oris[:, :, 2, :], oris[:, :, 1, :]], dim=-2)
+            elif self.flip_normal_mode == 'rightv2':
+                postprocessed_oris = torch.stack([- oris[:, :, 0, :], oris[:, :, 1, :], - oris[:, :, 2, :]], dim=-2)
             elif self.flip_normal_mode == 'mix':
                 postprocessed_oris = torch.stack([- oris[:, :, 0, :], oris[:, :, 1, :], oris[:, :, 2, :]], dim=-2)
-
+            
             if src_flip: # Flip the normal vector of src
                 # We assume there are two objects in the batch
                 src_batch_info = oris_batch_info == 0 # (B, N+M, )

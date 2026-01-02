@@ -392,6 +392,7 @@ def save_pc(filename: str, pcd_tensors: list):
     o3d.io.write_point_cloud(filename, combined_cloud)
 
 
+
 def visualize_negative_hard_mask(in_dict, neg_mask, hard_neg_mask, active_mask, dir_path, current_epoch, global_rank, pos_radius=0.018, safe_radius=0.03):
     """
     Args:
@@ -411,26 +412,19 @@ def visualize_negative_hard_mask(in_dict, neg_mask, hard_neg_mask, active_mask, 
     corrd_dist = torch.cdist(src_pcd_raw, trg_pcd_raw, p=2) # (N, M)
 
     pos_mask = corrd_dist < pos_radius
-    inner_safe_radius_mask = corrd_dist <= safe_radius
-    inner_double_safe_radius_mask = corrd_dist <= 2 * safe_radius
-    inner_triple_safe_radius_mask = corrd_dist <= 3 * safe_radius
     processed_neg_mask = neg_mask[0][active_mask[0]] # (N*M)
     processed_hard_neg_mask = hard_neg_mask[0][active_mask[0]] # (N*M)
     processed_neg_mask = processed_neg_mask.reshape(num_src_pcd, num_trg_pcd) # (N, M)
     processed_hard_neg_mask = processed_hard_neg_mask.reshape(num_src_pcd, num_trg_pcd) # (N, M)
 
-    gt_corr = torch.nonzero(pos_mask) # (N*M, 2)
-    inner_safe_radius_corr = torch.nonzero(inner_safe_radius_mask) # (N*M, 2)
-    inner_double_safe_radius_corr = torch.nonzero(inner_double_safe_radius_mask) # (N*M, 2)
-    inner_triple_safe_radius_corr = torch.nonzero(inner_triple_safe_radius_mask) # (N*M, 2)
-    hard_neg_corr = torch.nonzero(processed_hard_neg_mask) # (N*M, 2)
-    neg_corr = torch.nonzero(processed_neg_mask) # (N*M, 2)
-
     intersection_mask_for_neg = torch.logical_and(pos_mask, processed_neg_mask)
     intersection_mask_for_hard = torch.logical_and(pos_mask, processed_hard_neg_mask)
-
     assert intersection_mask_for_neg.sum() == 0, f"intersection_mask_for_neg: {intersection_mask_for_neg.sum()}"
     assert intersection_mask_for_hard.sum() == 0, f"intersection_mask_for_hard: {intersection_mask_for_hard.sum()}"
+
+    gt_corr = torch.nonzero(pos_mask)[:2] # (N*M, 2)
+    hard_neg_corr = torch.nonzero(processed_hard_neg_mask)[:2] # (N*M, 2)
+    neg_corr = torch.nonzero(processed_neg_mask)[:2] # (N*M, 2)
 
     # Visualize negative and hard negative samples
     pcd_list_for_viz = [src_pcd_raw, trg_pcd_raw] # Red, Blue
@@ -441,30 +435,10 @@ def visualize_negative_hard_mask(in_dict, neg_mask, hard_neg_mask, active_mask, 
     pcd_list_for_viz.append(src_pcd_raw[neg_corr[:,0]]) # Purple
     pcd_list_for_viz.append(trg_pcd_raw[neg_corr[:,1]]) # Yellow
 
-    # Visualize positive and over safe radius samples
-    pcd_list_for_pos_and_inner_safe_radius = []
-    pcd_list_for_pos_and_inner_safe_radius.append(torch.cat([src_pcd_raw, trg_pcd_raw], dim=0)) # Red
-    pcd_list_for_pos_and_inner_safe_radius.append(torch.cat([src_pcd_raw[inner_safe_radius_corr[:,0]], trg_pcd_raw[inner_safe_radius_corr[:,1]]], dim=0)) # Blue
-    pcd_list_for_pos_and_inner_safe_radius.append(torch.cat([src_pcd_raw[gt_corr[:,0]], trg_pcd_raw[gt_corr[:,1]]], dim=0)) # Magenta
-
-    pcd_list_for_pos_and_inner_double_safe_radius = []
-    pcd_list_for_pos_and_inner_double_safe_radius.append(torch.cat([src_pcd_raw, trg_pcd_raw], dim=0)) # Red
-    pcd_list_for_pos_and_inner_double_safe_radius.append(torch.cat([src_pcd_raw[inner_double_safe_radius_corr[:,0]], trg_pcd_raw[inner_double_safe_radius_corr[:,1]]], dim=0)) # Blue
-    pcd_list_for_pos_and_inner_double_safe_radius.append(torch.cat([src_pcd_raw[gt_corr[:,0]], trg_pcd_raw[gt_corr[:,1]]], dim=0)) # Magenta
-
-    pcd_list_for_pos_and_inner_triple_safe_radius = []
-    pcd_list_for_pos_and_inner_triple_safe_radius.append(torch.cat([src_pcd_raw, trg_pcd_raw], dim=0)) # Red
-    pcd_list_for_pos_and_inner_triple_safe_radius.append(torch.cat([src_pcd_raw[inner_triple_safe_radius_corr[:,0]], trg_pcd_raw[inner_triple_safe_radius_corr[:,1]]], dim=0)) # Blue
-    pcd_list_for_pos_and_inner_triple_safe_radius.append(torch.cat([src_pcd_raw[gt_corr[:,0]], trg_pcd_raw[gt_corr[:,1]]], dim=0)) # Magenta
-    
-
     # Make folder
     vis_folder = os.path.join(dir_path, 'vis', f'GPU_{global_rank}', 'train', f'E{current_epoch}')
     os.makedirs(vis_folder, exist_ok=True)
     save_pc(os.path.join(vis_folder, f"E{current_epoch}_neg_hard_mask.ply"), pcd_list_for_viz)
-    save_pc(os.path.join(vis_folder, f"E{current_epoch}_pos_and_inner_safe_radius.ply"), pcd_list_for_pos_and_inner_safe_radius)
-    save_pc(os.path.join(vis_folder, f"E{current_epoch}_pos_and_inner_double_safe_radius.ply"), pcd_list_for_pos_and_inner_double_safe_radius)
-    save_pc(os.path.join(vis_folder, f"E{current_epoch}_pos_and_inner_triple_safe_radius.ply"), pcd_list_for_pos_and_inner_triple_safe_radius)
 
 
 
