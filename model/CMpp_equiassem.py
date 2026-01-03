@@ -18,7 +18,7 @@ from model.local_global_registration import LocalGlobalRegistration
 
 from RANSAC.ransac import _RANSAC
 
-from common.rotation import gram_schmidt_with_cross, gram_schmidt
+from common.rotation import gram_schmidt_with_cross, gram_schmidt, rodrigues_to_rotmat, rotate_by_rotation_matrix
 from common.utils import instance_wise_results_to_json
 from common.viz import visualize_negative_hard_mask, save_pcd_for_light_visualization, draw_frames, draw_normal_error_histogram, draw_test_results_histogram
 from common.misc import extract_all_objects, batch_scaling
@@ -126,7 +126,7 @@ class EquiAssem(pl.LightningModule):
             debug (bool, optional): Whether to enable debug mode. Defaults to False.
             success_criterion_in_degree (int, optional): Success criterion in degree for normal error. Defaults to 10.
             only_train_normal (bool, optional): Whether to only train the normal vector, it will be used for stage 1 training. Defaults to False.
-            flip_normal_mode (str, optional): 'none' or 'right' or 'rightv2' or 'mix'. Defaults to 'none'.
+            flip_normal_mode (str, optional): 'none' or 'right' or 'rightv1_2' or 'rightv2' or 'mix'. Defaults to 'none'.
             consistency_loss (bool, optional): Whether to use consistency loss. Defaults to False.
 
             n_knn (int, optional): Number of nearest neighbors for KNN. Defaults to 20.
@@ -743,10 +743,14 @@ class EquiAssem(pl.LightningModule):
             inv_feats (torch.Tensor): (B, C*3, N)
         """
 
-        if self.flip_normal_mode in ['right', 'rightv2', 'mix']:
+        if self.flip_normal_mode in ['right', 'rightv1_2', 'rightv2', 'mix']:
             # (B, N+M, 3, 3)
             if self.flip_normal_mode == 'right':
                 postprocessed_oris = torch.stack([- oris[:, :, 0, :], oris[:, :, 2, :], oris[:, :, 1, :]], dim=-2)
+            elif self.flip_normal_mode == 'rightv1_2':
+                rotation_matrix = rodrigues_to_rotmat(oris[:, :, 0, :], torch.ones_like(oris[:, :, 0, 0]) * 90.0)
+                rotated_oris = rotate_by_rotation_matrix(oris, rotation_matrix)
+                postprocessed_oris = torch.stack([- rotated_oris[:, :, 0, :], rotated_oris[:, :, 1, :], - rotated_oris[:, :, 2, :]], dim=-2)
             elif self.flip_normal_mode == 'rightv2':
                 postprocessed_oris = torch.stack([- oris[:, :, 0, :], oris[:, :, 1, :], - oris[:, :, 2, :]], dim=-2)
             elif self.flip_normal_mode == 'mix':

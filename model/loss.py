@@ -405,7 +405,7 @@ class OrientationLoss(nn.Module):
                 src_from_mating_surface = oris[gt_corr_map[:,0], gt_corr_map[:,1], :, :] # (total_corr, 3, 3)
                 trg_from_mating_surface = oris[gt_corr_map[:,0], gt_corr_map[:,2], :, :] # (total_corr, 3, 3)              
 
-                if self.flip_normal_mode == 'right':
+                if self.flip_normal_mode in ['right', 'rightv1_2']:
                     consistency_loss_2nd = self.loss_fn(src_from_mating_surface[:, 1, :], trg_from_mating_surface[:, 2, :])
                     consistency_loss_3rd = self.loss_fn(src_from_mating_surface[:, 2, :], trg_from_mating_surface[:, 1, :])
                     consistency_loss = (consistency_loss_2nd + consistency_loss_3rd) / 2 

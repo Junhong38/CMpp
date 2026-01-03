@@ -76,3 +76,51 @@ def gram_schmidt(poses):
     # (B, N, 1, 3) concat (B, N, 1, 3) concat (B, N, 1, 3) -> (B, N, 3, 3)
     result = torch.cat((normalized_first_vec, normalized_second_vec, normalized_third_vec), -2) 
     return result
+
+
+def rodrigues_to_rotmat(axis, theta):
+    """
+    axis: normalized axis vector, shape (B, N, 3)
+    theta: rotation angle in degree, shape (B, N)
+    returns: rotation matrix, shape (B, N, 3, 3)
+    """
+    batch_size, num_points, _ = axis.shape
+
+    radian = torch.deg2rad(theta)
+    kx, ky, kz = axis[:,:,0], axis[:,:,1], axis[:,:,2] # (B, N)
+    
+    # skew-symmetric matrix [k]_x
+    zeros = torch.zeros_like(kx) # (B, N)
+    K = torch.stack([
+        torch.stack([zeros, -kz, ky], dim=-1), # (B, N, 3)
+        torch.stack([kz, zeros, -kx], dim=-1), # (B, N, 3)
+        torch.stack([-ky, kx, zeros], dim=-1) # (B, N, 3)
+    ], dim=-2)  # shape (B, N, 3, 3)
+    
+    I = torch.eye(3, device=axis.device, dtype=axis.dtype).reshape(1, 1, 3, 3).repeat(batch_size, num_points, 1, 1)
+
+    sin_theta = torch.sin(radian)[:,:, None, None] # (B, N, 1, 1)
+    cos_theta = torch.cos(radian)[:,:, None, None] # (B, N, 1, 1)
+    
+    # (B, N, 3, 3) + (B, N, 1, 1) * (B, N, 3, 3) + (B, N, 1, 1) * (B, N, 3, 3) * (B, N, 3, 3)
+    R = I + sin_theta * K + (1 - cos_theta) * torch.matmul(K, K)
+    return R
+
+
+def rotate_by_rotation_matrix(oris, rotation_matrix):
+    """
+    oris: (B, N, 3, 3)
+    rotation_matrix: (B, N, 3, 3)
+    """
+    return torch.matmul(oris, rotation_matrix.transpose(-2,-1))
+
+
+
+
+
+
+
+
+
+
+
