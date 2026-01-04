@@ -693,7 +693,7 @@ class EquiAssem(pl.LightningModule):
 
                     if ((not self.trainer.sanity_checking) and self.viz_train_epoch > 0 and batch_idx == 0 and (self.current_epoch % self.viz_train_epoch == 0 or self.current_epoch == self.trainer.max_epochs-1)):
                         visualize_negative_hard_mask(in_dict, neg_hard_mask_for_viz['neg_mask'], neg_hard_mask_for_viz['hard_neg_mask'], active_mask, self.ckp_dir, self.current_epoch, self.trainer.global_rank, self.pos_radius, self.safe_radius)
-                        exit("stop")
+                        # exit("stop")
         
 
         # 9. Evaluation

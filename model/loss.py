@@ -47,7 +47,7 @@ class CircleLoss(nn.Module):
         print(f"neg_optimal: {self.neg_optimal}, neg_margin: {self.neg_margin}")
         print(f"pos_offset: {self.pos_offset}, neg_offset: {self.neg_offset}")
         print(f"balance_mode: {self.balance_mode}")
-        print(f"hard_negative: {self.hard_negative}, neg_topk: {self.neg_topk}, more_hard_neg: {self.more_hard_neg}")
+        print(f"hard_negative: {self.hard_negative}, neg_topk: {self.neg_topk}, more_hard_neg: {self.more_hard_neg}, start_hard_neg_epoch: {self.start_hard_neg_epoch}")
         print(f"distance_type: {self.distance_type}, anchor_mode: {self.anchor_mode}")
         print("------------------------------------------------------")
 
@@ -75,7 +75,7 @@ class CircleLoss(nn.Module):
             print(f"neg_optimal: {self.neg_optimal}, neg_margin: {self.neg_margin}")
             print(f"pos_offset: {self.pos_offset}, neg_offset: {self.neg_offset}")
             print(f"balance_mode: {self.balance_mode}")
-            print(f"hard_negative: {self.hard_negative}, neg_topk: {self.neg_topk}, more_hard_neg: {self.more_hard_neg}")
+            print(f"hard_negative: {self.hard_negative}, neg_topk: {self.neg_topk}, more_hard_neg: {self.more_hard_neg}, start_hard_neg_epoch: {self.start_hard_neg_epoch}")
             print(f"distance_type: {self.distance_type}, anchor_mode: {self.anchor_mode}")
             print("------------------------------------------------------")
 

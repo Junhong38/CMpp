@@ -511,16 +511,21 @@ def save_lineset(filename: str, points: torch.Tensor, lines: list, color_list: l
             continue
 
         curr_lines = tensor_.cpu().numpy()
-        all_lines.append(curr_lines)
-        
         expanded_colors = [colors[i % len(colors)]] * len(tensor_)
         expanded_colors = np.array(expanded_colors)
+
+        if len(curr_lines) == 0:
+            continue
+
+        all_lines.append(curr_lines)
         all_colors.append(expanded_colors)
 
-
-    if len(all_lines) > 0:
+    if len(all_lines) > 1:
         all_lines = np.vstack(all_lines)
         all_colors = np.vstack(all_colors)
+    else:
+        all_lines = all_lines[0]
+        all_colors = all_colors[0]
     
     lineset.lines = o3d.utility.Vector2iVector(all_lines)
     lineset.colors = o3d.utility.Vector3dVector(all_colors)
