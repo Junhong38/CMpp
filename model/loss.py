@@ -367,9 +367,9 @@ class PointMatchingLoss(nn.Module):
 
 
 class OrientationLoss(nn.Module):
-    def __init__(self, consistency_loss=False, pos_radius=0.018, flip_normal_mode='none'):
+    def __init__(self, consistency_loss_weight=0.0, pos_radius=0.018, flip_normal_mode='none'):
         super(OrientationLoss, self).__init__()
-        self.consistency_loss = consistency_loss
+        self.consistency_loss_weight = consistency_loss_weight
         self.pos_radius = pos_radius
         self.flip_normal_mode = flip_normal_mode
         self.loss_fn = nn.SmoothL1Loss(beta=1.0, reduction='mean')
@@ -392,7 +392,7 @@ class OrientationLoss(nn.Module):
         pred_normal = oris[:, :, 0, :] # (B, N+M, 3)
         normal_loss = self.loss_fn(pred_normal, gt_normals)
 
-        if self.consistency_loss: 
+        if self.consistency_loss_weight > 0.0: 
             if coords_dist is None:
                 coords_dist = torch.cdist(pcd_raw, pcd_raw, p=2) # (B, N+M, N+M)
 
@@ -424,9 +424,9 @@ class OrientationLoss(nn.Module):
         else:
             consistency_loss = torch.tensor(0.).to(pred_normal.device)
         
-        final_loss = normal_loss + consistency_loss
+        final_loss = normal_loss + self.consistency_loss_weight * consistency_loss
 
-        return final_loss
+        return final_loss, consistency_loss
 
         
 

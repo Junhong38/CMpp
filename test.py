@@ -69,7 +69,7 @@ def test(args):
                       success_criterion_in_degree=args.success_criterion_in_degree,
                       only_train_normal=False, # We don't need to use this parameter for testing  
                       flip_normal_mode=args.flip_normal_mode,
-                      consistency_loss=False, # We don't need to use this parameter for testing
+                      consistency_loss_weight=0.0, # We don't need to use this parameter for testing
                         
                       n_knn=args.n_knn,
                       only_one_norm=args.only_one_norm,
@@ -180,7 +180,7 @@ if __name__ == '__main__':
 
     # Additional experiments
     parser.add_argument('--success_criterion_in_degree', type=int, default=10, help='Success criterion in degree for normal error')
-    parser.add_argument('--flip_normal_mode', type=str, default='none', choices=['none', 'right', 'rightv1_2', 'rightv2', 'mix'])
+    parser.add_argument('--flip_normal_mode', type=str, default='none', choices=['none', 'right', 'rightv1_2', 'rightv1_3', 'rightv2', 'mix'])
     parser.add_argument('--move_smaller', action='store_true', help='If True, always move the smaller point cloud to the origin')
 
 
