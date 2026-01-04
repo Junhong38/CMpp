@@ -417,6 +417,10 @@ def visualize_negative_hard_mask(in_dict, neg_mask, hard_neg_mask, active_mask, 
     hard_neg_corr = torch.nonzero(processed_hard_neg_mask) # (N*M, 2)
     neg_corr = torch.nonzero(processed_neg_mask) # (N*M, 2)
 
+    num_of_gt = len(gt_corr)
+    num_of_hard_negs = len(hard_neg_corr)
+    num_of_negs = len(neg_corr)
+
     gt_corr_src_mask = pos_mask.sum(dim=-1) > 0
     gt_corr_trg_mask = pos_mask.sum(dim=-2) > 0
     hard_neg_corr_src_mask = processed_hard_neg_mask.sum(dim=-1) > 0
@@ -446,13 +450,13 @@ def visualize_negative_hard_mask(in_dict, neg_mask, hard_neg_mask, active_mask, 
     total_points_for_lineset = torch.cat([src_pcd_raw, trg_pcd_raw], dim=0) # (N+M, 3)
     total_lines_for_lineset = [torch.stack([gt_corr[:,0], gt_corr[:,1] + len(src_pcd_raw)], dim=-1)] # (N*M, 2), Red
     total_lines_for_lineset.append(torch.stack([neg_corr[:,0], neg_corr[:,1] + len(src_pcd_raw)], dim=-1)) # (N*M, 2), Blue
-    total_lines_for_lineset.append(torch.stack([hard_neg_corr[:,0], hard_neg_corr[:,1] + len(src_pcd_raw)], dim=-1)) # (N*M, 2), Magenta
+    total_lines_for_lineset.append(torch.stack([hard_neg_corr[:,0], hard_neg_corr[:,1] + len(src_pcd_raw)], dim=-1)) # (N*M, 2), green
 
     # Make folder
     vis_folder = os.path.join(dir_path, 'vis', f'GPU_{global_rank}', 'train', f'E{current_epoch}')
     os.makedirs(vis_folder, exist_ok=True)
-    save_pc(os.path.join(vis_folder, f"E{current_epoch}_neg_hard_mask.ply"), pcd_list_for_viz)
-    save_lineset(os.path.join(vis_folder, f"E{current_epoch}_neg_hard_mask_lineset.ply"), total_points_for_lineset, total_lines_for_lineset)
+    save_pc(os.path.join(vis_folder, f"E{current_epoch}_neg_hard_mask_num{num_of_hard_negs}_num{num_of_negs}_num{num_of_gt}.ply"), pcd_list_for_viz)
+    save_lineset(os.path.join(vis_folder, f"E{current_epoch}_neg_hard_mask_num{num_of_hard_negs}_num{num_of_negs}_num{num_of_gt}_lineset.ply"), total_points_for_lineset, total_lines_for_lineset, color_list=['red', 'blue', 'green'])
 
     # Simple logging for distance
     max_dist_in_pos = corrd_dist.reshape(-1)[pos_mask.reshape(-1)].max().item() if pos_mask.sum() > 0 else 0
@@ -482,7 +486,7 @@ def save_pc(filename: str, pcd_tensors: list):
     o3d.io.write_point_cloud(filename, combined_cloud)
 
 
-def save_lineset(filename: str, points: torch.Tensor, lines: list):
+def save_lineset(filename: str, points: torch.Tensor, lines: list, color_list: list):
     """
     Save lineset as PLY files.
 
@@ -490,8 +494,11 @@ def save_lineset(filename: str, points: torch.Tensor, lines: list):
         filename (str): filename to save
         points (torch.Tensor): (N, 3)
         lines (list): each element is (corr, 2)
+        color_list (list): each element is a color name
     """
-    colors = list(global_colors_for_objs.values())
+    colors = []
+    for color_name in color_list:
+        colors.append(global_colors_for_objs[color_name])
 
     lineset = o3d.geometry.LineSet()
     lineset.points = o3d.utility.Vector3dVector(points.cpu().numpy())

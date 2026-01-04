@@ -53,6 +53,7 @@ def test(args):
                       distance_type='cossim', # We don't need to use this parameter for testing
                       anchor_mode='default', # We don't need to use this parameter for testing
                       more_hard_neg=False, # We don't need to use this parameter for testing
+                      start_hard_neg_epoch=-1, # We don't need to use this parameter for testing
 
                       s_loss_weight=0.0, # We don't need to use this parameter for testing
                       p_loss_weight=0.0, # We don't need to use this parameter for testing

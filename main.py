@@ -56,6 +56,7 @@ def main(args):
                       distance_type=args.distance_type,
                       anchor_mode=args.anchor_mode,
                       more_hard_neg=args.more_hard_neg,
+                      start_hard_neg_epoch=args.start_hard_neg_epoch,
 
                       s_loss_weight=args.s_loss_weight,
                       p_loss_weight=args.p_loss_weight,
@@ -296,6 +297,7 @@ if __name__ == '__main__':
     parser.add_argument('--distance_type', type=str, default='l2', choices=['l2', 'cossim'])
     parser.add_argument('--anchor_mode', type=str, default='default', choices=['default', 'all_pos', 'all'])
     parser.add_argument('--more_hard_neg', action='store_true', help='')
+    parser.add_argument('--start_hard_neg_epoch', type=int, default=-1, help='Start hard negative sampling from this epoch')
 
 
     # Additional experiments

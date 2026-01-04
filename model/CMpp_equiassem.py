@@ -50,6 +50,7 @@ class EquiAssem(pl.LightningModule):
             distance_type='l2',
             anchor_mode='default',
             more_hard_neg=False,
+            start_hard_neg_epoch=-1,
 
             s_loss_weight=1.0, 
             p_loss_weight=1.0, 
@@ -111,6 +112,7 @@ class EquiAssem(pl.LightningModule):
             distance_type (str, optional): 'l2' or 'cossim'. Defaults to 'l2'.
             anchor_mode (str, optional): 'default' or 'all_pos'. Defaults to 'default'.
             more_hard_neg (bool, optional): Whether to use more hard negative samples. Defaults to False.
+            start_hard_neg_epoch (int, optional): Start hard negative sampling from this epoch. Defaults to -1.
 
             s_loss_weight (float, optional): Weight for shape loss. Defaults to 1.0.
             p_loss_weight (float, optional): Weight for point matching loss. Defaults to 1.0.
@@ -237,7 +239,8 @@ class EquiAssem(pl.LightningModule):
                                       log_scale=log_scale, pos_margin=pos_margin, neg_margin=neg_margin, 
                                       pos_offset=pos_offset, neg_offset=neg_offset,
                                       balance_mode=balance_mode, hard_negative=hard_negative,
-                                      neg_topk=neg_topk, more_hard_neg=more_hard_neg, distance_type=distance_type, anchor_mode=anchor_mode)
+                                      neg_topk=neg_topk, more_hard_neg=more_hard_neg, distance_type=distance_type, anchor_mode=anchor_mode,
+                                      start_hard_neg_epoch=start_hard_neg_epoch)
         self.orientation_loss = OrientationLoss(consistency_loss_weight=consistency_loss_weight, pos_radius=pos_radius, flip_normal_mode=flip_normal_mode)
         self.matching_loss = PointMatchingLoss(pos_radius=pos_radius, safe_radius=safe_radius)
         
@@ -414,6 +417,9 @@ class EquiAssem(pl.LightningModule):
             return {'optimizer': optimizer}
 
 
+    def on_train_epoch_start(self):
+        self.circle_loss.update_start_hard_neg_epoch(self.current_epoch)
+    
     def training_step(self, in_dict, batch_idx):
         _, loss_dict = self.forward_pass(in_dict, mode='train', batch_idx=batch_idx)
         if torch.isnan(loss_dict['loss']):

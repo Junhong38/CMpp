@@ -5,7 +5,8 @@ import torch.nn.functional as F
 class CircleLoss(nn.Module):
 
     def __init__(self, pos_radius=0.018, safe_radius=0.03, log_scale=24, pos_margin=0.1, neg_margin=1.4, pos_offset=0.0, neg_offset=0.0,
-                 balance_mode='none', hard_negative='none', neg_topk=0, more_hard_neg=False, distance_type='l2', anchor_mode='default'):
+                 balance_mode='none', hard_negative='none', neg_topk=0, more_hard_neg=False, distance_type='l2', anchor_mode='default',
+                 start_hard_neg_epoch=-1):
 
 
         super(CircleLoss,self).__init__()
@@ -20,6 +21,7 @@ class CircleLoss(nn.Module):
         self.more_hard_neg = more_hard_neg
         self.distance_type = distance_type
         self.anchor_mode = anchor_mode
+        self.start_hard_neg_epoch = start_hard_neg_epoch
 
         self.pos_optimal = pos_margin - pos_offset
         self.neg_optimal = neg_margin + neg_offset
@@ -27,6 +29,14 @@ class CircleLoss(nn.Module):
         self.pos_radius = pos_radius
         self.safe_radius = safe_radius
 
+        # Use warming up for hard negative sampling
+        if self.start_hard_neg_epoch >= 0:
+            self.temp_hard_negative = self.hard_negative
+            self.temp_neg_topk = self.neg_topk
+            self.update_token = False
+
+            self.hard_negative = 'none'
+            self.neg_topk = 0
         
         print("------------------------------------------------------")
         print("INITIALIZING CircleLoss")
@@ -41,7 +51,37 @@ class CircleLoss(nn.Module):
         print(f"distance_type: {self.distance_type}, anchor_mode: {self.anchor_mode}")
         print("------------------------------------------------------")
 
+    
 
+    def update_start_hard_neg_epoch(self, current_epoch):
+        
+        if self.start_hard_neg_epoch <= -1: # If start_hard_neg_epoch is -1, we don't need to update it
+            return
+        
+        if self.update_token: # Already updated, we don't need to update it again
+            return
+        
+        if current_epoch >= self.start_hard_neg_epoch:
+            self.hard_negative = self.temp_hard_negative
+            self.neg_topk = self.temp_neg_topk
+            self.update_token = True
+
+            print("------------------------------------------------------")
+            print(f"Updated hard negative sampling parameters at epoch {current_epoch}, using {self.temp_hard_negative} and {self.temp_neg_topk}")
+            print("------------------------------------------------------")
+            print(f"pos_radius: {self.pos_radius}, safe_radius: {self.safe_radius}")
+            print(f"log_scale: {self.log_scale}")
+            print(f"pos_optimal: {self.pos_optimal}, pos_margin: {self.pos_margin}")
+            print(f"neg_optimal: {self.neg_optimal}, neg_margin: {self.neg_margin}")
+            print(f"pos_offset: {self.pos_offset}, neg_offset: {self.neg_offset}")
+            print(f"balance_mode: {self.balance_mode}")
+            print(f"hard_negative: {self.hard_negative}, neg_topk: {self.neg_topk}, more_hard_neg: {self.more_hard_neg}")
+            print(f"distance_type: {self.distance_type}, anchor_mode: {self.anchor_mode}")
+            print("------------------------------------------------------")
+
+    
+    
+    
     def negative_sampling(self, matching_scores, pos_mask, neg_mask, coords_dist, active_mask):
         """
         Args:

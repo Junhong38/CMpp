@@ -263,8 +263,12 @@ rm -rf checkpoint/G8NDB2_F_BV0V0_MH_P0075M0075+N145M145+BD+HNM+NK0+DCOS+AD_NPCFN
 
 
 
-rm -rf checkpoint/IMPLE/ && CUDA_VISIBLE_DEVICES=0 python main.py --logpath IMPLE --backbone vn_unet --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale full --epochs 0 --gpus 0 --n_worker 1 --batch_size 2 --pos_margin 0.075 --neg_margin 1.45 --pos_offset 0.0 --neg_offset 0.0 --balance_mode double --hard_negative mix --neg_topk 0 --distance_type cossim --anchor_mode default --normal_pred_mode cross --flip_normal_mode rightv1_2 --consistency_loss_weight 0.25 --matching_score_mode CM --matching_norm_mode softmax --p_loss_weight 1.0 --viz_train_epoch 1
+rm -rf checkpoint/IMPLE_MIX/ && CUDA_VISIBLE_DEVICES=0 python main.py --load checkpoint_backup/G8NDB3_F_BV0V0_MH_P0075M0075+N145M145+BH+HNN+NK0+DCOS+AD_MCM+MNSoft_S1P1_6/models/last.ckpt --logpath IMPLE_MIX --backbone vn_unet --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale full --epochs 0 --gpus 0 --n_worker 1 --batch_size 2 --pos_margin 0.075 --neg_margin 1.45 --pos_offset 0.0 --neg_offset 0.0 --balance_mode double --hard_negative mix --neg_topk 0 --distance_type cossim --anchor_mode default --normal_pred_mode cross --flip_normal_mode none --consistency_loss_weight 0.0 --matching_score_mode CM --matching_norm_mode softmax --p_loss_weight 1.0 --viz_train_epoch 1
+rm -rf checkpoint/IMPLE_TOPK/ && CUDA_VISIBLE_DEVICES=0 python main.py --load checkpoint_backup/G8NDB3_F_BV0V0_MH_P0075M0075+N145M145+BH+HNN+NK0+DCOS+AD_MCM+MNSoft_S1P1_6/models/last.ckpt --logpath IMPLE_TOPK --backbone vn_unet --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale full --epochs 0 --gpus 0 --n_worker 1 --batch_size 2 --pos_margin 0.075 --neg_margin 1.45 --pos_offset 0.0 --neg_offset 0.0 --balance_mode double --hard_negative none --neg_topk 1000 --distance_type cossim --anchor_mode default --normal_pred_mode cross --flip_normal_mode none --consistency_loss_weight 0.0 --matching_score_mode CM --matching_norm_mode softmax --p_loss_weight 1.0 --viz_train_epoch 1
 
+
+
+rm -rf checkpoint/IMPLE/ && CUDA_VISIBLE_DEVICES=0 python main.py --logpath IMPLE --backbone vn_unet --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale overfitting --epochs 0 --gpus 0 --n_worker 1 --batch_size 2 --pos_margin 0.075 --neg_margin 1.45 --pos_offset 0.0 --neg_offset 0.0 --balance_mode double --hard_negative none --neg_topk 1000 --distance_type cossim --anchor_mode default --start_hard_neg_epoch 10 --normal_pred_mode cross --flip_normal_mode none --consistency_loss_weight 0.0 --matching_score_mode CM --matching_norm_mode softmax --p_loss_weight 1.0
 
 
 
