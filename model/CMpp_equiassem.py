@@ -743,7 +743,7 @@ class EquiAssem(pl.LightningModule):
             inv_feats (torch.Tensor): (B, C*3, N)
         """
 
-        if self.flip_normal_mode in ['right', 'rightv1_2', 'rightv2', 'mix']:
+        if self.flip_normal_mode in ['right', 'rightv1_2', 'rightv1_3', 'rightv2', 'mix']:
             # (B, N+M, 3, 3)
             if self.flip_normal_mode == 'right':
                 postprocessed_oris = torch.stack([- oris[:, :, 0, :], oris[:, :, 2, :], oris[:, :, 1, :]], dim=-2)
@@ -751,6 +751,10 @@ class EquiAssem(pl.LightningModule):
                 rotation_matrix = rodrigues_to_rotmat(oris[:, :, 0, :], torch.ones_like(oris[:, :, 0, 0]) * 90.0)
                 rotated_oris = rotate_by_rotation_matrix(oris, rotation_matrix)
                 postprocessed_oris = torch.stack([- rotated_oris[:, :, 0, :], rotated_oris[:, :, 1, :], - rotated_oris[:, :, 2, :]], dim=-2)
+            elif self.flip_normal_mode == 'rightv1_3':
+                rotation_axis = nn.functional.normalize(oris[:, :, 1, :] + oris[:, :, 2, :], dim=-1) # (B, N, 3)
+                rotation_matrix = rodrigues_to_rotmat(rotation_axis, torch.ones_like(oris[:, :, 0, 0]) *  180)
+                postprocessed_oris = rotate_by_rotation_matrix(oris, rotation_matrix)
             elif self.flip_normal_mode == 'rightv2':
                 postprocessed_oris = torch.stack([- oris[:, :, 0, :], oris[:, :, 1, :], - oris[:, :, 2, :]], dim=-2)
             elif self.flip_normal_mode == 'mix':
