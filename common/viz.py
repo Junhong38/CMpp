@@ -355,41 +355,32 @@ def save_pcd_for_light_visualization(pcd_tensors: list, gt_corr: torch.Tensor, u
 
     intersection_mask = torch.logical_and(placeholder_gt_corr, placeholder_used_corr)
 
-    gt_corr_for_viz = gt_corr
-    used_corr_for_viz = torch.nonzero(placeholder_used_corr)
-    intersection_mask_for_viz = torch.nonzero(intersection_mask)
+    gt_corr_src_mask = placeholder_gt_corr.sum(dim=-1) > 0
+    gt_corr_trg_mask = placeholder_gt_corr.sum(dim=-2) > 0
+    used_corr_src_mask = placeholder_used_corr.sum(dim=-1) > 0
+    used_corr_trg_mask = placeholder_used_corr.sum(dim=-2) > 0
+    intersection_mask_src_mask = intersection_mask.sum(dim=-1) > 0
+    intersection_mask_trg_mask = intersection_mask.sum(dim=-2) > 0
 
-    pcds_for_viz = [src_pcd, trg_pcd] # Red, Blue
-    pcds_for_viz.append(src_pcd[gt_corr_for_viz[:,0]]) # Magenta
-    pcds_for_viz.append(trg_pcd[gt_corr_for_viz[:,1]]) # Cyan
-    pcds_for_viz.append(src_pcd[used_corr_for_viz[:,0]]) # Orange
-    pcds_for_viz.append(trg_pcd[used_corr_for_viz[:,1]]) # Green
-    pcds_for_viz.append(src_pcd[intersection_mask_for_viz[:,0]]) # Purple
-    pcds_for_viz.append(trg_pcd[intersection_mask_for_viz[:,1]]) # Yellow
+    left_src_mask = (~gt_corr_src_mask) & (~used_corr_src_mask) & (~intersection_mask_src_mask)
+    left_trg_mask = (~gt_corr_trg_mask) & (~used_corr_trg_mask) & (~intersection_mask_trg_mask)
+    pure_gt_corr_src_mask = gt_corr_src_mask & (~used_corr_src_mask) & (~intersection_mask_src_mask)
+    pure_gt_corr_trg_mask = gt_corr_trg_mask & (~used_corr_trg_mask) & (~intersection_mask_trg_mask)
+    pure_used_corr_src_mask = used_corr_src_mask &(~intersection_mask_src_mask)
+    pure_used_corr_trg_mask = used_corr_trg_mask & (~intersection_mask_trg_mask)
+    pure_intersection_mask_src_mask = intersection_mask_src_mask
+    pure_intersection_mask_trg_mask = intersection_mask_trg_mask
 
-    len_of_gt = len(gt_corr_for_viz)
+    pcds_for_viz = [src_pcd[left_src_mask], trg_pcd[left_trg_mask]] # Red, Blue
+    pcds_for_viz.append(src_pcd[pure_gt_corr_src_mask]) # Magenta
+    pcds_for_viz.append(trg_pcd[pure_gt_corr_trg_mask]) # Cyan
+    pcds_for_viz.append(src_pcd[pure_used_corr_src_mask]) # Orange
+    pcds_for_viz.append(trg_pcd[pure_used_corr_trg_mask]) # Green
+    pcds_for_viz.append(src_pcd[pure_intersection_mask_src_mask]) # Purple
+    pcds_for_viz.append(trg_pcd[pure_intersection_mask_trg_mask]) # Yellow
+
+    len_of_gt = len(pure_gt_corr_src_mask)
     save_pc(f"{filename}_GTCorrlen{len_of_gt}.ply", pcds_for_viz)
-
-
-
-def save_pc(filename: str, pcd_tensors: list):
-    colors = list(global_colors_for_objs.values())
-
-    pcds = []
-    for i, tensor_ in enumerate(pcd_tensors):
-        if len(tensor_.shape) == 0:
-            continue
-
-        pcd = o3d.geometry.PointCloud()
-        pcd.points = o3d.utility.Vector3dVector(tensor_.cpu().numpy())
-        pcd.paint_uniform_color(colors[i % len(colors)])  # Assign color based on index
-        pcds.append(pcd)
-    
-    combined_cloud = o3d.geometry.PointCloud()
-    for pcd in pcds:
-        combined_cloud += pcd
-    
-    o3d.io.write_point_cloud(filename, combined_cloud)
 
 
 
@@ -422,25 +413,110 @@ def visualize_negative_hard_mask(in_dict, neg_mask, hard_neg_mask, active_mask, 
     assert intersection_mask_for_neg.sum() == 0, f"intersection_mask_for_neg: {intersection_mask_for_neg.sum()}"
     assert intersection_mask_for_hard.sum() == 0, f"intersection_mask_for_hard: {intersection_mask_for_hard.sum()}"
 
-    gt_corr = torch.nonzero(pos_mask)[:2] # (N*M, 2)
-    hard_neg_corr = torch.nonzero(processed_hard_neg_mask)[:2] # (N*M, 2)
-    neg_corr = torch.nonzero(processed_neg_mask)[:2] # (N*M, 2)
+    gt_corr = torch.nonzero(pos_mask) # (N*M, 2)
+    hard_neg_corr = torch.nonzero(processed_hard_neg_mask) # (N*M, 2)
+    neg_corr = torch.nonzero(processed_neg_mask) # (N*M, 2)
+
+    gt_corr_src_mask = pos_mask.sum(dim=-1) > 0
+    gt_corr_trg_mask = pos_mask.sum(dim=-2) > 0
+    hard_neg_corr_src_mask = processed_hard_neg_mask.sum(dim=-1) > 0
+    hard_neg_corr_trg_mask = processed_hard_neg_mask.sum(dim=-2) > 0
+    neg_corr_src_mask = processed_neg_mask.sum(dim=-1) > 0
+    neg_corr_trg_mask = processed_neg_mask.sum(dim=-2) > 0
+
+    left_src_mask = (~gt_corr_src_mask) & (~hard_neg_corr_src_mask) & (~neg_corr_src_mask)
+    left_trg_mask = (~gt_corr_trg_mask) & (~hard_neg_corr_trg_mask) & (~neg_corr_trg_mask)
+    pure_gt_corr_src_mask = gt_corr_src_mask & (~hard_neg_corr_src_mask) & (~neg_corr_src_mask)
+    pure_gt_corr_trg_mask = gt_corr_trg_mask & (~hard_neg_corr_trg_mask) & (~neg_corr_trg_mask)
+    pure_neg_corr_src_mask = neg_corr_src_mask &(~hard_neg_corr_src_mask)
+    pure_neg_corr_trg_mask = neg_corr_trg_mask & (~hard_neg_corr_trg_mask)
+    pure_hard_neg_corr_src_mask = hard_neg_corr_src_mask
+    pure_hard_neg_corr_trg_mask = hard_neg_corr_trg_mask
 
     # Visualize negative and hard negative samples
-    pcd_list_for_viz = [src_pcd_raw, trg_pcd_raw] # Red, Blue
-    pcd_list_for_viz.append(src_pcd_raw[gt_corr[:,0]]) # Magenta
-    pcd_list_for_viz.append(trg_pcd_raw[gt_corr[:,1]]) # Cyan
-    pcd_list_for_viz.append(src_pcd_raw[hard_neg_corr[:,0]]) # Orange
-    pcd_list_for_viz.append(trg_pcd_raw[hard_neg_corr[:,1]]) # Green
-    pcd_list_for_viz.append(src_pcd_raw[neg_corr[:,0]]) # Purple
-    pcd_list_for_viz.append(trg_pcd_raw[neg_corr[:,1]]) # Yellow
+    pcd_list_for_viz = [src_pcd_raw[left_src_mask], trg_pcd_raw[left_trg_mask]] # Red, Blue
+    pcd_list_for_viz.append(src_pcd_raw[pure_gt_corr_src_mask]) # Magenta
+    pcd_list_for_viz.append(trg_pcd_raw[pure_gt_corr_trg_mask]) # Cyan
+    pcd_list_for_viz.append(src_pcd_raw[pure_neg_corr_src_mask]) # Orange 
+    pcd_list_for_viz.append(trg_pcd_raw[pure_neg_corr_trg_mask]) # Green 
+    pcd_list_for_viz.append(src_pcd_raw[pure_hard_neg_corr_src_mask]) # Purple
+    pcd_list_for_viz.append(trg_pcd_raw[pure_hard_neg_corr_trg_mask]) # Yellow
+
+    # Visualize negative and hard negative samples as lineset
+    total_points_for_lineset = torch.cat([src_pcd_raw, trg_pcd_raw], dim=0) # (N+M, 3)
+    total_lines_for_lineset = [torch.stack([gt_corr[:,0], gt_corr[:,1] + len(src_pcd_raw)], dim=-1)] # (N*M, 2), Red
+    total_lines_for_lineset.append(torch.stack([neg_corr[:,0], neg_corr[:,1] + len(src_pcd_raw)], dim=-1)) # (N*M, 2), Blue
+    total_lines_for_lineset.append(torch.stack([hard_neg_corr[:,0], hard_neg_corr[:,1] + len(src_pcd_raw)], dim=-1)) # (N*M, 2), Magenta
 
     # Make folder
     vis_folder = os.path.join(dir_path, 'vis', f'GPU_{global_rank}', 'train', f'E{current_epoch}')
     os.makedirs(vis_folder, exist_ok=True)
     save_pc(os.path.join(vis_folder, f"E{current_epoch}_neg_hard_mask.ply"), pcd_list_for_viz)
+    save_lineset(os.path.join(vis_folder, f"E{current_epoch}_neg_hard_mask_lineset.ply"), total_points_for_lineset, total_lines_for_lineset)
+
+    # Simple logging for distance
+    max_dist_in_pos = corrd_dist.reshape(-1)[pos_mask.reshape(-1)].max().item() if pos_mask.sum() > 0 else 0
+    min_dist_in_hard_negs = corrd_dist.reshape(-1)[processed_hard_neg_mask.reshape(-1)].min().item() if processed_hard_neg_mask.sum() > 0 else 0
+    with open(os.path.join(vis_folder, f"E{current_epoch}_neg_hard_mask.txt"), "w") as f:
+        f.write(f"max_dist_in_pos: {max_dist_in_pos}, min_dist_in_hard_negs: {min_dist_in_hard_negs}")
 
 
 
+def save_pc(filename: str, pcd_tensors: list):
+    colors = list(global_colors_for_objs.values())
 
+    pcds = []
+    for i, tensor_ in enumerate(pcd_tensors):
+        if len(tensor_.shape) == 0:
+            continue
+
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = o3d.utility.Vector3dVector(tensor_.cpu().numpy())
+        pcd.paint_uniform_color(colors[i % len(colors)])  # Assign color based on index
+        pcds.append(pcd)
+    
+    combined_cloud = o3d.geometry.PointCloud()
+    for pcd in pcds:
+        combined_cloud += pcd
+    
+    o3d.io.write_point_cloud(filename, combined_cloud)
+
+
+def save_lineset(filename: str, points: torch.Tensor, lines: list):
+    """
+    Save lineset as PLY files.
+
+    Args:
+        filename (str): filename to save
+        points (torch.Tensor): (N, 3)
+        lines (list): each element is (corr, 2)
+    """
+    colors = list(global_colors_for_objs.values())
+
+    lineset = o3d.geometry.LineSet()
+    lineset.points = o3d.utility.Vector3dVector(points.cpu().numpy())
+
+    all_lines = []
+    all_colors = []
+
+    for i, tensor_ in enumerate(lines):
+        if len(tensor_.shape) == 0:
+            continue
+
+        curr_lines = tensor_.cpu().numpy()
+        all_lines.append(curr_lines)
+        
+        expanded_colors = [colors[i % len(colors)]] * len(tensor_)
+        expanded_colors = np.array(expanded_colors)
+        all_colors.append(expanded_colors)
+
+
+    if len(all_lines) > 0:
+        all_lines = np.vstack(all_lines)
+        all_colors = np.vstack(all_colors)
+    
+    lineset.lines = o3d.utility.Vector2iVector(all_lines)
+    lineset.colors = o3d.utility.Vector3dVector(all_colors)
+    
+    o3d.io.write_line_set(filename, lineset)
 
