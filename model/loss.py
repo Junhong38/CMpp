@@ -454,7 +454,6 @@ class OrientationLoss(nn.Module):
                     consistency_loss_3rd = self.loss_fn(- src_from_mating_surface[:, 2, :], trg_from_mating_surface[:, 2, :])
                     consistency_loss = (consistency_loss_2nd + consistency_loss_3rd) / 2 
                 elif self.flip_normal_mode == 'rightv3':
-                    print("rightv3")
                     consistency_loss_2nd = self.loss_fn(- src_from_mating_surface[:, 1, :], trg_from_mating_surface[:, 1, :])
                     consistency_loss_3rd = self.loss_fn(src_from_mating_surface[:, 2, :], trg_from_mating_surface[:, 2, :])
                     consistency_loss = (consistency_loss_2nd + consistency_loss_3rd) / 2 
