@@ -467,11 +467,13 @@ class OrientationLoss(nn.Module):
                 consistency_loss = torch.tensor(0.).to(pred_normal.device)
         
         else:
+            consistency_loss_2nd = torch.tensor(0.).to(pred_normal.device)
+            consistency_loss_3rd = torch.tensor(0.).to(pred_normal.device)
             consistency_loss = torch.tensor(0.).to(pred_normal.device)
         
         final_loss = normal_loss + self.consistency_loss_weight * consistency_loss
 
-        return final_loss, consistency_loss
+        return final_loss, consistency_loss, consistency_loss_2nd, consistency_loss_3rd
 
         
 

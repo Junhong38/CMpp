@@ -681,7 +681,7 @@ class EquiAssem(pl.LightningModule):
                 loss['p_loss'] = self.matching_loss(matching_scores, coords_dist, active_mask, matching_norm_mode=self.matching_norm_mode).float() if self.p_loss_weight != 0 else torch.tensor(0.).to(matching_scores.device)
             
             # oris, gt_normals, batch_scaled_batch_info, coords_dist, pcd_raw, active_mask
-            loss['o_loss'], loss['o_consistency_loss'] = self.orientation_loss(oris, gt_normals, batch_scaled_pcd_batch_info, coords_dist, pcd_raw, active_mask)
+            loss['o_loss'], loss['o_consistency_loss'], loss['o_consistency_loss_2nd'], loss['o_consistency_loss_3rd'] = self.orientation_loss(oris, gt_normals, batch_scaled_pcd_batch_info, coords_dist, pcd_raw, active_mask)
             loss['loss'] = self.o_loss_weight * loss['o_loss'] + self.s_loss_weight * loss['s_loss'] + self.p_loss_weight * loss['p_loss']
             
             out_dict.update(loss)
@@ -761,10 +761,10 @@ class EquiAssem(pl.LightningModule):
                 rotation_axis = nn.functional.normalize(oris[:, :, 1, :] + oris[:, :, 2, :], dim=-1) # (B, N, 3)
                 rotation_matrix = rodrigues_to_rotmat(rotation_axis, torch.ones_like(oris[:, :, 0, 0]) *  180)
                 postprocessed_oris = rotate_by_rotation_matrix(oris, rotation_matrix)
-            elif self.flip_normal_mode == 'rightv3':
-                postprocessed_oris = torch.stack([- oris[:, :, 0, :], - oris[:, :, 1, :], oris[:, :, 2, :]], dim=-2)
             elif self.flip_normal_mode == 'rightv2':
                 postprocessed_oris = torch.stack([- oris[:, :, 0, :], oris[:, :, 1, :], - oris[:, :, 2, :]], dim=-2)
+            elif self.flip_normal_mode == 'rightv3':
+                postprocessed_oris = torch.stack([- oris[:, :, 0, :], - oris[:, :, 1, :], oris[:, :, 2, :]], dim=-2)
             elif self.flip_normal_mode == 'mix':
                 postprocessed_oris = torch.stack([- oris[:, :, 0, :], oris[:, :, 1, :], oris[:, :, 2, :]], dim=-2)
             
