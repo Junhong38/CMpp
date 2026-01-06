@@ -128,7 +128,7 @@ class EquiAssem(pl.LightningModule):
             debug (bool, optional): Whether to enable debug mode. Defaults to False.
             success_criterion_in_degree (int, optional): Success criterion in degree for normal error. Defaults to 10.
             only_train_normal (bool, optional): Whether to only train the normal vector, it will be used for stage 1 training. Defaults to False.
-            flip_normal_mode (str, optional): 'none' or 'right' or 'rightv1_2' or 'rightv2' or 'mix'. Defaults to 'none'.
+            flip_normal_mode (str, optional): 'none' or 'right' or 'rightv1_2' or 'rightv2' or 'rightv3' or 'mix'. Defaults to 'none'.
             consistency_loss_weight (float, optional): Weight for consistency loss. Defaults to 0.0.
 
             n_knn (int, optional): Number of nearest neighbors for KNN. Defaults to 20.
@@ -749,7 +749,7 @@ class EquiAssem(pl.LightningModule):
             inv_feats (torch.Tensor): (B, C*3, N)
         """
 
-        if self.flip_normal_mode in ['right', 'rightv1_2', 'rightv1_3', 'rightv2', 'mix']:
+        if self.flip_normal_mode in ['right', 'rightv1_2', 'rightv1_3', 'rightv2', 'rightv3', 'mix']:
             # (B, N+M, 3, 3)
             if self.flip_normal_mode == 'right':
                 postprocessed_oris = torch.stack([- oris[:, :, 0, :], oris[:, :, 2, :], oris[:, :, 1, :]], dim=-2)
@@ -761,6 +761,8 @@ class EquiAssem(pl.LightningModule):
                 rotation_axis = nn.functional.normalize(oris[:, :, 1, :] + oris[:, :, 2, :], dim=-1) # (B, N, 3)
                 rotation_matrix = rodrigues_to_rotmat(rotation_axis, torch.ones_like(oris[:, :, 0, 0]) *  180)
                 postprocessed_oris = rotate_by_rotation_matrix(oris, rotation_matrix)
+            elif self.flip_normal_mode == 'rightv3':
+                postprocessed_oris = torch.stack([- oris[:, :, 0, :], - oris[:, :, 1, :], oris[:, :, 2, :]], dim=-2)
             elif self.flip_normal_mode == 'rightv2':
                 postprocessed_oris = torch.stack([- oris[:, :, 0, :], oris[:, :, 1, :], - oris[:, :, 2, :]], dim=-2)
             elif self.flip_normal_mode == 'mix':
@@ -1146,7 +1148,7 @@ class EquiAssem(pl.LightningModule):
                                             filename=f'E{self.current_epoch}_{in_dict["eval_idx"].item()}_{in_dict["obj_class"][0]}_{round(eval_result["n_error"].item(),3)}_hist.png')
             
 
-            # exit("stop")
+            exit("stop")
         return eval_result
     
 

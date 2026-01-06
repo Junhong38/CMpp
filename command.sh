@@ -217,8 +217,12 @@ rm -rf checkpoint/G8NDB3_F_BV0V0_MH_P0075M0075+N145M145+BD+HNM+NK0+DCOS+AD_MCM+M
 
 
 
-# [ING] Origin + Softmax (temperature, 1.0) + Distance: cossim + positive(0.075, offset 0) / negative(1.45, offset 0) + WarmingUP(10) and Hard Negative:mix with double
+# [DONE] Origin + Softmax (temperature, 1.0) + Distance: cossim + positive(0.075, offset 0) / negative(1.45, offset 0) + WarmingUP(10) and Hard Negative:mix with double
 rm -rf checkpoint/G8NDB3_F_BV0V0_MH_P0075M0075+N145M145+BD+HNM+NK0+DCOS+AD+W10_MCM+MNSoft_S1P1_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --logpath G8NDB3_F_BV0V0_MH_P0075M0075+N145M145+BD+HNM+NK0+DCOS+AD+W10_MCM+MNSoft_S1P1_6 --backbone vn_unet --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale full --epochs 0 --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --batch_size 3 --pos_margin 0.075 --neg_margin 1.45 --pos_offset 0.0 --neg_offset 0.0 --balance_mode double --hard_negative mix --neg_topk 0 --distance_type cossim --anchor_mode default --start_hard_neg_epoch 10 --matching_score_mode CM --matching_norm_mode softmax --p_loss_weight 1.0 --viz_train_epoch 30 --wandb --wandb_entity CMppProject --wandb_project CMpp
+
+
+# [ING] Origin + Softmax (temperature, 1.0) + Distance: cossim + positive(0.075, offset 0) / negative(1.45, offset 0) + WarmingUP(10) and Hard Negative:TOP1000 with double
+rm -rf checkpoint/G8NDB3_F_BV0V0_MH_P0075M0075+N145M145+BD+HNN+NK1000+DCOS+AD+W10_MCM+MNSoft_S1P1_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --logpath G8NDB3_F_BV0V0_MH_P0075M0075+N145M145+BD+HNN+NK1000+DCOS+AD+W10_MCM+MNSoft_S1P1_6 --backbone vn_unet --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale full --epochs 0 --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --batch_size 3 --pos_margin 0.075 --neg_margin 1.45 --pos_offset 0.0 --neg_offset 0.0 --balance_mode double --hard_negative none --neg_topk 1000 --distance_type cossim --anchor_mode default --start_hard_neg_epoch 10 --matching_score_mode CM --matching_norm_mode softmax --p_loss_weight 1.0 --viz_train_epoch 30 --wandb --wandb_entity CMppProject --wandb_project CMpp
 
 
 
@@ -265,9 +269,18 @@ rm -rf checkpoint/G8NDB2_F_BV0V0_MH_P0075M0075+N145M145+BD+HNM+NK0+DCOS+AD_NPCFN
 
 
 
-# [ING] Origin + Softmax (temperature, 1.0) + Distance: cossim + positive(0.075, offset 0) / negative(1.45, offset 0) + Hard Negative:mix with double + PRED_NORMAL_MODE:cross + FILP_NORMAL(rightv1-3)
+# [DONE] Origin + Softmax (temperature, 1.0) + Distance: cossim + positive(0.075, offset 0) / negative(1.45, offset 0) + Hard Negative:mix with double + PRED_NORMAL_MODE:cross + FILP_NORMAL(rightv1-3)
 rm -rf checkpoint/G8NDB2_F_BV0V0_MH_P0075M0075+N145M145+BD+HNM+NK0+DCOS+AD_NPCFNR1-3_MCM+MNSoft_S1P1_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --logpath G8NDB2_F_BV0V0_MH_P0075M0075+N145M145+BD+HNM+NK0+DCOS+AD_NPCFNR1-3_MCM+MNSoft_S1P1_6 --backbone vn_unet --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale full --epochs 0 --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --batch_size 2 --pos_margin 0.075 --neg_margin 1.45 --pos_offset 0.0 --neg_offset 0.0 --balance_mode double --hard_negative mix --neg_topk 0 --distance_type cossim --anchor_mode default --normal_pred_mode cross --flip_normal_mode rightv1_3 --matching_score_mode CM --matching_norm_mode softmax --p_loss_weight 1.0 --viz_train_epoch 30 --wandb --wandb_entity CMppProject --wandb_project CMpp
 
+# [STOP] Origin + Softmax (temperature, 1.0) + Distance: cossim + positive(0.075, offset 0) / negative(1.45, offset 0) + Hard Negative:mix with double + PRED_NORMAL_MODE:cross + FILP_NORMAL(rightv1-3) + consistency(0.25)
+rm -rf checkpoint/G8NDB2_F_BV0V0_MH_P0075M0075+N145M145+BD+HNM+NK0+DCOS+AD_NPCFNR1-3C025_MCM+MNSoft_S1P1_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --logpath G8NDB2_F_BV0V0_MH_P0075M0075+N145M145+BD+HNM+NK0+DCOS+AD_NPCFNR1-3C025_MCM+MNSoft_S1P1_6 --backbone vn_unet --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale full --epochs 0 --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --batch_size 2 --pos_margin 0.075 --neg_margin 1.45 --pos_offset 0.0 --neg_offset 0.0 --balance_mode double --hard_negative mix --neg_topk 0 --distance_type cossim --anchor_mode default --normal_pred_mode cross --flip_normal_mode rightv1_3 --consistency_loss_weight 0.25 --matching_score_mode CM --matching_norm_mode softmax --p_loss_weight 1.0 --viz_train_epoch 30 --wandb --wandb_entity CMppProject --wandb_project CMpp
+
+
+# [ING] Origin + Softmax (temperature, 1.0) + Distance: cossim + positive(0.075, offset 0) / negative(1.45, offset 0) + Hard Negative:mix with double + PRED_NORMAL_MODE:cross + FILP_NORMAL(rightv2) + consistency(0.25)
+rm -rf checkpoint/G8NDB2_F_BV0V0_MH_P0075M0075+N145M145+BD+HNM+NK0+DCOS+AD_NPCFNR2C025_MCM+MNSoft_S1P1_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --logpath G8NDB2_F_BV0V0_MH_P0075M0075+N145M145+BD+HNM+NK0+DCOS+AD_NPCFNR2C025_MCM+MNSoft_S1P1_6 --backbone vn_unet --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale full --epochs 0 --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --batch_size 2 --pos_margin 0.075 --neg_margin 1.45 --pos_offset 0.0 --neg_offset 0.0 --balance_mode double --hard_negative mix --neg_topk 0 --distance_type cossim --anchor_mode default --normal_pred_mode cross --flip_normal_mode rightv2 --consistency_loss_weight 0.25 --matching_score_mode CM --matching_norm_mode softmax --p_loss_weight 1.0 --viz_train_epoch 30 --wandb --wandb_entity CMppProject --wandb_project CMpp
+
+# [ING] Origin + Softmax (temperature, 1.0) + Distance: cossim + positive(0.075, offset 0) / negative(1.45, offset 0) + Hard Negative:mix with double + PRED_NORMAL_MODE:cross + FILP_NORMAL(rightv3) + consistency(0.25)
+rm -rf checkpoint/G8NDB2_F_BV0V0_MH_P0075M0075+N145M145+BD+HNM+NK0+DCOS+AD_NPCFNR3C025_MCM+MNSoft_S1P1_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --logpath G8NDB2_F_BV0V0_MH_P0075M0075+N145M145+BD+HNM+NK0+DCOS+AD_NPCFNR3C025_MCM+MNSoft_S1P1_6 --backbone vn_unet --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale full --epochs 0 --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --batch_size 2 --pos_margin 0.075 --neg_margin 1.45 --pos_offset 0.0 --neg_offset 0.0 --balance_mode double --hard_negative mix --neg_topk 0 --distance_type cossim --anchor_mode default --normal_pred_mode cross --flip_normal_mode rightv3 --consistency_loss_weight 0.25 --matching_score_mode CM --matching_norm_mode softmax --p_loss_weight 1.0 --viz_train_epoch 30 --wandb --wandb_entity CMppProject --wandb_project CMpp
 
 
 
