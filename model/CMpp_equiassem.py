@@ -994,7 +994,7 @@ class EquiAssem(pl.LightningModule):
         eval_dict = self.evaluate_prediction(in_dict, split_input_dict, out_dict, mode)
 
         # Matching Recall
-        # eval_dict.update(self._calculate_recall(postprocessed_matching_scores_drop, gt_corr))
+        eval_dict.update(self._calculate_recall(postprocessed_matching_scores_drop, gt_corr))
 
         # Calculate ratio of GT among topk scores
         eval_dict['gt_among_topk'] = self.calculate_ratio_of_gt_among_topk_scores(src_pcd_raw, trg_pcd_raw, postprocessed_matching_scores_drop, topk=self.infer_topk, pos_radius=self.pos_radius)
