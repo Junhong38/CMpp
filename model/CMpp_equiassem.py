@@ -1148,7 +1148,7 @@ class EquiAssem(pl.LightningModule):
                                             filename=f'E{self.current_epoch}_{in_dict["eval_idx"].item()}_{in_dict["obj_class"][0]}_{round(eval_result["n_error"].item(),3)}_hist.png')
             
 
-            exit("stop")
+            # exit("stop")
         return eval_result
     
 
