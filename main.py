@@ -74,6 +74,7 @@ def main(args):
                       only_train_normal=args.only_train_normal,
                       flip_normal_mode=args.flip_normal_mode,
                       consistency_loss_weight=args.consistency_loss_weight,
+                      only_nearest_consistency=args.only_nearest_consistency,
 
                       n_knn=args.n_knn,
                       only_one_norm=args.only_one_norm,
@@ -247,8 +248,8 @@ if __name__ == '__main__':
     parser.add_argument('--multiplicity', type=int, default=1, help='Multiplicity of the dataset')
     parser.add_argument('--min_part', type=int, default=2)
     parser.add_argument('--max_part', type=int, default=2)
-    parser.add_argument('--min_n_pts', type=int, default=256)
-    parser.add_argument('--n_pts', type=int, default=5000)
+    parser.add_argument('--min_n_pts', type=int, default=16)
+    parser.add_argument('--n_pts', type=int, default=32)
     parser.add_argument('--overlap_radius', type=float, default=0.018)
     parser.add_argument('--sampling_mode', type=str, default='random', choices=['random'], help='Sampling mode for point cloud sampling')
     
@@ -270,7 +271,7 @@ if __name__ == '__main__':
     parser.add_argument('--model', type=str, default='CMpp_equiassem', choices=['CMpp_equiassem'])
     parser.add_argument('--backbone', type=str, default='vn_unet', choices=['vn_unet', 'vn_unet_v2'])
     parser.add_argument('--double_bacbone', type=str, default='none', choices=['none', 'vn_unet', 'vn_unet_v2'])
-    parser.add_argument('--n_knn', type=int, default=20, help='Number of nearest neighbors for KNN')
+    parser.add_argument('--n_knn', type=int, default=2, help='Number of nearest neighbors for KNN')
     parser.add_argument('--only_one_norm', action='store_true', help='If True, use only one Normalization layer for the equivariant shape feature')
     parser.add_argument('--n_avn', type=int, default=5, help='Number of AVN layers for the equivariant shape feature')
     parser.add_argument('--mlp_mode', type=str, default='CMpp', choices=['CMpp', 'CMpp_half', 'half', 'deep'])
@@ -284,8 +285,8 @@ if __name__ == '__main__':
 
 
     # Margin arguments which are used in circle loss
-    parser.add_argument('--pos_radius', type=float, default=0.018, help='Radius for positive samples in Circle loss computation and point matching loss')
-    parser.add_argument('--safe_radius', type=float, default=0.03, help='Radius for safe samples in Circle loss computation')
+    parser.add_argument('--pos_radius', type=float, default=0.5, help='Radius for positive samples in Circle loss computation and point matching loss')
+    parser.add_argument('--safe_radius', type=float, default=1.0, help='Radius for safe samples in Circle loss computation')
     parser.add_argument('--pos_margin', type=float, default=0.1, help='Margin for positive samples in Circle loss computation')
     parser.add_argument('--neg_margin', type=float, default=1.4, help='Margin for negative samples in Circle loss computation')
     parser.add_argument('--pos_offset', type=float, default=0.0, help='Offset for positive samples in Circle loss computation')
@@ -303,8 +304,9 @@ if __name__ == '__main__':
     # Additional experiments
     parser.add_argument('--success_criterion_in_degree', type=int, default=10, help='Success criterion in degree for normal error')
     parser.add_argument('--only_train_normal', action='store_true', help='Only train the normal vector, it will be used for stage 1 training')
-    parser.add_argument('--flip_normal_mode', type=str, default='none', choices=['none', 'right', 'rightv1_2', 'rightv1_3', 'rightv2', 'rightv3', 'mix'])
+    parser.add_argument('--flip_normal_mode', type=str, default='none', choices=['none', 'right', 'rightv1_2', 'rightv1_3', 'rightv2', 'rightv3', 'rightv4', 'mix'])
     parser.add_argument('--consistency_loss_weight', type=float, default=0.0, help='Weight for consistency loss')
+    parser.add_argument('--only_nearest_consistency', action='store_true')
     parser.add_argument('--move_smaller', action='store_true', help='If True, always move the smaller point cloud to the origin')
 
 

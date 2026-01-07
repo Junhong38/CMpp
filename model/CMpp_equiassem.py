@@ -18,7 +18,7 @@ from model.local_global_registration import LocalGlobalRegistration
 
 from RANSAC.ransac import _RANSAC
 
-from common.rotation import gram_schmidt_with_cross, gram_schmidt, rodrigues_to_rotmat, rotate_by_rotation_matrix
+from common.rotation import gram_schmidt_with_cross, gram_schmidt, rodrigues_to_rotmat, rotate_by_rotation_matrix, src_reverse_trg_normal_gram_schmidt_with_cross
 from common.utils import instance_wise_results_to_json
 from common.viz import visualize_negative_hard_mask, save_pcd_for_light_visualization, draw_frames, draw_normal_error_histogram, draw_test_results_histogram
 from common.misc import extract_all_objects, batch_scaling
@@ -68,6 +68,7 @@ class EquiAssem(pl.LightningModule):
             only_train_normal=False,
             flip_normal_mode='none',
             consistency_loss_weight=0.0,
+            only_nearest_consistency=False,
             
             n_knn=20,
             only_one_norm=False,
@@ -128,8 +129,9 @@ class EquiAssem(pl.LightningModule):
             debug (bool, optional): Whether to enable debug mode. Defaults to False.
             success_criterion_in_degree (int, optional): Success criterion in degree for normal error. Defaults to 10.
             only_train_normal (bool, optional): Whether to only train the normal vector, it will be used for stage 1 training. Defaults to False.
-            flip_normal_mode (str, optional): 'none' or 'right' or 'rightv1_2' or 'rightv2' or 'rightv3' or 'mix'. Defaults to 'none'.
+            flip_normal_mode (str, optional): 'none' or 'right' or 'rightv1_2' or 'rightv2' or 'rightv3' or 'rightv4' or 'mix'. Defaults to 'none'.
             consistency_loss_weight (float, optional): Weight for consistency loss. Defaults to 0.0.
+            one_to_one_consistency (bool, optional): Whether to use one-to-one consistency loss. Defaults to False.
 
             n_knn (int, optional): Number of nearest neighbors for KNN. Defaults to 20.
             only_one_norm (bool, optional): Whether to use only one Normalization layer for the equivariant shape feature. Defaults to False.
@@ -179,6 +181,7 @@ class EquiAssem(pl.LightningModule):
         print(f"only_train_normal: {only_train_normal}")
         print(f"flip_normal_mode: {flip_normal_mode}")
         print(f"consistency_loss_weight: {consistency_loss_weight}")
+        print(f"only_nearest_consistency: {only_nearest_consistency}")
 
         print(f"n_knn: {n_knn}")
         print(f"only_one_norm: {only_one_norm}")
@@ -241,7 +244,8 @@ class EquiAssem(pl.LightningModule):
                                       balance_mode=balance_mode, hard_negative=hard_negative,
                                       neg_topk=neg_topk, more_hard_neg=more_hard_neg, distance_type=distance_type, anchor_mode=anchor_mode,
                                       start_hard_neg_epoch=start_hard_neg_epoch)
-        self.orientation_loss = OrientationLoss(consistency_loss_weight=consistency_loss_weight, pos_radius=pos_radius, flip_normal_mode=flip_normal_mode)
+        self.orientation_loss = OrientationLoss(consistency_loss_weight=consistency_loss_weight, pos_radius=pos_radius, 
+                                                flip_normal_mode=flip_normal_mode, only_nearest_consistency=only_nearest_consistency)
         self.matching_loss = PointMatchingLoss(pos_radius=pos_radius, safe_radius=safe_radius)
         
 
@@ -612,7 +616,10 @@ class EquiAssem(pl.LightningModule):
 
         # 4. Gram Schmidt & Cross-product, this is for making three basis vectors by using two predicted vectors
         if self.normal_pred_mode == 'cross':
-            oris = gram_schmidt_with_cross(vecs) # (B, N+M, 2, 3) -> (B, N+M, 3, 3)
+            if self.flip_normal_mode == 'rightv4':
+                oris = src_reverse_trg_normal_gram_schmidt_with_cross(vecs, pcd_batch_info) # (B, N+M, 3, 3)
+            else:
+                oris = gram_schmidt_with_cross(vecs) # (B, N+M, 2, 3) -> (B, N+M, 3, 3)
         elif self.normal_pred_mode == 'gram':
             oris = gram_schmidt(vecs) # (B, N+M, 3, 3) -> (B, N+M, 3, 3)
         else:
@@ -749,7 +756,7 @@ class EquiAssem(pl.LightningModule):
             inv_feats (torch.Tensor): (B, C*3, N)
         """
 
-        if self.flip_normal_mode in ['right', 'rightv1_2', 'rightv1_3', 'rightv2', 'rightv3', 'mix']:
+        if self.flip_normal_mode in ['right', 'rightv1_2', 'rightv1_3', 'rightv2', 'rightv3', 'rightv4', 'mix']:
             # (B, N+M, 3, 3)
             if self.flip_normal_mode == 'right':
                 postprocessed_oris = torch.stack([- oris[:, :, 0, :], oris[:, :, 2, :], oris[:, :, 1, :]], dim=-2)
@@ -765,7 +772,7 @@ class EquiAssem(pl.LightningModule):
                 postprocessed_oris = torch.stack([- oris[:, :, 0, :], oris[:, :, 1, :], - oris[:, :, 2, :]], dim=-2)
             elif self.flip_normal_mode == 'rightv3':
                 postprocessed_oris = torch.stack([- oris[:, :, 0, :], - oris[:, :, 1, :], oris[:, :, 2, :]], dim=-2)
-            elif self.flip_normal_mode == 'mix':
+            elif self.flip_normal_mode in ['rightv4', 'mix']:
                 postprocessed_oris = torch.stack([- oris[:, :, 0, :], oris[:, :, 1, :], oris[:, :, 2, :]], dim=-2)
             
             if src_flip: # Flip the normal vector of src
@@ -987,7 +994,7 @@ class EquiAssem(pl.LightningModule):
         eval_dict = self.evaluate_prediction(in_dict, split_input_dict, out_dict, mode)
 
         # Matching Recall
-        eval_dict.update(self._calculate_recall(postprocessed_matching_scores_drop, gt_corr))
+        # eval_dict.update(self._calculate_recall(postprocessed_matching_scores_drop, gt_corr))
 
         # Calculate ratio of GT among topk scores
         eval_dict['gt_among_topk'] = self.calculate_ratio_of_gt_among_topk_scores(src_pcd_raw, trg_pcd_raw, postprocessed_matching_scores_drop, topk=self.infer_topk, pos_radius=self.pos_radius)

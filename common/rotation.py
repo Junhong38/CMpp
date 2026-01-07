@@ -35,7 +35,7 @@ def proj_a2u(a,u):
     return factor * u
 
 
-def gram_schmidt_with_cross(poses):
+def gram_schmidt_with_cross(poses, flip_order=False):
     r"""
     poses: B x N x 2 x 3
     optimum: bool, if True, use optimum projection, otherwise use not optimum projection
@@ -45,7 +45,10 @@ def gram_schmidt_with_cross(poses):
 
     normalized_first_vec = normalize_vector(first_vec) # (B, N, 3)
     normalized_second_vec = normalize_vector(second_vec - proj_a2u(second_vec, normalized_first_vec)) # (B, N, 3)
-    normalized_third_vec = normalize_vector(cross_product(normalized_first_vec, normalized_second_vec)) # (B, N, 3)
+    if flip_order:
+        normalized_third_vec = normalize_vector(cross_product(normalized_second_vec, normalized_first_vec)) # (B, N, 3)
+    else:
+        normalized_third_vec = normalize_vector(cross_product(normalized_first_vec, normalized_second_vec)) # (B, N, 3)
 
     normalized_first_vec = normalized_first_vec[:, :, None, :] # (B, N, 1, 3)
     normalized_second_vec = normalized_second_vec[:, :, None, :] # (B, N, 1, 3)
@@ -115,7 +118,19 @@ def rotate_by_rotation_matrix(oris, rotation_matrix):
     return torch.matmul(oris, rotation_matrix.transpose(-2,-1))
 
 
+def src_reverse_trg_normal_gram_schmidt_with_cross(poses, pcd_batch_info):
+    """
+    Assume there are two objects in the batch
+    poses: (B, N+M, 3, 3)
+    pcd_batch_info: (B, N+M, )
+    """
+    src_batch_info = pcd_batch_info == 0 # (B, N)
+    trg_batch_info = pcd_batch_info == 1 # (B, N)
 
+    original_gram_schmidt_with_cross = gram_schmidt_with_cross(poses)
+    reversed_gram_schmidt_with_cross = gram_schmidt_with_cross(poses, flip_order=True)
+    src_rev_trg_origin = reversed_gram_schmidt_with_cross * src_batch_info[:,:,None,None] + original_gram_schmidt_with_cross * trg_batch_info[:,:,None,None]
+    return src_rev_trg_origin
 
 
 
