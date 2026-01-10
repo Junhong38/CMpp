@@ -27,7 +27,7 @@ def test(args):
 
 
     # Dataset initialization
-    GADataset.initialize(args.datapath, args.data_category, args.sub_category, args.scale, 1, args.min_part, args.max_part, args.min_n_pts, args.n_pts, args.overlap_radius, args.sampling_mode)
+    GADataset.initialize(args.datapath, args.data_category, args.sub_category, args.scale, 1, args.min_part, args.max_part, args.min_n_pts, args.n_pts, args.sampling_mode)
     dataloader_val = GADataset.build_dataloader(1, args.n_worker, 'val')
 
 
@@ -154,7 +154,6 @@ if __name__ == '__main__':
     parser.add_argument('--max_part', type=int, default=2)
     parser.add_argument('--min_n_pts', type=int, default=256)
     parser.add_argument('--n_pts', type=int, default=5000)
-    parser.add_argument('--overlap_radius', type=float, default=0.018)
     parser.add_argument('--sampling_mode', type=str, default='random', choices=['random', 'mesh', 'same_prev', 'same'], help='Sampling mode for point cloud sampling, mesh mode is only for testing')
 
 
@@ -165,13 +164,12 @@ if __name__ == '__main__':
 
 
     # Model arguments
-    parser.add_argument('--model', type=str, default='CMpp_equiassem', choices=['CMpp_equiassem'])
     parser.add_argument('--backbone', type=str, default='vn_unet', choices=['vn_unet', 'vn_unet_v2'])
-    parser.add_argument('--double_bacbone', type=str, default='none', choices=['none', 'vn_unet', 'vn_unet_v2'])
+    parser.add_argument('--double_bacbone', type=str, default='vn_unet', choices=['none', 'vn_unet', 'vn_unet_v2'])
     parser.add_argument('--n_knn', type=int, default=20, help='Number of nearest neighbors for KNN')
     parser.add_argument('--only_one_norm', action='store_true', help='If True, use only one Normalization layer for the equivariant shape feature')
-    parser.add_argument('--n_avn', type=int, default=5, help='Number of AVN layers for the equivariant shape feature')
-    parser.add_argument('--mlp_mode', type=str, default='CMpp', choices=['CMpp', 'CMpp_half', 'half', 'deep'])
+    parser.add_argument('--n_avn', type=int, default=0, help='Number of AVN layers for the equivariant shape feature')
+    parser.add_argument('--mlp_mode', type=str, default='half', choices=['CMpp', 'CMpp_half', 'half', 'deep'])
     parser.add_argument('--normal_pred_mode', type=str, default='cross', choices=['cross', 'gram'])
 
 
@@ -187,7 +185,7 @@ if __name__ == '__main__':
 
     # Sinkhorn/Matching experments
     parser.add_argument('--matching_score_mode', type=str, default='CM', choices=['CM', 'cossim'])
-    parser.add_argument('--matching_norm_mode', type=str, default='sinkhorn', choices=['sinkhorn', 'softmax', 'none'])
+    parser.add_argument('--matching_norm_mode', type=str, default='softmax', choices=['sinkhorn', 'softmax', 'none'])
     parser.add_argument('--learnable_softmax_temperature', action='store_true', help='If True, use learnable temperature for softmax')
 
     

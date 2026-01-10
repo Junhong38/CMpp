@@ -30,7 +30,7 @@ def main(args):
     print(f"checkpoint directory (ckp_dir): {ckp_dir}")
 
     # Dataset initialization
-    GADataset.initialize(args.datapath, args.data_category, args.sub_category, args.scale, args.multiplicity, args.min_part, args.max_part, args.min_n_pts, args.n_pts, args.overlap_radius, args.sampling_mode)
+    GADataset.initialize(args.datapath, args.data_category, args.sub_category, args.scale, args.multiplicity, args.min_part, args.max_part, args.min_n_pts, args.n_pts, args.sampling_mode)
     dataloader_trn = GADataset.build_dataloader(args.batch_size, args.n_worker, 'train')
     dataloader_val = GADataset.build_dataloader(1, args.n_worker, 'val')
 
@@ -252,7 +252,6 @@ if __name__ == '__main__':
     parser.add_argument('--max_part', type=int, default=2)
     parser.add_argument('--min_n_pts', type=int, default=256)
     parser.add_argument('--n_pts', type=int, default=5000)
-    parser.add_argument('--overlap_radius', type=float, default=0.018)
     parser.add_argument('--sampling_mode', type=str, default='random', choices=['random'], help='Sampling mode for point cloud sampling')
     
 
@@ -270,13 +269,12 @@ if __name__ == '__main__':
 
 
     # Model arguments
-    parser.add_argument('--model', type=str, default='CMpp_equiassem', choices=['CMpp_equiassem'])
     parser.add_argument('--backbone', type=str, default='vn_unet', choices=['vn_unet', 'vn_unet_v2'])
-    parser.add_argument('--double_bacbone', type=str, default='none', choices=['none', 'vn_unet', 'vn_unet_v2'])
+    parser.add_argument('--double_bacbone', type=str, default='vn_unet', choices=['none', 'vn_unet', 'vn_unet_v2'])
     parser.add_argument('--n_knn', type=int, default=20, help='Number of nearest neighbors for KNN')
     parser.add_argument('--only_one_norm', action='store_true', help='If True, use only one Normalization layer for the equivariant shape feature')
-    parser.add_argument('--n_avn', type=int, default=5, help='Number of AVN layers for the equivariant shape feature')
-    parser.add_argument('--mlp_mode', type=str, default='CMpp', choices=['CMpp', 'CMpp_half', 'half', 'deep'])
+    parser.add_argument('--n_avn', type=int, default=0, help='Number of AVN layers for the equivariant shape feature')
+    parser.add_argument('--mlp_mode', type=str, default='half', choices=['CMpp', 'CMpp_half', 'half', 'deep'])
     parser.add_argument('--normal_pred_mode', type=str, default='cross', choices=['cross', 'gram'])
     
 
@@ -289,15 +287,15 @@ if __name__ == '__main__':
     # Margin arguments which are used in circle loss
     parser.add_argument('--pos_radius', type=float, default=0.018, help='Radius for positive samples in Circle loss computation and point matching loss')
     parser.add_argument('--safe_radius', type=float, default=0.03, help='Radius for safe samples in Circle loss computation')
-    parser.add_argument('--pos_margin', type=float, default=0.1, help='Margin for positive samples in Circle loss computation')
-    parser.add_argument('--neg_margin', type=float, default=1.4, help='Margin for negative samples in Circle loss computation')
+    parser.add_argument('--pos_margin', type=float, default=0.075, help='Margin for positive samples in Circle loss computation')
+    parser.add_argument('--neg_margin', type=float, default=1.45, help='Margin for negative samples in Circle loss computation')
     parser.add_argument('--pos_offset', type=float, default=0.0, help='Offset for positive samples in Circle loss computation')
     parser.add_argument('--neg_offset', type=float, default=0.0, help='Offset for negative samples in Circle loss computation')
     parser.add_argument('--log_scale', type=float, default=24, help='Log scale for Circle loss computation')
-    parser.add_argument('--balance_mode', type=str, default='none', choices=['none', 'half', 'all_hard', 'double'])
-    parser.add_argument('--hard_negative', type=str, default='none', choices=['none', 'mix'])
+    parser.add_argument('--balance_mode', type=str, default='double', choices=['none', 'half', 'all_hard', 'double'])
+    parser.add_argument('--hard_negative', type=str, default='mix', choices=['none', 'mix'])
     parser.add_argument('--neg_topk', type=int, default=0, help='')
-    parser.add_argument('--distance_type', type=str, default='l2', choices=['l2', 'cossim'])
+    parser.add_argument('--distance_type', type=str, default='cossim', choices=['l2', 'cossim'])
     parser.add_argument('--anchor_mode', type=str, default='default', choices=['default', 'all_pos', 'all'])
     parser.add_argument('--more_hard_neg', action='store_true', help='')
     parser.add_argument('--start_hard_neg_epoch', type=int, default=-1, help='Start hard negative sampling from this epoch')
@@ -313,7 +311,7 @@ if __name__ == '__main__':
 
     # Sinkhorn/Matching experments
     parser.add_argument('--matching_score_mode', type=str, default='CM', choices=['CM', 'cossim'])
-    parser.add_argument('--matching_norm_mode', type=str, default='sinkhorn', choices=['sinkhorn', 'softmax', 'none'])
+    parser.add_argument('--matching_norm_mode', type=str, default='softmax', choices=['sinkhorn', 'softmax', 'none'])
     parser.add_argument('--learnable_softmax_temperature', action='store_true', help='If True, use learnable temperature for softmax')
 
 

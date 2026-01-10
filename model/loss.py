@@ -507,10 +507,10 @@ class OrientationLoss(nn.Module):
         final_loss = normal_loss + self.consistency_loss_weight * consistency_loss
 
         consistency_loss_dict = {
-            'consistency_loss_1st' : consistency_loss_1st.detach().clone().item(),
-            'consistency_loss_2nd' : consistency_loss_2nd.detach().clone().item(),
-            'consistency_loss_3rd' : consistency_loss_3rd.detach().clone().item(),
-            'consistency_loss' : consistency_loss.detach().clone().item()
+            'consistency_loss_1st' : consistency_loss_1st,
+            'consistency_loss_2nd' : consistency_loss_2nd,
+            'consistency_loss_3rd' : consistency_loss_3rd,
+            'consistency_loss' : consistency_loss
         }
         
         return final_loss, consistency_loss_dict

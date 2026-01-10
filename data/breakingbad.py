@@ -14,7 +14,7 @@ from common.misc import bincount2batch
 
 class DatasetBreakingBad(Dataset):
     def __init__(self, datapath, data_category, sub_category, split, scale='full', multiplicity=1,
-                 min_part=2, max_part=2, min_n_pts=256, n_pts=5000, overlap_radius=0.018, sampling_mode='random'):
+                 min_part=2, max_part=2, min_n_pts=256, n_pts=5000, sampling_mode='random'):
         """Dataset for Breaking Bad
 
         Args:
@@ -28,7 +28,6 @@ class DatasetBreakingBad(Dataset):
             max_part (int): maximum number of parts
             min_n_pts (int): minimum number of points to sample
             n_pts (int): number of points to sample
-            overlap_radius (float): overlap radius for correspondence
             sampling_mode (str): ['random', 'mesh'], candidates are fixed by argparse
         """
         # Assertion
@@ -45,7 +44,6 @@ class DatasetBreakingBad(Dataset):
         self.min_n_pts = min_n_pts
         self.n_pts = n_pts
 
-        self.overlap_radius = overlap_radius
         self.sampling_mode = sampling_mode
 
         if self.split == 'test': 
@@ -73,7 +71,7 @@ class DatasetBreakingBad(Dataset):
         print(f"datapath: {self.datapath} | data_category: {self.data_category} | sub_category: {self.sub_category}")
         print(f"scale: {scale} | multiplicity: {self.multiplicity}")
         print(f"min_part: {self.min_part} | max_part: {self.max_part} | min_n_pts: {self.min_n_pts} | n_pts: {self.n_pts}")
-        print(f"overlap_radius: {self.overlap_radius}, sampling_mode: {self.sampling_mode}")
+        print(f"sampling_mode: {self.sampling_mode}")
         print("================================================")
         
 

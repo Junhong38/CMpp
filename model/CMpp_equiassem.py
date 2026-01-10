@@ -603,12 +603,14 @@ class EquiAssem(pl.LightningModule):
         gt_rot_from_src_to_trg = in_dict['gt_rot_from_src_to_trg'] # (B, 3, 3)
 
 
-        # 1. SO(3)-Equivariant Feature Extractor
-        equi_feats_backbone = self.backbone(pcd_input, batch_scaled_pcd_batch_info) # (B, C, 3, N+M)
+        if not (self.only_train_normal and (self.ori_backbone is not None)):
+            # 1. SO(3)-Equivariant Feature Extractor
+            equi_feats_backbone = self.backbone(pcd_input, batch_scaled_pcd_batch_info) # (B, C, 3, N+M)
 
 
-        # 2. Calculate equivariant shape features
-        equi_feats = self.equi_layer(equi_feats_backbone.unsqueeze(-1)).squeeze(-1) # (B, C, 3, N+M)
+        if not self.only_train_normal:
+            # 2. Calculate equivariant shape features
+            equi_feats = self.equi_layer(equi_feats_backbone.unsqueeze(-1)).squeeze(-1) # (B, C, 3, N+M)
 
 
         # 3. Frame Prediction
