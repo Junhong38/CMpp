@@ -68,7 +68,6 @@ class EquiAssem(pl.LightningModule):
             only_train_normal=False,
             flip_normal_mode='none',
             consistency_loss_weight=0.0,
-            only_nearest_consistency=False,
             
             n_knn=20,
             only_one_norm=False,
@@ -129,7 +128,7 @@ class EquiAssem(pl.LightningModule):
             debug (bool, optional): Whether to enable debug mode. Defaults to False.
             success_criterion_in_degree (int, optional): Success criterion in degree for normal error. Defaults to 10.
             only_train_normal (bool, optional): Whether to only train the normal vector, it will be used for stage 1 training. Defaults to False.
-            flip_normal_mode (str, optional): 'none' or 'right' or 'rightv1_2' or 'rightv2' or 'rightv3' or 'rightv4' or 'mix'. Defaults to 'none'.
+            flip_normal_mode (str, optional): 'none' or 'right' or 'rightv1_2' or 'rightv2' or 'rightv3' or 'rightv4' or 'rightv5' or 'mix'. Defaults to 'none'.
             consistency_loss_weight (float, optional): Weight for consistency loss. Defaults to 0.0.
             one_to_one_consistency (bool, optional): Whether to use one-to-one consistency loss. Defaults to False.
 
@@ -181,7 +180,6 @@ class EquiAssem(pl.LightningModule):
         print(f"only_train_normal: {only_train_normal}")
         print(f"flip_normal_mode: {flip_normal_mode}")
         print(f"consistency_loss_weight: {consistency_loss_weight}")
-        print(f"only_nearest_consistency: {only_nearest_consistency}")
 
         print(f"n_knn: {n_knn}")
         print(f"only_one_norm: {only_one_norm}")
@@ -244,8 +242,7 @@ class EquiAssem(pl.LightningModule):
                                       balance_mode=balance_mode, hard_negative=hard_negative,
                                       neg_topk=neg_topk, more_hard_neg=more_hard_neg, distance_type=distance_type, anchor_mode=anchor_mode,
                                       start_hard_neg_epoch=start_hard_neg_epoch)
-        self.orientation_loss = OrientationLoss(consistency_loss_weight=consistency_loss_weight, pos_radius=pos_radius, 
-                                                flip_normal_mode=flip_normal_mode, only_nearest_consistency=only_nearest_consistency)
+        self.orientation_loss = OrientationLoss(consistency_loss_weight=consistency_loss_weight, pos_radius=pos_radius, flip_normal_mode=flip_normal_mode)
         self.matching_loss = PointMatchingLoss(pos_radius=pos_radius, safe_radius=safe_radius)
         
 
@@ -378,7 +375,16 @@ class EquiAssem(pl.LightningModule):
                 num_refinement_steps=5,
                 score_threshold_ratio=self.infer_score_threshold_ratio,
             )
+    
 
+    def freeze_ori_backbone(self):
+        if self.ori_backbone is not None:
+            for param in self.ori_backbone.parameters():
+                param.requires_grad = False
+        
+        for param in self.proj.parameters():
+            param.requires_grad = False
+    
 
     def configure_optimizers(self):
         """Build optimizer and lr scheduler."""
@@ -535,6 +541,8 @@ class EquiAssem(pl.LightningModule):
                 - gt_normals (torch.Tensor): (B, N+M, 3)
                 - pcd_batch_info (torch.Tensor): (B, N+M,)
 
+                - gt_rot_from_src_to_trg (torch.Tensor): (B, 3, 3)
+
                 For evaluation
                     - mesh (list): length is 2, only for two pieces
                         - mesh[0]: (N', 3)
@@ -592,6 +600,7 @@ class EquiAssem(pl.LightningModule):
         gt_normals = in_dict['gt_normals'] # (B, N+M, 3)
         pcd_batch_info = in_dict['pcd_batch_info'] # (B, N+M, )
         batch_scaled_pcd_batch_info = batch_scaling(pcd_batch_info) # (B, N+M, )
+        gt_rot_from_src_to_trg = in_dict['gt_rot_from_src_to_trg'] # (B, 3, 3)
 
 
         # 1. SO(3)-Equivariant Feature Extractor
@@ -616,7 +625,7 @@ class EquiAssem(pl.LightningModule):
 
         # 4. Gram Schmidt & Cross-product, this is for making three basis vectors by using two predicted vectors
         if self.normal_pred_mode == 'cross':
-            if self.flip_normal_mode == 'rightv4':
+            if self.flip_normal_mode in ['rightv4', 'rightv5']:
                 oris = src_reverse_trg_normal_gram_schmidt_with_cross(vecs, pcd_batch_info) # (B, N+M, 3, 3)
             else:
                 oris = gram_schmidt_with_cross(vecs) # (B, N+M, 2, 3) -> (B, N+M, 3, 3)
@@ -630,8 +639,10 @@ class EquiAssem(pl.LightningModule):
 
         # Only train the normal vector
         if self.only_train_normal:
-            loss['o_loss'], loss['o_consistency_loss'] = self.orientation_loss(oris, gt_normals, batch_scaled_pcd_batch_info, None, pcd_raw, self.return_active_mask(pcd_batch_info))
+            loss['o_loss'], consistency_loss_dict = self.orientation_loss(oris, gt_rot_from_src_to_trg, gt_normals, pcd_batch_info, None, pcd_raw, self.return_active_mask(pcd_batch_info))
             loss['loss'] = loss['o_loss']
+
+            loss.update(consistency_loss_dict)
 
             # Compute Normal Error
             with torch.no_grad():
@@ -687,11 +698,12 @@ class EquiAssem(pl.LightningModule):
                 loss['s_loss'], coords_dist, pos_neg_distribution, neg_hard_mask_for_viz = self.circle_loss(pcd_raw, shape_feats, shape_matching_scores, active_mask)
                 loss['p_loss'] = self.matching_loss(matching_scores, coords_dist, active_mask, matching_norm_mode=self.matching_norm_mode).float() if self.p_loss_weight != 0 else torch.tensor(0.).to(matching_scores.device)
             
-            # oris, gt_normals, batch_scaled_batch_info, coords_dist, pcd_raw, active_mask
-            loss['o_loss'], loss['o_consistency_loss'], loss['o_consistency_loss_2nd'], loss['o_consistency_loss_3rd'] = self.orientation_loss(oris, gt_normals, batch_scaled_pcd_batch_info, coords_dist, pcd_raw, active_mask)
+
+            loss['o_loss'], consistency_loss_dict = self.orientation_loss(oris, gt_rot_from_src_to_trg, gt_normals, pcd_batch_info, coords_dist, pcd_raw, active_mask)
             loss['loss'] = self.o_loss_weight * loss['o_loss'] + self.s_loss_weight * loss['s_loss'] + self.p_loss_weight * loss['p_loss']
             
             out_dict.update(loss)
+            loss.update(consistency_loss_dict)
 
             if mode == 'train':
                 with torch.no_grad():
@@ -756,7 +768,7 @@ class EquiAssem(pl.LightningModule):
             inv_feats (torch.Tensor): (B, C*3, N)
         """
 
-        if self.flip_normal_mode in ['right', 'rightv1_2', 'rightv1_3', 'rightv2', 'rightv3', 'rightv4', 'mix']:
+        if self.flip_normal_mode in ['right', 'rightv1_2', 'rightv1_3', 'rightv2', 'rightv3', 'rightv4', 'rightv5', 'mix']:
             # (B, N+M, 3, 3)
             if self.flip_normal_mode == 'right':
                 postprocessed_oris = torch.stack([- oris[:, :, 0, :], oris[:, :, 2, :], oris[:, :, 1, :]], dim=-2)
@@ -774,6 +786,8 @@ class EquiAssem(pl.LightningModule):
                 postprocessed_oris = torch.stack([- oris[:, :, 0, :], - oris[:, :, 1, :], oris[:, :, 2, :]], dim=-2)
             elif self.flip_normal_mode in ['rightv4', 'mix']:
                 postprocessed_oris = torch.stack([- oris[:, :, 0, :], oris[:, :, 1, :], oris[:, :, 2, :]], dim=-2)
+            elif self.flip_normal_mode == 'rightv5':
+                postprocessed_oris = - oris
             
             if src_flip: # Flip the normal vector of src
                 # We assume there are two objects in the batch

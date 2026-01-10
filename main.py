@@ -74,7 +74,6 @@ def main(args):
                       only_train_normal=args.only_train_normal,
                       flip_normal_mode=args.flip_normal_mode,
                       consistency_loss_weight=args.consistency_loss_weight,
-                      only_nearest_consistency=args.only_nearest_consistency,
 
                       n_knn=args.n_knn,
                       only_one_norm=args.only_one_norm,
@@ -221,6 +220,9 @@ def main(args):
         load_result = model.load_state_dict(loaded_weights, strict=False)
         print(f"Missing keys: {load_result[0]}")
         print(f"Unexpected keys: {load_result[1]}")
+
+        print(f"Freezing orientation backbone network")
+        model.freeze_ori_backbone()
     
     elif args.resume != '': # Resume training from the checkpoint
         ckp_path = args.resume
@@ -304,9 +306,8 @@ if __name__ == '__main__':
     # Additional experiments
     parser.add_argument('--success_criterion_in_degree', type=int, default=10, help='Success criterion in degree for normal error')
     parser.add_argument('--only_train_normal', action='store_true', help='Only train the normal vector, it will be used for stage 1 training')
-    parser.add_argument('--flip_normal_mode', type=str, default='none', choices=['none', 'right', 'rightv1_2', 'rightv1_3', 'rightv2', 'rightv3', 'rightv4', 'mix'])
+    parser.add_argument('--flip_normal_mode', type=str, default='none', choices=['none', 'right', 'rightv1_2', 'rightv1_3', 'rightv2', 'rightv3', 'rightv4', 'rightv5', 'mix'])
     parser.add_argument('--consistency_loss_weight', type=float, default=0.0, help='Weight for consistency loss')
-    parser.add_argument('--only_nearest_consistency', action='store_true')
     parser.add_argument('--move_smaller', action='store_true', help='If True, always move the smaller point cloud to the origin')
 
 

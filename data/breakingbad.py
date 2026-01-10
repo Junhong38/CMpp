@@ -224,6 +224,8 @@ class DatasetBreakingBad(Dataset):
                 'pcd_t': concat_pcd_t, # torch.Tensor, (total_N, 3)
                 'gt_normals': concat_gt_normals, # torch.Tensor, (total_N, 3)
                 'pcd_batch_info': pcd_batch_info, # torch.Tensor, (total_N, ), batch index of the point cloud
+
+                'gt_rot_from_src_to_trg': gt_relative_trsfm['0-1'][0], # torch.Tensor, (3, 3)
                 }
         
         if self.split in ['val', 'test']:
@@ -449,6 +451,9 @@ def collate_fn(batch):
 
         elif batch_key in ['pcd', 'pcd_t', 'gt_normals', 'pcd_batch_info']:
             result_batch[batch_key] = torch.stack([a_batch[batch_key] for a_batch in batch], dim=0) # (B, total_N, 3) or (B, total_N, )
+        
+        elif batch_key in ['gt_rot_from_src_to_trg']:
+            result_batch[batch_key] = torch.stack([a_batch[batch_key] for a_batch in batch], dim=0) # (B, 3, 3)
         
         elif batch_key in ['mesh', 'mesh_t', 'mesh_faces', 'relative_trsfm']: # Only for evaluation, So batch size must be 1
             assert len(batch) == 1, f"len(batch): {len(batch)}, batch size must be 1 for evaluation"

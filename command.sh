@@ -325,7 +325,3 @@ rm -rf checkpoint/G8NDB2_F_BV0V0_MH_P0075M0075+N145M145+BD+HNM+NK0+DCOS+AD_NPCFN
 
 # Origin + Softmax + only matching loss (no circle loss)
 
-
-
-
-

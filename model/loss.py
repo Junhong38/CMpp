@@ -407,22 +407,22 @@ class PointMatchingLoss(nn.Module):
 
 
 class OrientationLoss(nn.Module):
-    def __init__(self, consistency_loss_weight=0.0, pos_radius=0.018, flip_normal_mode='none', only_nearest_consistency=False):
+    def __init__(self, consistency_loss_weight=0.0, pos_radius=0.018, flip_normal_mode='none'):
         super(OrientationLoss, self).__init__()
         self.consistency_loss_weight = consistency_loss_weight
         self.pos_radius = pos_radius
         self.flip_normal_mode = flip_normal_mode
-        self.only_nearest_consistency = only_nearest_consistency
         self.loss_fn = nn.SmoothL1Loss(beta=1.0, reduction='mean')
     
-    def forward(self, oris, gt_normals, batch_scaled_batch_info, coords_dist, pcd_raw, active_mask):
+    def forward(self, oris, gt_rot_from_src_to_trg, gt_normals, batch_info, coords_dist, pcd_raw, active_mask):
         """
         Assume there are two objects in the batch
 
         Args:
             oris (torch.Tensor): (B, N+M, 3, 3), first basis should be aligned with gt_normals[0]
+            gt_rot_from_src_to_trg (torch.Tensor): (B, 3, 3)
             gt_normals (torch.Tensor): (B, N+M, 3)
-            batch_scaled_batch_info (torch.Tensor): (B, N+M), batch index of the point cloud
+            batch_info (torch.Tensor): (B, N+M), batch index of the point cloud
             coords_dist (torch.Tensor): (B, N+M, N+M) or None
             pcd_raw (torch.Tensor): (B, N+M, 3)
             active_mask (torch.Tensor): (B, N+M, N+M), True if the point is active
@@ -433,72 +433,87 @@ class OrientationLoss(nn.Module):
         pred_normal = oris[:, :, 0, :] # (B, N+M, 3)
         normal_loss = self.loss_fn(pred_normal, gt_normals)
 
-        if self.consistency_loss_weight > 0.0: 
+        if self.consistency_loss_weight > 0.0:
             if coords_dist is None:
                 coords_dist = torch.cdist(pcd_raw, pcd_raw, p=2) # (B, N+M, N+M)
             
             batch_size, row_size, col_size = coords_dist.shape
             assert row_size == col_size, "coords_dist must be a square matrix"
             
-            if self.only_nearest_consistency:
-                processed_coords_dist = (coords_dist.max() + 1) * ~ active_mask + coords_dist * active_mask
-                argmin_src_coords_dist = processed_coords_dist.argmin(dim=-1) # nearest trg from src (B, N+M)
-                argmin_trg_coords_dist = processed_coords_dist.argmin(dim=-2) # nearest src from trg (B, N+M)
-
-                batch_index = torch.arange(batch_size, device=coords_dist.device).reshape(batch_size, 1).repeat(1, row_size) # (B, N+M)
-                row_or_col_index = torch.arange(row_size, device=coords_dist.device).reshape(1, row_size).repeat(batch_size, 1) # (B, N+M)
-
-                final_one_to_one_src_index = torch.stack([batch_index, row_or_col_index, argmin_src_coords_dist], dim=-1) # (B, N+M, 3)
-                final_one_to_one_trg_index = torch.stack([batch_index, argmin_trg_coords_dist, row_or_col_index], dim=-1) # (B, N+M, 3)
-
-                placeholder_for_one_to_one_corr = torch.zeros(batch_size, row_size, col_size, device=coords_dist.device, dtype=torch.bool) # (B, N+M, N+M)
-                placeholder_for_one_to_one_corr[final_one_to_one_src_index[:,:,0], final_one_to_one_src_index[:,:,1], final_one_to_one_src_index[:,:,2]] = True
-                placeholder_for_one_to_one_corr[final_one_to_one_trg_index[:,:,0], final_one_to_one_trg_index[:,:,1], final_one_to_one_trg_index[:,:,2]] = True
-
-                corr_based_on_distance = torch.logical_and(coords_dist < self.pos_radius, active_mask) # (B, N+M, N+M)
-                corr_only_nearest = torch.logical_and(placeholder_for_one_to_one_corr, active_mask) # (B, N+M, N+M)
-                consistency_corr_mask = torch.logical_and(corr_based_on_distance, corr_only_nearest) # (B, N+M, N+M)
-            
-            else: # many-to-many consistency
-                consistency_corr_mask = torch.logical_and(coords_dist < self.pos_radius, active_mask) # (B, N+M, N+M)
-            
+            consistency_corr_mask = torch.logical_and(coords_dist < self.pos_radius, active_mask) # (B, N+M, N+M)
             consistency_corr_map = consistency_corr_mask.nonzero() # (total_corr, 3), where 3 is (batch_index, row_index, col_index)
 
             if len(consistency_corr_map) > 0:
+                # We should rotate frame by using gt_rot_from_src_to_trg to align src and trg frames
+                # Also, only assume there are two objects in the batch
+                rot_for_trg_identity = torch.eye(3, device=pred_normal.device).reshape(1, 1, 3, 3).repeat(batch_size, 1, 1, 1) # (3,3) -> (1, 1, 3, 3) -> (B, 1, 3, 3)
+                reshaped_gt_rot_from_src_to_trg = gt_rot_from_src_to_trg.reshape(batch_size, 1, 3, 3) # (B, 3, 3) -> (B, 1, 3, 3)
+                src_part = batch_info == 0 # (B, N+M)
+                trg_part = batch_info == 1 # (B, N+M)
+                total_rot_matrix = reshaped_gt_rot_from_src_to_trg * src_part[:,:,None,None] + rot_for_trg_identity * trg_part[:,:,None,None] # (B, N+M, 3, 3)
+                rotated_oris = torch.matmul(oris, total_rot_matrix.transpose(-2,-1)) # (B, N+M, 3, 3)
+
                 # Active part is right-upper part of the matrix
                 # Hence, row index(0 - src), colum index (src+1, trg).
-                src_from_mating_surface = oris[consistency_corr_map[:,0], consistency_corr_map[:,1], :, :] # (total_corr, 3, 3)
-                trg_from_mating_surface = oris[consistency_corr_map[:,0], consistency_corr_map[:,2], :, :] # (total_corr, 3, 3)              
+                rotated_src_frame_from_mating_surface = rotated_oris[consistency_corr_map[:,0], consistency_corr_map[:,1], :, :] # (total_corr, 3, 3)
+                rotated_trg_frame_from_mating_surface = rotated_oris[consistency_corr_map[:,0], consistency_corr_map[:,2], :, :] # (total_corr, 3, 3)  
+
+                non_rotated_src_frame_from_mating_surface = oris[consistency_corr_map[:,0], consistency_corr_map[:,1], :, :] # (total_corr, 3, 3)
+                non_rotated_trg_frame_from_mating_surface = oris[consistency_corr_map[:,0], consistency_corr_map[:,2], :, :] # (total_corr, 3, 3)
+
+                gt_src_normal_from_mating_surface = gt_normals[consistency_corr_map[:,0], consistency_corr_map[:,1], :] # (total_corr, 3)
+                gt_trg_normal_from_mating_surface = gt_normals[consistency_corr_map[:,0], consistency_corr_map[:,2], :] # (total_corr, 3)
+
 
                 if self.flip_normal_mode in ['right', 'rightv1_2', 'rightv1_3']:
-                    consistency_loss_2nd = self.loss_fn(src_from_mating_surface[:, 1, :], trg_from_mating_surface[:, 2, :])
-                    consistency_loss_3rd = self.loss_fn(src_from_mating_surface[:, 2, :], trg_from_mating_surface[:, 1, :])
-                    consistency_loss = (consistency_loss_2nd + consistency_loss_3rd) / 2 
+                    consistency_loss_2nd = self.loss_fn(rotated_src_frame_from_mating_surface[:, 1, :], rotated_trg_frame_from_mating_surface[:, 2, :])
+                    consistency_loss_3rd = self.loss_fn(rotated_src_frame_from_mating_surface[:, 2, :], rotated_trg_frame_from_mating_surface[:, 1, :])
                 elif self.flip_normal_mode == 'rightv2':
-                    consistency_loss_2nd = self.loss_fn(src_from_mating_surface[:, 1, :], trg_from_mating_surface[:, 1, :])
-                    consistency_loss_3rd = self.loss_fn(- src_from_mating_surface[:, 2, :], trg_from_mating_surface[:, 2, :])
-                    consistency_loss = (consistency_loss_2nd + consistency_loss_3rd) / 2 
+                    consistency_loss_2nd = self.loss_fn(rotated_src_frame_from_mating_surface[:, 1, :], rotated_trg_frame_from_mating_surface[:, 1, :])
+                    consistency_loss_3rd = self.loss_fn(- rotated_src_frame_from_mating_surface[:, 2, :], rotated_trg_frame_from_mating_surface[:, 2, :])
                 elif self.flip_normal_mode == 'rightv3':
-                    consistency_loss_2nd = self.loss_fn(- src_from_mating_surface[:, 1, :], trg_from_mating_surface[:, 1, :])
-                    consistency_loss_3rd = self.loss_fn(src_from_mating_surface[:, 2, :], trg_from_mating_surface[:, 2, :])
-                    consistency_loss = (consistency_loss_2nd + consistency_loss_3rd) / 2 
+                    consistency_loss_2nd = self.loss_fn(- rotated_src_frame_from_mating_surface[:, 1, :], rotated_trg_frame_from_mating_surface[:, 1, :])
+                    consistency_loss_3rd = self.loss_fn(rotated_src_frame_from_mating_surface[:, 2, :], rotated_trg_frame_from_mating_surface[:, 2, :])
                 elif self.flip_normal_mode in ['rightv4', 'mix']:
-                    consistency_loss_2nd = self.loss_fn(src_from_mating_surface[:, 1, :], trg_from_mating_surface[:, 1, :])
-                    consistency_loss_3rd = self.loss_fn(src_from_mating_surface[:, 2, :], trg_from_mating_surface[:, 2, :])
-                    consistency_loss = (consistency_loss_2nd + consistency_loss_3rd) / 2 
+                    consistency_loss_2nd = self.loss_fn(rotated_src_frame_from_mating_surface[:, 1, :], rotated_trg_frame_from_mating_surface[:, 1, :])
+                    consistency_loss_3rd = self.loss_fn(rotated_src_frame_from_mating_surface[:, 2, :], rotated_trg_frame_from_mating_surface[:, 2, :])
+                elif self.flip_normal_mode == 'rightv5':
+                    consistency_loss_2nd = self.loss_fn(- rotated_src_frame_from_mating_surface[:, 1, :], rotated_trg_frame_from_mating_surface[:, 1, :])
+                    consistency_loss_3rd = self.loss_fn(- rotated_src_frame_from_mating_surface[:, 2, :], rotated_trg_frame_from_mating_surface[:, 2, :]) 
+                elif self.flip_normal_mode == 'none':
+                    consistency_loss_2nd = torch.tensor(0.).to(pred_normal.device)
+                    consistency_loss_3rd = torch.tensor(0.).to(pred_normal.device)
                 else:
-                    raise ValueError(f"normal_pred_mode must be in ['cross', 'gram'], but got {self.normal_pred_mode}")
+                    raise ValueError(f"flip_normal_mode must be in ['cross', 'gram'], but got {self.flip_normal_mode}")
+
+                consistency_loss_1st_src = self.loss_fn(non_rotated_src_frame_from_mating_surface[:, 0, :], gt_src_normal_from_mating_surface)
+                consistency_loss_1st_trg = self.loss_fn(non_rotated_trg_frame_from_mating_surface[:, 0, :], gt_trg_normal_from_mating_surface)
+                consistency_loss_1st = (consistency_loss_1st_src + consistency_loss_1st_trg) / 2
+
+                consistency_loss = (consistency_loss_1st + consistency_loss_2nd + consistency_loss_3rd) / 3
+
             else:
+                consistency_loss_1st = torch.tensor(0.).to(pred_normal.device)
+                consistency_loss_2nd = torch.tensor(0.).to(pred_normal.device)
+                consistency_loss_3rd = torch.tensor(0.).to(pred_normal.device)
                 consistency_loss = torch.tensor(0.).to(pred_normal.device)
         
         else:
+            consistency_loss_1st = torch.tensor(0.).to(pred_normal.device)
             consistency_loss_2nd = torch.tensor(0.).to(pred_normal.device)
             consistency_loss_3rd = torch.tensor(0.).to(pred_normal.device)
             consistency_loss = torch.tensor(0.).to(pred_normal.device)
         
         final_loss = normal_loss + self.consistency_loss_weight * consistency_loss
+
+        consistency_loss_dict = {
+            'consistency_loss_1st' : consistency_loss_1st.detach().clone().item(),
+            'consistency_loss_2nd' : consistency_loss_2nd.detach().clone().item(),
+            'consistency_loss_3rd' : consistency_loss_3rd.detach().clone().item(),
+            'consistency_loss' : consistency_loss.detach().clone().item()
+        }
         
-        return final_loss, consistency_loss, consistency_loss_2nd, consistency_loss_3rd
+        return final_loss, consistency_loss_dict
 
         
 
