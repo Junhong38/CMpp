@@ -147,6 +147,7 @@ def main(args):
     else: # Only train the normal vector
         callbacks = [
             LearningRateMonitor('epoch'),
+            checkpoint_callback_Oloss,
             latest_checkpoint_callback,
         ]
 
