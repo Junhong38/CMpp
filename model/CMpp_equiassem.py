@@ -12,7 +12,7 @@ from einops import rearrange
 
 from model.backbone.vn_dgcnn import EQCNN_equi_unet, EQCNN_equi_unet_v2
 from model.backbone.vn_layers import VNLinear, VNLinearLeakyReLU
-from model.loss import CircleLoss, PointMatchingLoss, OrientationLoss
+from model.loss import CircleLoss, PointMatchingLoss, OrientationLoss, DiceLoss
 from model.learnable_sinkhorn import LearnableLogOptimalTransport
 from model.local_global_registration import LocalGlobalRegistration
 
@@ -21,9 +21,11 @@ from RANSAC.ransac import _RANSAC
 from common.rotation import gram_schmidt_with_cross, gram_schmidt, rodrigues_to_rotmat, rotate_by_rotation_matrix, src_reverse_trg_normal_gram_schmidt_with_cross
 from common.utils import instance_wise_results_to_json
 from common.viz import visualize_negative_hard_mask, save_pcd_for_light_visualization, draw_frames, draw_normal_error_histogram, draw_test_results_histogram
-from common.misc import extract_all_objects, batch_scaling
+from common.misc import extract_all_objects, batch_scaling, batch2offset, offset2bincount
 
 from pytorch3d.ops import iterative_closest_point
+
+import flash_attn
 
 
 class EquiAssem(pl.LightningModule):
@@ -33,6 +35,7 @@ class EquiAssem(pl.LightningModule):
             scheduler_mode='cos',
             backbone='vn_unet', 
             double_bacbone='none',
+            seg_head_mode='none',
             
             # Circle loss and point matching loss arguments
             pos_radius=0.018, 
@@ -55,6 +58,7 @@ class EquiAssem(pl.LightningModule):
             s_loss_weight=1.0, 
             p_loss_weight=1.0, 
             o_loss_weight=1.0,
+            d_loss_weight=1.0,
 
             visualize_mode='none', 
             viz_metric_name='none',
@@ -95,6 +99,7 @@ class EquiAssem(pl.LightningModule):
             scheduler_mode (str, optional): Scheduler type ('cos', 'onecycle', 'none). Defaults to 'cos'.
             backbone (str, optional): Backbone network architecture. Defaults to 'vn_unet'.
             double_bacbone (str, optional): 'none' or 'vn_unet'. Defaults to 'none'.
+            seg_head_mode (str, optional): 'none' or 'mlp' or 'atten'. Defaults to 'none'.
 
             # Circle loss and point matching loss arguments
             pos_radius (float, optional): Radius for positive samples in Circle loss computation and point matching loss. Defaults to 0.018.
@@ -117,6 +122,7 @@ class EquiAssem(pl.LightningModule):
             s_loss_weight (float, optional): Weight for shape loss. Defaults to 1.0.
             p_loss_weight (float, optional): Weight for point matching loss. Defaults to 1.0.
             o_loss_weight (float, optional): Weight for orientation loss. Defaults to 1.0.
+            d_loss_weight (float, optional): Weight for segmentation loss. Defaults to 1.0.
             
             visualize_mode (str, optional): 'none' or 'light' or 'all'. Defaults to 'none'.
             viz_metric_name (str, optional): 'none' or 'crd' or 'cd' or 'rrmse_geo' or 'trmse_geo'. Defaults to 'none'.
@@ -160,6 +166,7 @@ class EquiAssem(pl.LightningModule):
         print(f"scheduler_mode: {scheduler_mode}")
         print(f"backbone: {backbone}")
         print(f"double_bacbone: {double_bacbone}")
+        print(f"seg_head_mode: {seg_head_mode}")
         
         # Circle loss parameters will be printed in CircleLoss initialization
         # Point matching loss parameters will be printed in PointMatchingLoss initialization
@@ -167,6 +174,7 @@ class EquiAssem(pl.LightningModule):
         print(f"s_loss_weight: {s_loss_weight}")
         print(f"p_loss_weight: {p_loss_weight}")
         print(f"o_loss_weight: {o_loss_weight}")
+        print(f"d_loss_weight: {d_loss_weight}")
         
         print(f"visualize_mode: {visualize_mode}")
         print(f"viz_metric_name: {viz_metric_name}")
@@ -215,6 +223,7 @@ class EquiAssem(pl.LightningModule):
         self.only_train_normal = only_train_normal
         self.flip_normal_mode = flip_normal_mode
         self.normal_pred_mode = normal_pred_mode
+        self.seg_head_mode = seg_head_mode
 
         self.move_smaller = move_smaller
 
@@ -250,12 +259,14 @@ class EquiAssem(pl.LightningModule):
         self.s_loss_weight = s_loss_weight # circle loss weight
         self.p_loss_weight = p_loss_weight # point matching loss weight
         self.o_loss_weight = o_loss_weight # orientation loss weight
+        self.d_loss_weight = d_loss_weight # segmentation loss weight
 
         print("------------------------------------------------------")
         print("Weight for losses")
         print(f"s_loss_weight: {self.s_loss_weight}")
         print(f"p_loss_weight: {self.p_loss_weight}")
         print(f"o_loss_weight: {self.o_loss_weight}")
+        print(f"d_loss_weight: {self.d_loss_weight}")
         print("------------------------------------------------------")
 
 
@@ -297,6 +308,7 @@ class EquiAssem(pl.LightningModule):
             self.equi_layer = nn.Identity()
 
         if mlp_mode == 'deep':
+            channel_dim_of_shape_feats = self.feat_dim
             self.shape_mlp = nn.Sequential(nn.Conv1d((self.feat_dim//3) * 3, self.feat_dim//2, kernel_size=1, bias=False),
                                            nn.InstanceNorm1d(self.feat_dim//2),
                                            nn.LeakyReLU(negative_slope=0.2),
@@ -318,6 +330,7 @@ class EquiAssem(pl.LightningModule):
                                            )
         
         elif mlp_mode == 'half':
+            channel_dim_of_shape_feats = self.feat_dim//2
             self.shape_mlp = nn.Sequential(nn.Conv1d((self.feat_dim//3) * 3, self.feat_dim//2, kernel_size=1, bias=False),
                                            nn.InstanceNorm1d(self.feat_dim//2),
                                            nn.LeakyReLU(negative_slope=0.2),
@@ -331,6 +344,7 @@ class EquiAssem(pl.LightningModule):
         
         
         elif mlp_mode == 'CMpp':
+            channel_dim_of_shape_feats = self.feat_dim
             self.shape_mlp = nn.Sequential(nn.Conv1d((self.feat_dim//3) * 3, self.feat_dim, kernel_size=1, bias=False),
                                            nn.InstanceNorm1d(self.feat_dim),
                                            nn.LeakyReLU(negative_slope=0.2),
@@ -343,6 +357,7 @@ class EquiAssem(pl.LightningModule):
                                            )
         
         elif mlp_mode == 'CMpp_half':
+            channel_dim_of_shape_feats = self.feat_dim
             self.shape_mlp = nn.Sequential(nn.Conv1d((self.feat_dim//3) * 3, self.feat_dim//2, kernel_size=1, bias=False),
                                            nn.InstanceNorm1d(self.feat_dim//2),
                                            nn.LeakyReLU(negative_slope=0.2),
@@ -353,6 +368,25 @@ class EquiAssem(pl.LightningModule):
                                            nn.InstanceNorm1d(self.feat_dim),
                                            nn.LeakyReLU(negative_slope=0.2),
                                            )
+        
+        
+
+        # Segmentation head
+        if seg_head_mode == 'none':
+            self.seg_head = None
+        elif seg_head_mode == 'mlp': # This is based on GARF
+            self.seg_head = nn.Sequential(nn.Conv1d(channel_dim_of_shape_feats, 16, kernel_size=1, bias=True),
+                                          nn.ReLU(inplace=False),
+                                          nn.Conv1d(16, 1, kernel_size=1, bias=True)
+                                          )
+
+        elif seg_head_mode == 'atten': # This is based on GARF
+            self.self_attn_to_qkv = nn.Linear(channel_dim_of_shape_feats, channel_dim_of_shape_feats * 3, bias=False)
+            self.global_attn_to_qkv = nn.Linear(channel_dim_of_shape_feats, channel_dim_of_shape_feats * 3, bias=False)
+            self.seg_head = nn.Linear(channel_dim_of_shape_feats, 1, bias=True)
+
+        else:
+            raise ValueError(f"seg_head_mode must be in ['none', 'mlp', 'atten'], but got {seg_head_mode}")
         
         # Optimal Transport
         if self.matching_norm_mode == 'sinkhorn':
@@ -669,6 +703,11 @@ class EquiAssem(pl.LightningModule):
             symmetric_shape_feats = self.shape_mlp(symmetric_inv_feats) # (B, C*3, N+M) -> (B, D, N+M)
         
 
+        # [Optional] Segmentation Head
+        if self.seg_head_mode != 'none':
+            mating_surface_seg_results = self.feed_forward_seg_head(shape_feats, batch_scaled_pcd_batch_info) # (B, D, N+M) -> (B, N+M)
+        
+
         # 7. Calculate Matching Scores
         active_mask = self.return_active_mask(pcd_batch_info)
         shape_matching_scores = self.calculate_matching_score(shape_feats, active_mask, eps=1e-8, mode=self.matching_score_mode)
@@ -702,7 +741,8 @@ class EquiAssem(pl.LightningModule):
             
 
             loss['o_loss'], consistency_loss_dict = self.orientation_loss(oris, gt_rot_from_src_to_trg, gt_normals, pcd_batch_info, coords_dist, pcd_raw, active_mask)
-            loss['loss'] = self.o_loss_weight * loss['o_loss'] + self.s_loss_weight * loss['s_loss'] + self.p_loss_weight * loss['p_loss']
+            loss['d_loss'] = DiceLoss(mating_surface_seg_results, coords_dist, active_mask, pos_radius=self.pos_radius) if self.seg_head_mode != 'none' else torch.tensor(0.).to(matching_scores.device)
+            loss['loss'] = self.o_loss_weight * loss['o_loss'] + self.s_loss_weight * loss['s_loss'] + self.p_loss_weight * loss['p_loss'] + self.d_loss_weight * loss['d_loss']
             
             out_dict.update(loss)
             loss.update(consistency_loss_dict)
@@ -812,6 +852,63 @@ class EquiAssem(pl.LightningModule):
         return inv_feats
     
 
+    def feed_forward_seg_head(self, shape_feats, batch_scaled_pcd_batch_info):
+        """
+        Feed forward the shape features through the segmentation head
+        We assume there are two objects in the batch
+        When atten, head size is 8
+
+        Args:
+            shape_feats (torch.Tensor): (B, D, N+M)
+            batch_scaled_pcd_batch_info (torch.Tensor): (B, N+M, ), batch index of the point cloud
+
+        Returns:
+            mating_surface_seg_results (torch.Tensor): (B, N+M)
+        """
+        batch_size, channel_dim, num_of_points = shape_feats.shape
+
+        if self.seg_head_mode == 'mlp': 
+            mating_surface_seg_results = self.seg_head(shape_feats) # (B, D, N+M) -> (B, 1, N+M)
+            mating_surface_seg_results = nn.functional.sigmoid(mating_surface_seg_results).squeeze(1) # (B, 1, N+M) -> (B, N+M)
+        
+        elif self.seg_head_mode == 'atten':
+            assert channel_dim % 8 ==0, f"channel_dim must be divisible by 8, but got {channel_dim}"
+
+            # Prepare for Flash Attention
+            batch_scaled_offset = batch2offset(batch_scaled_pcd_batch_info.reshape(-1)) # (B*2, )
+            cumulative_batch_scaled_offset = torch.concat([torch.zeros(1, device=batch_scaled_offset.device), batch_scaled_offset], dim=0).int() # (B*2+1, )
+            size_of_each_object = offset2bincount(batch_scaled_offset) # (B*2)
+            local_max_seqlen = size_of_each_object.max()
+
+            # Save the original dtype of shape_feats, because Flash Attention requires fp16 or bf16
+            original_dtype = shape_feats.dtype
+
+            # Self Attention
+            self_atten_qkv = self.self_attn_to_qkv(shape_feats.transpose(1, 2)) # (B, D, N+M) -> (B, N+M, D) -> (B, N+M, D*3)
+            self_atten_qkv = self_atten_qkv.reshape(batch_size*num_of_points, 3, 8, channel_dim//8) # (B, N+M, D*3) -> (B*(N+M), 3, 8, D//8)
+            self_atten_out =  flash_attn.flash_attn_varlen_qkvpacked_func(self_atten_qkv.to(torch.float16), cu_seqlens=cumulative_batch_scaled_offset, max_seqlen=local_max_seqlen, dropout_p=0.0) #  (B*(N+M), 8, D//8)
+            self_atten_out = self_atten_out.to(original_dtype)
+            self_atten_out = self_atten_out.reshape(batch_size, num_of_points, -1) # (B*(N+M), 8, D//8) -> (B, N+M, D)
+
+            # Global Attention
+            global_atten_qkv = self.global_attn_to_qkv(self_atten_out) # (B, N+M, D) -> (B, N+M, D*3)
+            global_atten_qkv = global_atten_qkv.reshape(batch_size, num_of_points, 3, 8, channel_dim//8) # (B, N+M, D*3) -> (B, (N+M), 3, 8, D//8)
+            global_atten_qkv = global_atten_qkv.to(torch.float16)
+            global_atten_out = flash_attn.flash_attn_qkvpacked_func(global_atten_qkv, dropout_p=0.0) # (B, (N+M), 8, D//8)
+            global_atten_out = global_atten_out.to(original_dtype)
+
+            # Segmentation Head
+            mating_surface_seg_results = global_atten_out.reshape(batch_size, num_of_points, -1) # (B, (N+M), 8, D//8) -> (B, N+M, D)
+            mating_surface_seg_results = self.seg_head(mating_surface_seg_results).squeeze(dim=-1) # (B, N+M, D) -> (B, N+M)
+            mating_surface_seg_results = nn.functional.sigmoid(mating_surface_seg_results) # (B, 1, N+M) -> (B, N+M)
+
+        else:
+            raise ValueError(f"seg_head_mode must be in ['mlp', 'atten'], but got {self.seg_head_mode}")
+
+        
+        return mating_surface_seg_results
+    
+    
     def return_active_mask(self, batch_info):
         """
         Return active mask between the different objects

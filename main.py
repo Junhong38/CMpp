@@ -39,6 +39,7 @@ def main(args):
                       scheduler_mode=args.scheduler_mode,
                       backbone=args.backbone,
                       double_bacbone=args.double_bacbone,
+                      seg_head_mode=args.seg_head_mode,
 
                       # Circle loss and point matching loss arguments
                       pos_radius=args.pos_radius,
@@ -61,6 +62,7 @@ def main(args):
                       s_loss_weight=args.s_loss_weight,
                       p_loss_weight=args.p_loss_weight,
                       o_loss_weight=args.o_loss_weight,
+                      d_loss_weight=args.d_loss_weight,
 
                       visualize_mode=args.visualize_mode,
                       viz_metric_name='none', # This is not used for training
@@ -281,12 +283,14 @@ if __name__ == '__main__':
     parser.add_argument('--n_avn', type=int, default=0, help='Number of AVN layers for the equivariant shape feature')
     parser.add_argument('--mlp_mode', type=str, default='half', choices=['CMpp', 'CMpp_half', 'half', 'deep'])
     parser.add_argument('--normal_pred_mode', type=str, default='cross', choices=['cross', 'gram'])
+    parser.add_argument('--seg_head_mode', type=str, default='none', choices=['none', 'mlp', 'atten'])
     
 
     # Weights for losses
     parser.add_argument('--s_loss_weight', type=float, default=1.0, help='Weight for shape loss')
     parser.add_argument('--p_loss_weight', type=float, default=1.0, help='Weight for point loss')
     parser.add_argument('--o_loss_weight', type=float, default=1.0, help='Weight for orientation loss')
+    parser.add_argument('--d_loss_weight', type=float, default=1.0, help='Weight for segmentation loss')
 
 
     # Margin arguments which are used in circle loss

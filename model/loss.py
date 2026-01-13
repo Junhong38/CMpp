@@ -517,5 +517,26 @@ class OrientationLoss(nn.Module):
 
         
 
+# This is based on GARF
+def DiceLoss(pred: torch.Tensor, coords_dist: torch.Tensor, active_mask: torch.Tensor, pos_radius: float, smooth=1e-6):
+    """Calculate Dice Loss
 
+    Args:
+        pred (torch.Tensor): (B, N+M)
+        coords_dist (torch.Tensor): (B, N+M, N+M)
+        active_mask (torch.Tensor): (B, N+M, N+M), True if the point is active
+        pos_radius (float): radius of the positive region
+        smooth (float, optional): smoothing term. Defaults to 1e-6.
+    """
+    pos_mask = torch.logical_and(coords_dist < pos_radius, active_mask) # (B, N+M, N+M)
+    src_pos_mask = pos_mask.any(dim=-1) # (B, N+M)
+    trg_pos_mask = pos_mask.any(dim=-2) # (B, N+M)
+    target = torch.logical_or(src_pos_mask, trg_pos_mask) # (B, N+M)
+
+    pred = pred.contiguous().view(-1) # (B, N+M)
+    target = target.contiguous().view(-1).float() # (B, N+M)
+    
+    intersection = (pred * target).sum()
+    loss = 1 - ((2. * intersection + smooth) / (pred.sum() + target.sum() + smooth))
+    return loss
 

@@ -36,6 +36,7 @@ def test(args):
                       scheduler_mode=None, # We don't need to use this parameter for testing
                       backbone=args.backbone,
                       double_bacbone=args.double_bacbone,
+                      seg_head_mode=args.seg_head_mode,
 
                       # Circle loss and point matching loss arguments
                       pos_radius=args.pos_radius,
@@ -58,6 +59,7 @@ def test(args):
                       s_loss_weight=0.0, # We don't need to use this parameter for testing
                       p_loss_weight=0.0, # We don't need to use this parameter for testing
                       o_loss_weight=0.0, # We don't need to use this parameter for testing
+                      d_loss_weight=0.0, # We don't need to use this parameter for testing
 
                       visualize_mode=args.visualize_mode,
                       viz_metric_name=args.viz_metric_name,
@@ -171,6 +173,7 @@ if __name__ == '__main__':
     parser.add_argument('--n_avn', type=int, default=0, help='Number of AVN layers for the equivariant shape feature')
     parser.add_argument('--mlp_mode', type=str, default='half', choices=['CMpp', 'CMpp_half', 'half', 'deep'])
     parser.add_argument('--normal_pred_mode', type=str, default='cross', choices=['cross', 'gram'])
+    parser.add_argument('--seg_head_mode', type=str, default='none', choices=['none', 'mlp', 'atten'])
 
 
     # Only for evaluation metrics
