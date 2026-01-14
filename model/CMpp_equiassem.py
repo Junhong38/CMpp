@@ -123,7 +123,7 @@ class EquiAssem(pl.LightningModule):
             s_loss_weight (float, optional): Weight for shape loss. Defaults to 1.0.
             p_loss_weight (float, optional): Weight for point matching loss. Defaults to 1.0.
             o_loss_weight (float, optional): Weight for orientation loss. Defaults to 1.0.
-            seg_loss_weight (float, optional): Weight for segmentation loss. Defaults to 1.0.
+            seg_loss_weight (float, optional): Weight for segmentation loss. Defaults to 0.1.
             seg_loss_mode (str, optional): 'dice' or 'bce'. Defaults to 'bce'.
             
             visualize_mode (str, optional): 'none' or 'light' or 'all'. Defaults to 'none'.
