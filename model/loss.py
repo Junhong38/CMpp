@@ -516,10 +516,30 @@ class OrientationLoss(nn.Module):
         return final_loss, consistency_loss_dict
 
         
+def binary_cross_entropy_loss(pred: torch.Tensor, coords_dist: torch.Tensor, active_mask: torch.Tensor, pos_radius: float):
+    """Calculate Binary Cross Entropy Loss
+    Args:
+        pred (torch.Tensor): (B, N+M)
+        target (torch.Tensor): (B, N+M)
+    Returns:
+        torch.Tensor: (1, ), binary cross entropy loss
+    """
+    print("BCE LOSS")
+    pos_mask = torch.logical_and(coords_dist < pos_radius, active_mask) # (B, N+M, N+M)
+    src_pos_mask = pos_mask.any(dim=-1) # (B, N+M)
+    trg_pos_mask = pos_mask.any(dim=-2) # (B, N+M)
+    target = torch.logical_or(src_pos_mask, trg_pos_mask) # (B, N+M)
+
+    pred = pred.contiguous().view(-1) # (B*(N+M),)
+    target = target.contiguous().view(-1).float() # (B*(N+M),)
+
+    bce_loss = F.binary_cross_entropy(pred, target, reduction='mean')
+    return bce_loss
+
 
 # This is based on GARF
 def DiceLoss(pred: torch.Tensor, coords_dist: torch.Tensor, active_mask: torch.Tensor, pos_radius: float, smooth=1e-6):
-    """Calculate Dice Loss
+    """Calculate Dice Loss with improved gradient flow
 
     Args:
         pred (torch.Tensor): (B, N+M)
@@ -528,15 +548,21 @@ def DiceLoss(pred: torch.Tensor, coords_dist: torch.Tensor, active_mask: torch.T
         pos_radius (float): radius of the positive region
         smooth (float, optional): smoothing term. Defaults to 1e-6.
     """
+    print("DICE LOSS")
     pos_mask = torch.logical_and(coords_dist < pos_radius, active_mask) # (B, N+M, N+M)
     src_pos_mask = pos_mask.any(dim=-1) # (B, N+M)
     trg_pos_mask = pos_mask.any(dim=-2) # (B, N+M)
     target = torch.logical_or(src_pos_mask, trg_pos_mask) # (B, N+M)
 
-    pred = pred.contiguous().view(-1) # (B, N+M)
-    target = target.contiguous().view(-1).float() # (B, N+M)
+    pred = pred.contiguous().view(-1) # (B*(N+M),)
+    target = target.contiguous().view(-1).float() # (B*(N+M),)
     
+    # Standard Dice Loss
     intersection = (pred * target).sum()
-    loss = 1 - ((2. * intersection + smooth) / (pred.sum() + target.sum() + smooth))
-    return loss
+    pred_sum = pred.sum()
+    target_sum = target.sum()
+    dice_coeff = (2. * intersection + smooth) / (pred_sum + target_sum + smooth)
+    dice_loss = 1 - dice_coeff
+    
+    return dice_loss
 

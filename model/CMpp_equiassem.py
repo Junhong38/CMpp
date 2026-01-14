@@ -12,14 +12,14 @@ from einops import rearrange
 
 from model.backbone.vn_dgcnn import EQCNN_equi_unet, EQCNN_equi_unet_v2
 from model.backbone.vn_layers import VNLinear, VNLinearLeakyReLU
-from model.loss import CircleLoss, PointMatchingLoss, OrientationLoss, DiceLoss
+from model.loss import CircleLoss, PointMatchingLoss, OrientationLoss, DiceLoss, binary_cross_entropy_loss
 from model.learnable_sinkhorn import LearnableLogOptimalTransport
 from model.local_global_registration import LocalGlobalRegistration
 
 from RANSAC.ransac import _RANSAC
 
 from common.rotation import gram_schmidt_with_cross, gram_schmidt, rodrigues_to_rotmat, rotate_by_rotation_matrix, src_reverse_trg_normal_gram_schmidt_with_cross
-from common.utils import instance_wise_results_to_json
+from common.utils import instance_wise_results_to_json, calculate_accuracy_of_seg_results
 from common.viz import visualize_negative_hard_mask, save_pcd_for_light_visualization, draw_frames, draw_normal_error_histogram, draw_test_results_histogram
 from common.misc import extract_all_objects, batch_scaling, batch2offset, offset2bincount
 
@@ -58,7 +58,8 @@ class EquiAssem(pl.LightningModule):
             s_loss_weight=1.0, 
             p_loss_weight=1.0, 
             o_loss_weight=1.0,
-            d_loss_weight=1.0,
+            seg_loss_weight=1.0,
+            seg_loss_mode='bce',
 
             visualize_mode='none', 
             viz_metric_name='none',
@@ -122,7 +123,8 @@ class EquiAssem(pl.LightningModule):
             s_loss_weight (float, optional): Weight for shape loss. Defaults to 1.0.
             p_loss_weight (float, optional): Weight for point matching loss. Defaults to 1.0.
             o_loss_weight (float, optional): Weight for orientation loss. Defaults to 1.0.
-            d_loss_weight (float, optional): Weight for segmentation loss. Defaults to 1.0.
+            seg_loss_weight (float, optional): Weight for segmentation loss. Defaults to 1.0.
+            seg_loss_mode (str, optional): 'dice' or 'bce'. Defaults to 'bce'.
             
             visualize_mode (str, optional): 'none' or 'light' or 'all'. Defaults to 'none'.
             viz_metric_name (str, optional): 'none' or 'crd' or 'cd' or 'rrmse_geo' or 'trmse_geo'. Defaults to 'none'.
@@ -174,7 +176,7 @@ class EquiAssem(pl.LightningModule):
         print(f"s_loss_weight: {s_loss_weight}")
         print(f"p_loss_weight: {p_loss_weight}")
         print(f"o_loss_weight: {o_loss_weight}")
-        print(f"d_loss_weight: {d_loss_weight}")
+        print(f"seg_loss_weight: {seg_loss_weight}")
         
         print(f"visualize_mode: {visualize_mode}")
         print(f"viz_metric_name: {viz_metric_name}")
@@ -259,14 +261,16 @@ class EquiAssem(pl.LightningModule):
         self.s_loss_weight = s_loss_weight # circle loss weight
         self.p_loss_weight = p_loss_weight # point matching loss weight
         self.o_loss_weight = o_loss_weight # orientation loss weight
-        self.d_loss_weight = d_loss_weight # segmentation loss weight
+        self.seg_loss_weight = seg_loss_weight # segmentation loss weight
+        self.seg_loss_mode = seg_loss_mode # segmentation loss mode
 
         print("------------------------------------------------------")
         print("Weight for losses")
         print(f"s_loss_weight: {self.s_loss_weight}")
         print(f"p_loss_weight: {self.p_loss_weight}")
         print(f"o_loss_weight: {self.o_loss_weight}")
-        print(f"d_loss_weight: {self.d_loss_weight}")
+        print(f"seg_loss_weight: {self.seg_loss_weight}")
+        print(f"seg_loss_mode: {self.seg_loss_mode}")
         print("------------------------------------------------------")
 
 
@@ -381,12 +385,18 @@ class EquiAssem(pl.LightningModule):
                                           )
 
         elif seg_head_mode == 'atten': # This is based on GARF
+            self.layer_norm_for_self_atten = nn.LayerNorm(channel_dim_of_shape_feats, elementwise_affine=False)
+            self.layer_norm_for_global_atten = nn.LayerNorm(channel_dim_of_shape_feats, elementwise_affine=False)
+            self.final_layer_norm = nn.LayerNorm(channel_dim_of_shape_feats, elementwise_affine=False)
             self.self_attn_to_qkv = nn.Linear(channel_dim_of_shape_feats, channel_dim_of_shape_feats * 3, bias=False)
             self.global_attn_to_qkv = nn.Linear(channel_dim_of_shape_feats, channel_dim_of_shape_feats * 3, bias=False)
             self.seg_head = nn.Linear(channel_dim_of_shape_feats, 1, bias=True)
 
         else:
             raise ValueError(f"seg_head_mode must be in ['none', 'mlp', 'atten'], but got {seg_head_mode}")
+        
+        if seg_head_mode != 'none':
+            self.seg_loss_func = binary_cross_entropy_loss if self.seg_loss_mode == 'bce' else DiceLoss
         
         # Optimal Transport
         if self.matching_norm_mode == 'sinkhorn':
@@ -704,8 +714,7 @@ class EquiAssem(pl.LightningModule):
         
 
         # [Optional] Segmentation Head
-        if self.seg_head_mode != 'none':
-            mating_surface_seg_results = self.feed_forward_seg_head(shape_feats, batch_scaled_pcd_batch_info) # (B, D, N+M) -> (B, N+M)
+        mating_surface_seg_results = self.feed_forward_seg_head(shape_feats, batch_scaled_pcd_batch_info) if self.seg_head_mode != 'none' else None # (B, D, N+M) -> (B, N+M)
         
 
         # 7. Calculate Matching Scores
@@ -741,8 +750,8 @@ class EquiAssem(pl.LightningModule):
             
 
             loss['o_loss'], consistency_loss_dict = self.orientation_loss(oris, gt_rot_from_src_to_trg, gt_normals, pcd_batch_info, coords_dist, pcd_raw, active_mask)
-            loss['d_loss'] = DiceLoss(mating_surface_seg_results, coords_dist, active_mask, pos_radius=self.pos_radius) if self.seg_head_mode != 'none' else torch.tensor(0.).to(matching_scores.device)
-            loss['loss'] = self.o_loss_weight * loss['o_loss'] + self.s_loss_weight * loss['s_loss'] + self.p_loss_weight * loss['p_loss'] + self.d_loss_weight * loss['d_loss']
+            loss['seg_loss'] = self.seg_loss_func(mating_surface_seg_results, coords_dist, active_mask, pos_radius=self.pos_radius) if self.seg_head_mode != 'none' else torch.tensor(0.).to(matching_scores.device)
+            loss['loss'] = self.o_loss_weight * loss['o_loss'] + self.s_loss_weight * loss['s_loss'] + self.p_loss_weight * loss['p_loss'] + self.seg_loss_weight * loss['seg_loss']
             
             out_dict.update(loss)
             loss.update(consistency_loss_dict)
@@ -763,6 +772,7 @@ class EquiAssem(pl.LightningModule):
             out_dict['shape_matching_scores'] = shape_matching_scores
             out_dict['matching_scores_drop'] = matching_scores_drop
             out_dict['active_mask'] = active_mask
+            out_dict['mating_surface_seg_results'] = mating_surface_seg_results
             out_dict, eval_dict = self.progress_evaluation(in_dict, out_dict, mode)
             loss.update(eval_dict)
 
@@ -883,23 +893,30 @@ class EquiAssem(pl.LightningModule):
             # Save the original dtype of shape_feats, because Flash Attention requires fp16 or bf16
             original_dtype = shape_feats.dtype
 
+            transposed_shape_feats = shape_feats.transpose(1, 2) # (B, D, N+M) -> (B, N+M, D)
+            layernormed_shape_feats = self.layer_norm_for_self_atten(transposed_shape_feats) # (B, N+M, D)
+
             # Self Attention
-            self_atten_qkv = self.self_attn_to_qkv(shape_feats.transpose(1, 2)) # (B, D, N+M) -> (B, N+M, D) -> (B, N+M, D*3)
+            self_atten_qkv = self.self_attn_to_qkv(layernormed_shape_feats) # (B, N+M, D) -> (B, N+M, D*3)
             self_atten_qkv = self_atten_qkv.reshape(batch_size*num_of_points, 3, 8, channel_dim//8) # (B, N+M, D*3) -> (B*(N+M), 3, 8, D//8)
             self_atten_out =  flash_attn.flash_attn_varlen_qkvpacked_func(self_atten_qkv.to(torch.float16), cu_seqlens=cumulative_batch_scaled_offset, max_seqlen=local_max_seqlen, dropout_p=0.0) #  (B*(N+M), 8, D//8)
             self_atten_out = self_atten_out.to(original_dtype)
             self_atten_out = self_atten_out.reshape(batch_size, num_of_points, -1) # (B*(N+M), 8, D//8) -> (B, N+M, D)
+            self_atten_out = layernormed_shape_feats + self_atten_out # (B, N+M, D)
+            layernormed_self_atten_out = self.layer_norm_for_global_atten(self_atten_out) # (B, N+M, D)
 
             # Global Attention
-            global_atten_qkv = self.global_attn_to_qkv(self_atten_out) # (B, N+M, D) -> (B, N+M, D*3)
+            global_atten_qkv = self.global_attn_to_qkv(layernormed_self_atten_out) # (B, N+M, D) -> (B, N+M, D*3)
             global_atten_qkv = global_atten_qkv.reshape(batch_size, num_of_points, 3, 8, channel_dim//8) # (B, N+M, D*3) -> (B, (N+M), 3, 8, D//8)
             global_atten_qkv = global_atten_qkv.to(torch.float16)
             global_atten_out = flash_attn.flash_attn_qkvpacked_func(global_atten_qkv, dropout_p=0.0) # (B, (N+M), 8, D//8)
             global_atten_out = global_atten_out.to(original_dtype)
+            global_atten_out = global_atten_out.reshape(batch_size, num_of_points, -1) # (B, (N+M), 8, D//8) -> (B, N+M, D)
+            global_atten_out = layernormed_self_atten_out + global_atten_out
+            global_atten_out = self.final_layer_norm(global_atten_out) # (B, N+M, D)
 
             # Segmentation Head
-            mating_surface_seg_results = global_atten_out.reshape(batch_size, num_of_points, -1) # (B, (N+M), 8, D//8) -> (B, N+M, D)
-            mating_surface_seg_results = self.seg_head(mating_surface_seg_results).squeeze(dim=-1) # (B, N+M, D) -> (B, N+M)
+            mating_surface_seg_results = self.seg_head(global_atten_out).squeeze(dim=-1) # (B, N+M, D) -> (B, N+M)
             mating_surface_seg_results = nn.functional.sigmoid(mating_surface_seg_results) # (B, 1, N+M) -> (B, N+M)
 
         else:
@@ -1056,6 +1073,7 @@ class EquiAssem(pl.LightningModule):
         out_shape_matching_scores = out_dict['shape_matching_scores'][0] # (N+M, N+M)
         out_matching_scores_drop = out_dict['matching_scores_drop'][0] # (N+M, N+M)
         out_active_mask = out_dict['active_mask'][0] # (N+M, N+M)
+        out_mating_surface_seg_results = out_dict['mating_surface_seg_results'][0] if out_dict['mating_surface_seg_results'] is not None else None # (N+M) or None
 
         # Postprocess matching scores to make its shape (N, M)
         postprocessed_shape_matching_scores = out_shape_matching_scores[out_active_mask] # (N*M)
@@ -1064,7 +1082,9 @@ class EquiAssem(pl.LightningModule):
         postprocessed_matching_scores_drop = postprocessed_matching_scores_drop.reshape(num_src_pcd, num_trg_pcd) # (N, M)
 
         # Calculate ground truth correspondence
-        gt_corr = torch.nonzero(torch.cdist(src_pcd_raw, trg_pcd_raw, p=2) < self.pos_radius) # (corr, 2)
+        coord_dist = torch.cdist(src_pcd_raw, trg_pcd_raw, p=2) # (N, M)
+        positive_mask = coord_dist < self.pos_radius # (N, M)
+        gt_corr = torch.nonzero(positive_mask) # (corr, 2)
 
         # Save split tensors for evaluating prediction
         split_input_dict = {
@@ -1114,6 +1134,10 @@ class EquiAssem(pl.LightningModule):
 
         # log size of gt_corr
         eval_dict['gt_corr_size'] = torch.tensor(gt_corr.shape[0]).to(src_pcd_raw.device)
+
+        # Calculate accuracy of segmentation results
+        if self.seg_head_mode != 'none':
+            eval_dict['seg_coverage'], eval_dict['seg_accuracy'] = calculate_accuracy_of_seg_results(out_mating_surface_seg_results, positive_mask)
 
         return out_dict, eval_dict
     

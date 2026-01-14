@@ -62,7 +62,8 @@ def main(args):
                       s_loss_weight=args.s_loss_weight,
                       p_loss_weight=args.p_loss_weight,
                       o_loss_weight=args.o_loss_weight,
-                      d_loss_weight=args.d_loss_weight,
+                      seg_loss_weight=args.seg_loss_weight,
+                      seg_loss_mode=args.seg_loss_mode,
 
                       visualize_mode=args.visualize_mode,
                       viz_metric_name='none', # This is not used for training
@@ -290,7 +291,8 @@ if __name__ == '__main__':
     parser.add_argument('--s_loss_weight', type=float, default=1.0, help='Weight for shape loss')
     parser.add_argument('--p_loss_weight', type=float, default=1.0, help='Weight for point loss')
     parser.add_argument('--o_loss_weight', type=float, default=1.0, help='Weight for orientation loss')
-    parser.add_argument('--d_loss_weight', type=float, default=1.0, help='Weight for segmentation loss')
+    parser.add_argument('--seg_loss_weight', type=float, default=1.0, help='Weight for segmentation loss')
+    parser.add_argument('--seg_loss_mode', type=str, default='bce', choices=['dice', 'bce'])
 
 
     # Margin arguments which are used in circle loss

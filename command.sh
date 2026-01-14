@@ -38,3 +38,7 @@ rm -rf checkpoint/G8NDB2_NPCFNR4C1/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 pyth
 # Single Stage -> shape training + segmentation training (mlp) + warming up (10)
 rm -rf checkpoint/G8NDB3_SEGMLP_W10/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --scale full --logpath G8NDB3_SEGMLP_W10 --epochs 0 --scheduler_mode cos --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --batch_size 3 --flip_normal_mode none --seg_head_mode mlp --start_hard_neg_epoch 10 --wandb --wandb_entity CMppProject --wandb_project CMpp
 
+
+
+rm -rf checkpoint/SEG_ATTEN/ && CUDA_VISIBLE_DEVICES=7 python main.py --scale overfitting --multiplicity 100 --logpath SEG_ATTEN --epochs 0 --scheduler_mode cos --gpus 0 --n_worker 1 --batch_size 1 --flip_normal_mode none --seg_head_mode atten --wandb --wandb_entity CMppProject --wandb_project CMpp_overfitting
+

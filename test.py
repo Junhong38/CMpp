@@ -59,7 +59,8 @@ def test(args):
                       s_loss_weight=0.0, # We don't need to use this parameter for testing
                       p_loss_weight=0.0, # We don't need to use this parameter for testing
                       o_loss_weight=0.0, # We don't need to use this parameter for testing
-                      d_loss_weight=0.0, # We don't need to use this parameter for testing
+                      seg_loss_weight=0.0, # We don't need to use this parameter for testing
+                      seg_loss_mode='bce', # We don't need to use this parameter for testing
 
                       visualize_mode=args.visualize_mode,
                       viz_metric_name=args.viz_metric_name,

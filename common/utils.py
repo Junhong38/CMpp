@@ -80,3 +80,28 @@ def instance_wise_results_to_json(instance_wise_results, dir_path, filename):
 
     with open(os.path.join(dir_path, f"{filename}.json"), 'w') as f:
         json.dump(json_results, f, indent=4)
+
+
+
+def calculate_accuracy_of_seg_results(seg_results, positive_mask):
+    """
+    Args:
+        seg_results (torch.Tensor): (N+M)
+        target (torch.Tensor): (N, M)
+    Returns:
+        accuracy (float): accuracy of segmentation results
+    """
+    print(f"seg_results: {seg_results.shape}, positive_mask: {positive_mask.shape}")
+
+    seg_pred = seg_results > 0.5
+
+    src_part_gt = positive_mask.any(dim=-1) # (N, )
+    trg_part_gt = positive_mask.any(dim=-2) # (M, )
+    total_gt = torch.concat([src_part_gt, trg_part_gt], dim=0) # (N+M, )
+
+    intersection = torch.logical_and(seg_pred, total_gt) # (N+M, )
+
+    seg_coverage = intersection.sum() / total_gt.sum() # Among all gt points, how many points are covered by the predicted points
+    seg_accuracy = intersection.sum() / seg_pred.sum() # Among all predicted points, how many points are correctly predicted
+    print(f"seg_coverage: {seg_coverage}, seg_accuracy: {seg_accuracy}")
+    return seg_coverage, seg_accuracy
