@@ -291,7 +291,7 @@ if __name__ == '__main__':
     parser.add_argument('--s_loss_weight', type=float, default=1.0, help='Weight for shape loss')
     parser.add_argument('--p_loss_weight', type=float, default=1.0, help='Weight for point loss')
     parser.add_argument('--o_loss_weight', type=float, default=1.0, help='Weight for orientation loss')
-    parser.add_argument('--seg_loss_weight', type=float, default=1.0, help='Weight for segmentation loss')
+    parser.add_argument('--seg_loss_weight', type=float, default=0.1, help='Weight for segmentation loss')
     parser.add_argument('--seg_loss_mode', type=str, default='bce', choices=['dice', 'bce'])
 
 

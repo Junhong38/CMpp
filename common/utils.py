@@ -91,8 +91,6 @@ def calculate_accuracy_of_seg_results(seg_results, positive_mask):
     Returns:
         accuracy (float): accuracy of segmentation results
     """
-    print(f"seg_results: {seg_results.shape}, positive_mask: {positive_mask.shape}")
-
     seg_pred = seg_results > 0.5
 
     src_part_gt = positive_mask.any(dim=-1) # (N, )
@@ -103,5 +101,4 @@ def calculate_accuracy_of_seg_results(seg_results, positive_mask):
 
     seg_coverage = intersection.sum() / total_gt.sum() # Among all gt points, how many points are covered by the predicted points
     seg_accuracy = intersection.sum() / seg_pred.sum() # Among all predicted points, how many points are correctly predicted
-    print(f"seg_coverage: {seg_coverage}, seg_accuracy: {seg_accuracy}")
     return seg_coverage, seg_accuracy

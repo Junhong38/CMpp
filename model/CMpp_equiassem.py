@@ -385,9 +385,9 @@ class EquiAssem(pl.LightningModule):
                                           )
 
         elif seg_head_mode == 'atten': # This is based on GARF
-            self.layer_norm_for_self_atten = nn.LayerNorm(channel_dim_of_shape_feats, elementwise_affine=False)
-            self.layer_norm_for_global_atten = nn.LayerNorm(channel_dim_of_shape_feats, elementwise_affine=False)
-            self.final_layer_norm = nn.LayerNorm(channel_dim_of_shape_feats, elementwise_affine=False)
+            self.layer_norm_for_self_atten = nn.Sequential(nn.SiLU(), nn.LayerNorm(channel_dim_of_shape_feats, elementwise_affine=False))
+            self.layer_norm_for_global_atten = nn.Sequential(nn.SiLU(), nn.LayerNorm(channel_dim_of_shape_feats, elementwise_affine=False))
+            self.final_layer_norm = nn.Sequential(nn.SiLU(), nn.LayerNorm(channel_dim_of_shape_feats, elementwise_affine=False))
             self.self_attn_to_qkv = nn.Linear(channel_dim_of_shape_feats, channel_dim_of_shape_feats * 3, bias=False)
             self.global_attn_to_qkv = nn.Linear(channel_dim_of_shape_feats, channel_dim_of_shape_feats * 3, bias=False)
             self.seg_head = nn.Linear(channel_dim_of_shape_feats, 1, bias=True)

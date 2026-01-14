@@ -524,7 +524,6 @@ def binary_cross_entropy_loss(pred: torch.Tensor, coords_dist: torch.Tensor, act
     Returns:
         torch.Tensor: (1, ), binary cross entropy loss
     """
-    print("BCE LOSS")
     pos_mask = torch.logical_and(coords_dist < pos_radius, active_mask) # (B, N+M, N+M)
     src_pos_mask = pos_mask.any(dim=-1) # (B, N+M)
     trg_pos_mask = pos_mask.any(dim=-2) # (B, N+M)
@@ -548,7 +547,6 @@ def DiceLoss(pred: torch.Tensor, coords_dist: torch.Tensor, active_mask: torch.T
         pos_radius (float): radius of the positive region
         smooth (float, optional): smoothing term. Defaults to 1e-6.
     """
-    print("DICE LOSS")
     pos_mask = torch.logical_and(coords_dist < pos_radius, active_mask) # (B, N+M, N+M)
     src_pos_mask = pos_mask.any(dim=-1) # (B, N+M)
     trg_pos_mask = pos_mask.any(dim=-2) # (B, N+M)
