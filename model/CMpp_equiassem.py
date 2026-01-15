@@ -91,7 +91,8 @@ class EquiAssem(pl.LightningModule):
             infer_score_threshold_ratio=0.0,
             use_RANSAC=False,
             RANSAC_type='default',
-            use_predicted_normal=False
+            use_predicted_normal=False,
+            use_seg_result=False
             ):
         """Equivariant Assembly Model for 3D Object Assembly
 
@@ -158,6 +159,7 @@ class EquiAssem(pl.LightningModule):
             use_RANSAC (bool, optional): Whether to use RANSAC for transformation estimation. Defaults to False.
             RANSAC_type (str, optional): 'default' or 'score_dependent'. Defaults to 'default'.
             use_predicted_normal (bool, optional): Whether to use predicted normal for inlier counting. Defaults to False.
+            use_seg_result (bool, optional): Whether to use segmentation result for matching. Defaults to False.
         """
         super(EquiAssem, self).__init__()
 
@@ -240,6 +242,7 @@ class EquiAssem(pl.LightningModule):
         self.use_RANSAC = use_RANSAC
         self.RANSAC_type = RANSAC_type
         self.use_predicted_normal = use_predicted_normal
+        self.use_seg_result = use_seg_result
         
         # Output feature dimension of Feature Extractor
         self.feat_dim = 1024
@@ -1080,6 +1083,13 @@ class EquiAssem(pl.LightningModule):
         postprocessed_matching_scores_drop = out_matching_scores_drop[out_active_mask] # (N*M)
         postprocessed_shape_matching_scores = postprocessed_shape_matching_scores.reshape(num_src_pcd, num_trg_pcd) # (N, M)
         postprocessed_matching_scores_drop = postprocessed_matching_scores_drop.reshape(num_src_pcd, num_trg_pcd) # (N, M)
+
+        if self.use_seg_result:
+            pred_mating_surface = out_mating_surface_seg_results > 0.5 # (N+M,)
+            src_seg_result = pred_mating_surface[:num_src_pcd] # (N,)
+            trg_seg_result = pred_mating_surface[num_src_pcd:] # (M,)
+            src_trg_seg_result = torch.logical_and(src_seg_result[:,None], trg_seg_result[None,:]) # (N,1) and (1, M) -> (N, M)
+            postprocessed_matching_scores_drop = (postprocessed_matching_scores_drop + src_trg_seg_result.float()) / 2
 
         # Calculate ground truth correspondence
         coord_dist = torch.cdist(src_pcd_raw, trg_pcd_raw, p=2) # (N, M)

@@ -91,7 +91,8 @@ def test(args):
                       infer_score_threshold_ratio=args.infer_score_threshold_ratio,
                       use_RANSAC=args.use_RANSAC,
                       RANSAC_type=args.RANSAC_type,
-                      use_predicted_normal=args.use_predicted_normal
+                      use_predicted_normal=args.use_predicted_normal,
+                      use_seg_result=args.use_seg_result
                       )
     
     # Wandb logger
@@ -200,6 +201,7 @@ if __name__ == '__main__':
     parser.add_argument('--use_RANSAC', action='store_true', help='If True, use RANSAC for transformation estimation')
     parser.add_argument('--RANSAC_type', type=str, default='default', choices=['default', 'score_dependent'])
     parser.add_argument('--use_predicted_normal', action='store_true', help='If True, use predicted normal for inlier counting')
+    parser.add_argument('--use_seg_result', action='store_true', help='If True, use segmentation result for matching')
 
 
     # Visualization arguments
@@ -243,5 +245,8 @@ if __name__ == '__main__':
     if args.learnable_softmax_temperature:
         assert args.matching_norm_mode == 'softmax', f"learnable_softmax_temperature is only allowed when matching_norm_mode is softmax, but got {args.matching_norm_mode}"
 
+    
+    if args.use_seg_result:
+        assert args.seg_head_mode != 'none', f"use_seg_result is only allowed when seg_head_mode is not none, but got {args.seg_head_mode}"
 
     test(args)

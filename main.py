@@ -94,7 +94,8 @@ def main(args):
                       infer_score_threshold_ratio=0.0, # Block filtering correspondences during training
                       use_RANSAC=False, # RANSAC is not used for training
                       RANSAC_type='default', # RANSAC is not used for training
-                      use_predicted_normal=False # RANSAC is not used for training
+                      use_predicted_normal=False, # RANSAC is not used for training
+                      use_seg_result=False # During training, we do not use the segmentation result
                       )
 
     

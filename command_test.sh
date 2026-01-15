@@ -196,3 +196,10 @@ rm -rf checkpoint/TOP128NP25000SAMPLERAND_LOAD_G8NDB3_F_BV0V0_MH_P0075M0075+N145
 
 
 
+
+
+
+
+rm -rf checkpoint/TOP128NP5000SAMPLERAND_LOAD_G8NDB3_SEGMLPDICE_W10/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python test.py --load checkpoint/G8NDB3_SEGMLPDICE_W10/models/last.ckpt --scale full --logpath TOP128NP5000SAMPLERAND_LOAD_G8NDB3_SEGMLPDICE_W10 --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --flip_normal_mode none --seg_head_mode mlp --move_smaller --wandb --wandb_entity CMppProject --wandb_project CMpp_test
+rm -rf checkpoint/TOP128NP5000SAMPLERAND+SEG_LOAD_G8NDB3_SEGMLPDICE_W10/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python test.py --load checkpoint/G8NDB3_SEGMLPDICE_W10/models/last.ckpt --scale full --logpath TOP128NP5000SAMPLERAND+SEG_LOAD_G8NDB3_SEGMLPDICE_W10 --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --flip_normal_mode none --seg_head_mode mlp --use_seg_result --move_smaller --wandb --wandb_entity CMppProject --wandb_project CMpp_test
+ 
