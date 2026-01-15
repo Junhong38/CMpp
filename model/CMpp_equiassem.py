@@ -447,10 +447,7 @@ class EquiAssem(pl.LightningModule):
 
         assert total_steps > 0, "Total steps must be greater than 0"
 
-        for name, param in self.named_parameters():
-            print(f"name: {name}, param: {param.shape}")
         
-
         if self.learnable_softmax_temperature:
             if self.ori_backbone is not None:
                 ori_parameters, other_parameters = divide_parameters_into_ori_and_others(self.named_parameters())
