@@ -102,3 +102,18 @@ def calculate_accuracy_of_seg_results(seg_results, positive_mask):
     seg_coverage = intersection.sum() / total_gt.sum() # Among all gt points, how many points are covered by the predicted points
     seg_accuracy = intersection.sum() / seg_pred.sum() # Among all predicted points, how many points are correctly predicted
     return seg_coverage, seg_accuracy
+
+
+
+def divide_parameters_into_ori_and_others(named_parameters):
+    ori_parameters = []
+    other_parameters = []
+    
+    for name, param in named_parameters:
+        if name.startswith('ori_backbone.') or name.startswith('proj.'):
+            ori_parameters.append(param)
+        else:
+            other_parameters.append(param)
+    
+    return ori_parameters, other_parameters
+

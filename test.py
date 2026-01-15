@@ -33,6 +33,7 @@ def test(args):
 
     # Model initialization
     model = EquiAssem(lr=0, # We don't need to use learning rate for testing
+                      ori_backbone_lr_weight=0.0, # We don't need to use this parameter for testing
                       scheduler_mode=None, # We don't need to use this parameter for testing
                       backbone=args.backbone,
                       double_bacbone=args.double_bacbone,

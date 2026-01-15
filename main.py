@@ -36,6 +36,7 @@ def main(args):
 
     # Model initialization        
     model = EquiAssem(lr=args.lr,
+                      ori_backbone_lr_weight=args.ori_backbone_lr_weight,
                       scheduler_mode=args.scheduler_mode,
                       backbone=args.backbone,
                       double_bacbone=args.double_bacbone,
@@ -275,6 +276,7 @@ if __name__ == '__main__':
     parser.add_argument('--resume', type=str, default='', help='Resume training from the checkpoint')
     parser.add_argument('--scheduler_mode', type=str, default='cos', choices=['none', 'cos', 'onecycle'])
     parser.add_argument('--gradient_clip_val', type=float, default=0.0, help='Gradient clip value')
+    parser.add_argument('--ori_backbone_lr_weight', type=float, default=1.0, help='Gradient clip value')
 
 
     # Model arguments

@@ -19,7 +19,7 @@ from model.local_global_registration import LocalGlobalRegistration
 from RANSAC.ransac import _RANSAC
 
 from common.rotation import gram_schmidt_with_cross, gram_schmidt, rodrigues_to_rotmat, rotate_by_rotation_matrix, src_reverse_trg_normal_gram_schmidt_with_cross
-from common.utils import instance_wise_results_to_json, calculate_accuracy_of_seg_results
+from common.utils import instance_wise_results_to_json, calculate_accuracy_of_seg_results, divide_parameters_into_ori_and_others
 from common.viz import visualize_negative_hard_mask, save_pcd_for_light_visualization, draw_frames, draw_normal_error_histogram, draw_test_results_histogram
 from common.misc import extract_all_objects, batch_scaling, batch2offset, offset2bincount
 
@@ -32,6 +32,7 @@ class EquiAssem(pl.LightningModule):
     def __init__(
             self, 
             lr, 
+            ori_backbone_lr_weight=1.0,
             scheduler_mode='cos',
             backbone='vn_unet', 
             double_bacbone='none',
@@ -98,6 +99,7 @@ class EquiAssem(pl.LightningModule):
 
         Args:
             lr (float): Learning rate for optimizer.
+            ori_backbone_lr_weight (float, optional): Learning rate weight for the original backbone. Defaults to 1.0.
             scheduler_mode (str, optional): Scheduler type ('cos', 'onecycle', 'none). Defaults to 'cos'.
             backbone (str, optional): Backbone network architecture. Defaults to 'vn_unet'.
             double_bacbone (str, optional): 'none' or 'vn_unet'. Defaults to 'none'.
@@ -167,6 +169,7 @@ class EquiAssem(pl.LightningModule):
         print("INITIALIZING EquiAssem(pl.LightningModule)")
         print("------------------------------------------------------")
         print(f"lr: {lr}")
+        print(f"ori_backbone_lr_weight: {ori_backbone_lr_weight}")
         print(f"scheduler_mode: {scheduler_mode}")
         print(f"backbone: {backbone}")
         print(f"double_bacbone: {double_bacbone}")
@@ -214,6 +217,7 @@ class EquiAssem(pl.LightningModule):
         print("------------------------------------------------------")
 
         self.lr = lr
+        self.ori_backbone_lr_weight = ori_backbone_lr_weight
         self.scheduler_mode = scheduler_mode
         self.visualize_mode = visualize_mode
         self.viz_metric_name = viz_metric_name
@@ -442,13 +446,32 @@ class EquiAssem(pl.LightningModule):
 
         assert total_steps > 0, "Total steps must be greater than 0"
 
+        for name, param in self.named_parameters():
+            print(f"name: {name}, param: {param.shape}")
+        
+
         if self.learnable_softmax_temperature:
-            optimizer = torch.optim.AdamW([
-                {'params': [p for n, p in self.named_parameters() if 'softmax_temperature' not in n]},
-                {'params': self.softmax_temperature, 'lr': self.lr * 0.1} 
-                ],  lr=self.lr, weight_decay=0.) # We use 10% of the learning rate for softmax temperature
+            if self.ori_backbone is not None:
+                ori_parameters, other_parameters = divide_parameters_into_ori_and_others(self.named_parameters())
+                optimizer = torch.optim.AdamW([
+                    {'params': ori_parameters, 'lr': self.lr * self.ori_backbone_lr_weight},
+                    {'params': other_parameters, 'lr': self.lr},
+                    {'params': self.softmax_temperature, 'lr': self.lr * 0.1}
+                    ],  lr=self.lr, weight_decay=0.) # We use 10% of the learning rate for softmax temperature
+            else:
+                optimizer = torch.optim.AdamW([
+                    {'params': [p for n, p in self.named_parameters() if 'softmax_temperature' not in n]},
+                    {'params': self.softmax_temperature, 'lr': self.lr * 0.1} 
+                    ],  lr=self.lr, weight_decay=0.) # We use 10% of the learning rate for softmax temperature
         else:
-            optimizer = optim.AdamW(self.parameters(), lr=self.lr, weight_decay=0.)
+            if self.ori_backbone is not None:
+                ori_parameters, other_parameters = divide_parameters_into_ori_and_others(self.named_parameters())
+                optimizer = optim.AdamW([
+                    {'params': ori_parameters, 'lr': self.lr * self.ori_backbone_lr_weight},
+                    {'params': other_parameters, 'lr': self.lr},
+                    ],  lr=self.lr, weight_decay=0.)
+            else:
+                optimizer = optim.AdamW(self.parameters(), lr=self.lr, weight_decay=0.)
         
         if self.scheduler_mode == 'cos':
             scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=total_steps, eta_min=1e-3)
