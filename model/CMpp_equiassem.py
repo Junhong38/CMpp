@@ -214,6 +214,7 @@ class EquiAssem(pl.LightningModule):
         print(f"use_RANSAC: {use_RANSAC}")
         print(f"RANSAC_type: {RANSAC_type}")
         print(f"use_predicted_normal: {use_predicted_normal}")
+        print(f"use_seg_result: {use_seg_result}")
         print("------------------------------------------------------")
 
         self.lr = lr
@@ -454,8 +455,8 @@ class EquiAssem(pl.LightningModule):
             if self.ori_backbone is not None:
                 ori_parameters, other_parameters = divide_parameters_into_ori_and_others(self.named_parameters())
                 optimizer = torch.optim.AdamW([
-                    {'params': ori_parameters, 'lr': self.lr * self.ori_backbone_lr_weight},
                     {'params': other_parameters, 'lr': self.lr},
+                    {'params': ori_parameters, 'lr': self.lr * self.ori_backbone_lr_weight},
                     {'params': self.softmax_temperature, 'lr': self.lr * 0.1}
                     ],  lr=self.lr, weight_decay=0.) # We use 10% of the learning rate for softmax temperature
             else:
@@ -467,11 +468,13 @@ class EquiAssem(pl.LightningModule):
             if self.ori_backbone is not None:
                 ori_parameters, other_parameters = divide_parameters_into_ori_and_others(self.named_parameters())
                 optimizer = optim.AdamW([
-                    {'params': ori_parameters, 'lr': self.lr * self.ori_backbone_lr_weight},
                     {'params': other_parameters, 'lr': self.lr},
+                    {'params': ori_parameters, 'lr': self.lr * self.ori_backbone_lr_weight},
                     ],  lr=self.lr, weight_decay=0.)
             else:
                 optimizer = optim.AdamW(self.parameters(), lr=self.lr, weight_decay=0.)
+            
+        print(f"optimizer: {optimizer}")
         
         if self.scheduler_mode == 'cos':
             scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=total_steps, eta_min=1e-3)
@@ -825,11 +828,17 @@ class EquiAssem(pl.LightningModule):
             log_dict[f'{mode}/softmax_temperature'] = self.softmax_temperature.item() if self.learnable_softmax_temperature else self.softmax_temperature
 
         training_loss = log_dict.pop(f'{mode}/loss')
-        current_lr = self.trainer.optimizers[0].param_groups[0]['lr']
-
+        another_lr = {}
+        for i, param_group in enumerate(self.trainer.optimizers[0].param_groups):
+            if i == 0:
+                current_lr = param_group['lr']
+            else:
+                another_lr[f'param_group_{i}'] = param_group['lr']
+        
         self.log_dict(log_dict, prog_bar=False, logger=True, sync_dist=True, rank_zero_only=True, on_step=True, on_epoch=True)
         self.log(f'{mode}/loss', training_loss, prog_bar=True, logger=True, sync_dist=True, rank_zero_only=True, on_step=True, on_epoch=True)
         self.log('current_lr', current_lr, prog_bar=True, logger=True, sync_dist=True, rank_zero_only=True, on_step=True, on_epoch=False)
+        self.log_dict(another_lr, prog_bar=False, logger=True, sync_dist=True, rank_zero_only=True, on_step=True, on_epoch=False)
     
 
     def make_inv_feats(self, oris, oris_batch_info, equi_feats, src_flip=True):

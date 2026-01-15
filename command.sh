@@ -27,8 +27,8 @@ rm -rf checkpoint/SECOND_NFREEZE_G8NDB2_NPCFNR4C1/ && CUDA_VISIBLE_DEVICES=0,1,2
 # rm -rf checkpoint/SECOND_NFREEZE_G8NDB2_NPCFNR5C1/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --scale full --load_ori checkpoint_1stStage/FIRST_G8NDB6SN_NPCFNR5C1/models/last.ckpt --logpath SECOND_NFREEZE_G8NDB2_NPCFNR5C1 --epochs 0 --scheduler_mode cos --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --batch_size 2 --flip_normal_mode rightv5 --consistency_loss_weight 1.0 --wandb --wandb_entity CMppProject --wandb_project CMpp
 
 
-
-rm -rf checkpoint/IMPLE/ && CUDA_VISIBLE_DEVICES=0 python main.py --scale full --load_ori checkpoint_1stStage/FIRST_G8NDB6SN_NPCFNR4C1/models/last.ckpt --logpath SECOND_NFREEZE_G8NDB2_NPCFNR4C1 --epochs 0 --scheduler_mode cos --gpus 0 --n_worker 6 --batch_size 2 --ori_backbone_lr_weight 1.0 --flip_normal_mode rightv4 --consistency_loss_weight 1.0
+# 2nd stage -> shape training without freezing orientation backbone network, LR for orientation backbone network is lr * ori_backbone_lr_weight
+rm -rf checkpoint/SECOND_NFREEZE01_G8NDB2_NPCFNR4C1/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --scale full --load_ori checkpoint_1stStage/FIRST_G8NDB6SN_NPCFNR4C1/models/last.ckpt --logpath SECOND_NFREEZE01_G8NDB2_NPCFNR4C1 --epochs 0 --scheduler_mode cos --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --batch_size 2 --flip_normal_mode rightv4 --consistency_loss_weight 1.0 --ori_backbone_lr_weight 0.1 --wandb --wandb_entity CMppProject --wandb_project CMpp
 
 
 
