@@ -2,95 +2,23 @@ import torch
 from typing import Set, Tuple
 
 from RANSAC.utils import _squeeze_leading_dim, _transform_points, _select_correspondences, estimate_rigid_transform
-
-
-def weighted_procrustes(
-    src_points,
-    ref_points,
-    weights=None,
-    weight_thresh=0.0,
-    eps=1e-5,
-    return_transform=True,
-):
-    r"""Compute rigid transformation from `src_points` to `ref_points` using weighted SVD.
-
-    Modified from [PointDSC](https://github.com/XuyangBai/PointDSC/blob/master/models/common.py).
-
-    Args:
-        src_points: torch.Tensor (B, N, 3) or (N, 3)
-        ref_points: torch.Tensor (B, N, 3) or (N, 3)
-        weights: torch.Tensor (B, N) or (N,) (default: None)
-        weight_thresh: float (default: 0.)
-        eps: float (default: 1e-5)
-        return_transform: bool (default: False)
-
-    Returns:
-        R: torch.Tensor (B, 3, 3) or (3, 3)
-        t: torch.Tensor (B, 3) or (3,)
-        transform: torch.Tensor (B, 4, 4) or (4, 4)
-    """
-    if src_points.ndim == 2:
-        src_points = src_points.unsqueeze(0)
-        ref_points = ref_points.unsqueeze(0)
-        if weights is not None:
-            weights = weights.unsqueeze(0)
-        squeeze_first = True
-    else:
-        squeeze_first = False
-
-    batch_size = src_points.shape[0]
-    if weights is None:
-        weights = torch.ones_like(src_points[:, :, 0])
-    weights = torch.where(torch.lt(weights, weight_thresh), torch.zeros_like(weights), weights)
-    weights = weights / (torch.sum(weights, dim=1, keepdim=True) + eps)
-    weights = weights.unsqueeze(2)  # (B, N, 1)
-    
-    src_centroid = torch.sum(src_points * weights, dim=1, keepdim=True)  # (B, 1, 3)
-    ref_centroid = torch.sum(ref_points * weights, dim=1, keepdim=True)  # (B, 1, 3)
-    src_points_centered = src_points - src_centroid  # (B, N, 3)
-    ref_points_centered = ref_points - ref_centroid  # (B, N, 3)
-
-    H = src_points_centered.permute(0, 2, 1) @ (weights * ref_points_centered)
-    from torch_batch_svd import svd
-    try: U, _, V = svd(H)
-    except: 
-        print('use torch svd!')
-        U, _, V = torch.svd(H.cpu())
-    Ut, V = U.transpose(1, 2).cuda(), V.cuda()
-    eye = torch.eye(3).unsqueeze(0).repeat(batch_size, 1, 1).cuda()
-    eye[:, -1, -1] = torch.sign(torch.det(V @ Ut))
-    # eye[:, -1, -1] = torch.sign(torch.det((V @ Ut).to(torch.float32)))
-    R = V @ eye @ Ut
-
-    t = ref_centroid.permute(0, 2, 1) - R @ src_centroid.permute(0, 2, 1)
-    t = t.squeeze(2)
-
-    if return_transform:
-        transform = torch.eye(4).unsqueeze(0).repeat(batch_size, 1, 1).cuda()
-        transform[:, :3, :3] = R
-        transform[:, :3, 3] = t
-        if squeeze_first:
-            transform = transform.squeeze(0)
-        return transform
-    else:
-        if squeeze_first:
-            R = R.squeeze(0)
-            t = t.squeeze(0)
-        return R, t
+from RANSAC.weighted_procrustes import weighted_procrustes
 
 def ransac_rigid(
         src_corr_pcd: torch.Tensor,
         trg_corr_pcd: torch.Tensor,
         src_pcd: torch.Tensor,
         trg_pcd: torch.Tensor,
-        src_gt_normal: torch.Tensor,
-        trg_gt_normal: torch.Tensor,
+        src_normal: torch.Tensor,
+        trg_normal: torch.Tensor,
         scores: torch.Tensor,
         score_threshold: float,
         num_iters: int = 100,
-        threshold: float = 0.01,
-        gt_normal_threshold: float = -0.7,
-        matching_choice: str = 'many-to-many' #'one-to-one'
+        threshold: float = 0.009,
+        normal_threshold: float = 0.0,
+        matching_choice: str = 'one-to-one', # if sampling is the "same"
+        # matching_choice: str = 'many-to-many', # if sampling is just uniform
+        strong_normal_threshold = 0.0
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """
     Robustly estimate a rigid transform that aligns ``src_pcd`` to ``trg_pcd``.
@@ -116,8 +44,8 @@ def ransac_rigid(
     trg_corr_pcd = _squeeze_leading_dim(trg_corr_pcd)
     src_pcd = _squeeze_leading_dim(src_pcd)
     trg_pcd = _squeeze_leading_dim(trg_pcd)
-    src_gt_normal = _squeeze_leading_dim(src_gt_normal)
-    trg_gt_normal = _squeeze_leading_dim(trg_gt_normal)
+    src_normal = _squeeze_leading_dim(src_normal)
+    trg_normal = _squeeze_leading_dim(trg_normal)
     scores = _squeeze_leading_dim(scores)
 
     if src_corr_pcd.shape[0] < 3:
@@ -165,9 +93,10 @@ def ransac_rigid(
             raise ValueError("Score mask shape does not match distance matrix.")
         temp_scores *= distance_mask
 
-        rotated_normals = torch.matmul(src_gt_normal, rotation.T.to(src_gt_normal.dtype))
-        cos_sim = torch.matmul(rotated_normals, trg_gt_normal.T)
-        normal_mask = cos_sim < gt_normal_threshold
+        rotated_normals = torch.matmul(src_normal, rotation.T.to(src_normal.dtype))
+        cos_sim = torch.matmul(rotated_normals, trg_normal.T)
+        angle = torch.rad2deg(torch.acos(torch.clamp(cos_sim, -1.0, 1.0)))
+        normal_mask = angle > normal_threshold
         if temp_scores.shape != normal_mask.shape:
             raise ValueError("Normal mask shape does not match inlier mask.")
         temp_scores *= normal_mask
@@ -187,8 +116,8 @@ def ransac_rigid(
     # print(f"best_translation: {best_translation}")
 
     # Optimal Estimation
-    strong_distance_threshold = 0.008
-    strong_normal_threshold = -0.9
+    strong_distance_threshold = 0.009
+    # strong_distance_threshold = threshold
     num_iters_for_optimal_estimation = 100
     
     for _ in range(num_iters_for_optimal_estimation):
@@ -199,9 +128,10 @@ def ransac_rigid(
         distance_mask = dist_mat < strong_distance_threshold
         refined_score *= distance_mask
 
-        rotated_normals = torch.matmul(src_gt_normal, best_rotation.T.to(src_gt_normal.dtype))
-        cos_sim = torch.matmul(rotated_normals, trg_gt_normal.T)
-        normal_mask = cos_sim < strong_normal_threshold
+        rotated_normals = torch.matmul(src_normal, best_rotation.T.to(src_normal.dtype))
+        cos_sim = torch.matmul(rotated_normals, trg_normal.T)
+        angle = torch.rad2deg(torch.acos(torch.clamp(cos_sim, -1.0, 1.0)))
+        normal_mask = angle > strong_normal_threshold
         if normal_mask.shape != refined_score.shape:
             raise ValueError("Normal mask shape does not match refined inlier mask.")
         refined_score *= normal_mask

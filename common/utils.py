@@ -80,3 +80,68 @@ def instance_wise_results_to_json(instance_wise_results, dir_path, filename):
 
     with open(os.path.join(dir_path, f"{filename}.json"), 'w') as f:
         json.dump(json_results, f, indent=4)
+
+
+from typing import Dict, Any
+def save_final_result_as_txt(
+    result_avg_dict: Dict[str, Any],
+    exp_name: str,
+    out_txt_path: str = "Autoexp_result.txt",
+    only_prefix: str = "val/",
+    float_fmt: str = "{:.12f}",
+):
+    """
+    result_avg_dict:
+        key: 'val/xxx'
+        value: Tensor (num_instances,) or scalar Tensor/float
+    exp_name:
+        header에 표시할 경로 (exp_name)
+    """
+
+    # 1) val/ 메트릭만 모아서 scalar(mean)로 요약
+    metrics = {}
+    for k, v in result_avg_dict.items():
+        if only_prefix is not None and not str(k).startswith(only_prefix):
+            continue
+
+        if isinstance(v, torch.Tensor):
+            vv = v.detach().float().cpu()
+            scalar = vv.item() if vv.numel() == 1 else vv.mean().item()
+        else:
+            scalar = float(v)
+
+        metrics[str(k)] = scalar
+
+    # 2) 정렬 (알파벳 순)
+    metric_names = sorted(metrics.keys())
+
+    # 3) 테이블 포맷 설정
+    left_title = "Test metric"
+    right_title = "DataLoader 0"
+
+    left_w = max(len(left_title), *(len(n) for n in metric_names)) if metric_names else len(left_title)
+    right_w = max(len(right_title), 22)
+
+    sep = "-" * (left_w + 3 + right_w)
+
+    # 4) 텍스트 구성
+    lines = []
+    lines.append("\n")
+    lines.append(str(exp_name))
+    lines.append(sep)
+    lines.append(f"{left_title:<{left_w}}   {right_title:>{right_w}}")
+    lines.append(sep)
+
+    for name in metric_names:
+        val_str = float_fmt.format(metrics[name])
+        lines.append(f"{name:<{left_w}}   {val_str:>{right_w}}")
+
+    lines.append(sep)
+
+    text = "\n".join(lines) + "\n"
+
+    # 5) 저장
+    with open(out_txt_path, "a") as f:
+        f.write(text)
+
+    print(f"[Saved] {out_txt_path}")

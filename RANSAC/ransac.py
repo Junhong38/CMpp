@@ -5,11 +5,19 @@ from RANSAC.match_selection import topk_matching, mutual_topk_matching, soft_top
 
 from RANSAC.default_ransac import ransac_rigid as ransac_rigid_original
 from RANSAC.score_dependent_ransac import ransac_rigid as score_dependent_ransac_rigid
+from RANSAC.distance_dependent_ransac import ransac_rigid as distance_dependent_ransac_rigid
 
 from common.misc import extract_all_objects
 
 
-def _RANSAC(in_dict, shape_matching_scores, src_pcd, trg_pcd, src_predicted_frame=None, trg_predicted_frame=None, match_option='topk', RANSAC_type='default', topk=128):
+def _RANSAC(
+        in_dict, 
+        shape_matching_scores, 
+        src_pcd, trg_pcd, 
+        src_predicted_frame=None, trg_predicted_frame=None, 
+        match_option='topk', RANSAC_type='default', topk=128,
+        normal_threshold=0, strong_normal_threshold=0
+        ):
     """
     RANSAC for point cloud registration
 
@@ -29,14 +37,14 @@ def _RANSAC(in_dict, shape_matching_scores, src_pcd, trg_pcd, src_predicted_fram
     # Initial matches for RANSAC
     if match_option == 'topk':
         if topk < 0:
-            topk = int((matching_scores_before_Sinkhorn.shape[0] + matching_scores_before_Sinkhorn.shape[1]) / (-topk))
-        initial_matches = topk_matching(matching_scores_before_Sinkhorn, k=topk) # (K, 2)
+            topk = int((matching_scores_before_Sinkhorn.shape[0] * matching_scores_before_Sinkhorn.shape[1]) * (-topk) / 100)
+        initial_matches = topk_matching(matching_scores_before_Sinkhorn, k=int(topk)) # (K, 2)
     elif match_option == 'mutual_topk':
-        initial_matches = mutual_topk_matching(matching_scores_before_Sinkhorn, topk=topk) # (K, 2)
+        initial_matches = mutual_topk_matching(matching_scores_before_Sinkhorn, topk=int(topk)) # (K, 2)
     elif match_option == 'soft_topk':
-        initial_matches = soft_topk_matching(matching_scores_before_Sinkhorn, topk=topk) # (K, 2)
+        initial_matches = soft_topk_matching(matching_scores_before_Sinkhorn, topk=int(topk)) # (K, 2)
     elif match_option == 'unidirectional_nn_matching':
-        initial_matches = unidirectional_nn_matching(matching_scores_before_Sinkhorn, topk=topk) # (K, 2)
+        initial_matches = unidirectional_nn_matching(matching_scores_before_Sinkhorn, topk=int(topk)) # (K, 2)
     elif match_option == 'injective_matching':
         initial_matches = injective_matching(matching_scores_before_Sinkhorn) # (K, 2)
     elif match_option == 'bijective_matching':
@@ -85,6 +93,8 @@ def _RANSAC(in_dict, shape_matching_scores, src_pcd, trg_pcd, src_predicted_fram
 
     if RANSAC_type == 'score_dependent':
         ransac_function = score_dependent_ransac_rigid
+    elif RANSAC_type == 'distance_dependent':
+        ransac_function = distance_dependent_ransac_rigid
     else:
         ransac_function = ransac_rigid_original
 
@@ -95,13 +105,22 @@ def _RANSAC(in_dict, shape_matching_scores, src_pcd, trg_pcd, src_predicted_fram
         src_normal = src_predicted_frame[:,0,:] # (N, 3, 3) -> (N, 3), select only predicted normal
         trg_normal = trg_predicted_frame[:,0,:] # (M, 3, 3) -> (M, 3), 
     
-    
-    inl_R, inl_t, inliers = ransac_function(src_corr_pts, trg_corr_pts, 
-                                            src_pcd.squeeze(0), trg_pcd.squeeze(0),
-                                            src_normal, trg_normal,
-                                            scores = matching_scores_before_Sinkhorn,
-                                            score_threshold=score_threshold,
-                                            num_iters = num_iters)
+    print(src_corr_pts.shape[0])
+    if src_corr_pts.shape[0] < 3:
+        # Not enough correspondences for RANSAC
+        from RANSAC.weighted_procrustes import weighted_procrustes
+        inl_R, inl_t = weighted_procrustes(src_corr_pts, trg_corr_pts, 
+                                           weights=matching_scores_before_Sinkhorn[src_idx, trg_idx],
+                                           return_transform=False)
+    else:
+        inl_R, inl_t, inliers = ransac_function(src_corr_pts, trg_corr_pts, 
+                                                src_pcd.squeeze(0), trg_pcd.squeeze(0),
+                                                src_normal, trg_normal,
+                                                scores = matching_scores_before_Sinkhorn,
+                                                score_threshold=score_threshold,
+                                                num_iters = num_iters,
+                                                normal_threshold=normal_threshold,
+                                                strong_normal_threshold=strong_normal_threshold)
 
 
     estimated_transform = torch.eye(4, device=inl_R.device, dtype=inl_R.dtype)

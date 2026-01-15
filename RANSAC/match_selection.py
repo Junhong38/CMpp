@@ -15,12 +15,15 @@ def topk_matching(corr_matrix, k=128):
     """
     N, M = corr_matrix.shape
     corr_matrix_drop_1d = corr_matrix.reshape(-1) # (N*M, )
+    
     topk_scores, topk_indices = torch.topk(corr_matrix_drop_1d, k=k) # (topk, )
 
-    src_idx = topk_indices // M
-    trg_idx = topk_indices % M
+    # src_idx = topk_indices // M
+    # trg_idx = topk_indices % M
     
-    return torch.stack([src_idx, trg_idx], dim=1)
+    # return torch.stack([src_idx, trg_idx], dim=1)
+
+    return torch.nonzero(corr_matrix >= topk_scores[-1], as_tuple=False)
 
 def unidirectional_nn_matching(corr_matrix, topk=1):
     # """
@@ -36,12 +39,13 @@ def unidirectional_nn_matching(corr_matrix, topk=1):
     # return torch.stack([src_idx, tgt_idx], dim=1)
     values, indices = torch.topk(corr_matrix, k=topk, dim=0)  # shape: (topk, M)
 
-    src_idx = indices # (topk, M)
-    tgt_idx = torch.arange(corr_matrix.size(1)).repeat(topk, 1).to(corr_matrix.device)
+    # src_idx = indices # (topk, M)
+    # tgt_idx = torch.arange(corr_matrix.size(1)).repeat(topk, 1).to(corr_matrix.device)
 
-    matches = torch.stack([src_idx, tgt_idx], dim=2)  # (topk, M, 2)
-    matches = matches.permute(1, 0, 2).reshape(-1, 2)  # (topk * M, 2)
-    return matches
+    # matches = torch.stack([src_idx, tgt_idx], dim=2)  # (topk, M, 2)
+    # matches = matches.permute(1, 0, 2).reshape(-1, 2)  # (topk * M, 2)
+    # return matches
+    return torch.nonzero(corr_matrix >= values[-1], as_tuple=False)
 
 def injective_matching(corr_matrix):
     """
@@ -115,16 +119,22 @@ def mutual_topk_matching(corr_matrix, topk=1):
     
     # select topk from column, so this means that we select topk closet src features from trg features
     src_top_values, src_indices = torch.topk(corr_matrix, k=topk, dim=0) # (topk, M)
-    src_indices = src_indices.T # (M, topk)
+    # src_indices = src_indices.T # (M, topk)
 
-    matches = []
-    for i, top_j in enumerate(trg_indices): # (N, topk), from ith src feature, topk closet trg features are selected (top_j)
-        for j in top_j: # (topk, ) this top_j includes trg indices
-            if i in src_indices[j]: # (M, topk), src_indices[j]: means the topk closet src features from the j-th trg feature
-                # ith src -> jth trg, jth trg -> ith src
-                # So, mutual topk matching is satisfied
-                matches.append((i, j.item()))
-    return torch.tensor(matches, device=corr_matrix.device)
+    # matches = []
+    # for i, top_j in enumerate(trg_indices): # (N, topk), from ith src feature, topk closet trg features are selected (top_j)
+    #     for j in top_j: # (topk, ) this top_j includes trg indices
+    #         if i in src_indices[j]: # (M, topk), src_indices[j]: means the topk closet src features from the j-th trg feature
+    #             # ith src -> jth trg, jth trg -> ith src
+    #             # So, mutual topk matching is satisfied
+    #             matches.append((i, j.item()))
+    # return torch.tensor(matches, device=corr_matrix.device)
+
+    trg_top_mask = corr_matrix >= trg_top_values[:, -1][:, None]
+    src_top_mask = corr_matrix >= src_top_values[-1, :][None, :]
+    mutual_top_mask = trg_top_mask & src_top_mask
+
+    return torch.nonzero(mutual_top_mask, as_tuple=False)
 
 
 def soft_topk_matching(corr_matrix, topk=1):
@@ -139,23 +149,40 @@ def soft_topk_matching(corr_matrix, topk=1):
     Returns:
         torch.Tensor: (N', 2) index pairs, where N' <= topk * (N + M)
     """
-    # From src, select topk closet trg features
+    # # From src, select topk closet trg features
+    # trg_top_values, trg_indices = torch.topk(corr_matrix, k=topk, dim=1) # (N, topk)
+    # trg_indices = trg_indices.T # (topk, N)
+    # src_idx = torch.arange(corr_matrix.size(0)).repeat(topk, 1).to(corr_matrix.device) # (topk, N)
+    # matches_t2s = torch.stack([src_idx, trg_indices], dim=2) # (topk, N, 2)
+    # matches_t2s = matches_t2s.permute(1, 0, 2).reshape(-1, 2) # (topk*N, 2)
+
+    # # From trg, select topk closet src features
+    # src_top_values, src_indices = torch.topk(corr_matrix, k=topk, dim=0) # (topk, M)
+    # trg_idx = torch.arange(corr_matrix.size(1)).repeat(topk, 1).to(corr_matrix.device)
+    # matches_s2t = torch.stack([src_indices, trg_idx], dim=2) # (topk, M, 2)
+    # matches_s2t = matches_s2t.permute(1, 0, 2).reshape(-1, 2) # (topk * M, 2) 
+
+    # # Merge selected matches from src and trg
+    # matches = torch.cat([matches_t2s, matches_s2t], dim=0) # (topk * (M+N), 2)
+
+    # # Remove duplicate matches to make union operation
+    # matches = torch.unique(matches, dim=0)
+
+    # return matches
+
+    # select topk from row, so this means that we select topk closet trg features from src features
     trg_top_values, trg_indices = torch.topk(corr_matrix, k=topk, dim=1) # (N, topk)
-    trg_indices = trg_indices.T # (topk, N)
-    src_idx = torch.arange(corr_matrix.size(0)).repeat(topk, 1).to(corr_matrix.device) # (topk, N)
-    matches_t2s = torch.stack([src_idx, trg_indices], dim=2) # (topk, N, 2)
-    matches_t2s = matches_t2s.permute(1, 0, 2).reshape(-1, 2) # (topk*N, 2)
-
-    # From trg, select topk closet src features
+    
+    # select topk from column, so this means that we select topk closet src features from trg features
     src_top_values, src_indices = torch.topk(corr_matrix, k=topk, dim=0) # (topk, M)
-    trg_idx = torch.arange(corr_matrix.size(1)).repeat(topk, 1).to(corr_matrix.device)
-    matches_s2t = torch.stack([src_indices, trg_idx], dim=2) # (topk, M, 2)
-    matches_s2t = matches_s2t.permute(1, 0, 2).reshape(-1, 2) # (topk * M, 2) 
 
-    # Merge selected matches from src and trg
-    matches = torch.cat([matches_t2s, matches_s2t], dim=0) # (topk * (M+N), 2)
+    trg_top_mask = corr_matrix >= trg_top_values[:, -1][:, None]
+    src_top_mask = corr_matrix >= src_top_values[-1, :][None, :]
+    soft_topk_mask = trg_top_mask | src_top_mask
 
-    # Remove duplicate matches to make union operation
-    matches = torch.unique(matches, dim=0)
-
-    return matches
+    if soft_topk_mask.sum() > 500:
+        threshold_value = torch.topk(corr_matrix[soft_topk_mask], k=500)[0][-1]
+        cutted_mask = soft_topk_mask & (corr_matrix >= threshold_value)
+        return torch.nonzero(cutted_mask, as_tuple=False)
+    else:
+        return torch.nonzero(soft_topk_mask, as_tuple=False)

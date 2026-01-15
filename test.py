@@ -88,7 +88,9 @@ def test(args):
                       infer_score_threshold_ratio=args.infer_score_threshold_ratio,
                       use_RANSAC=args.use_RANSAC,
                       RANSAC_type=args.RANSAC_type,
-                      use_predicted_normal=args.use_predicted_normal
+                      use_predicted_normal=args.use_predicted_normal,
+                      RANSAC_normal_threshold=args.RANSAC_normal_threshold,
+                      RANSAC_strong_normal_threshold=args.RANSAC_strong_normal_threshold
                       )
     
     # Wandb logger
@@ -126,8 +128,13 @@ def test(args):
         strategy=args.parallel_strategy,
     )
 
-
+    import time
+    start_time = time.time()
     trainer.test(model, dataloader_val, ckpt_path=ckpt_path)
+    end = time.time()
+    print(f"Total inference time: {end - start_time} seconds")
+    with open('./Autoexp_results.txt', "a") as f:
+        f.write(str(end - start_time) + "\n")
 
     if model.trainer.global_rank == 0:
         results = model.test_results
@@ -144,7 +151,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Equivariant Assembly Pytorch Implementation')
 
     # Dataset arguments
-    parser.add_argument('--datapath', type=str, default='/home/kimsangki/breaking_bad/volume_constrained/') 
+    parser.add_argument('--datapath', type=str, default='../../../../hdd/junhong/temp_data/breaking_bad/volume_constrained') 
     #'../../../../hdd/junhong/data/bbad_v2' and /mnt/nvme2n1p1/kimsangki_datasets/breaking_bad/volume_constrained , /home/kimsangki/breaking_bad/volume_constrained 
     # ../data/temp_breaking_bad/breaking_bad/volume_constrained , ../../../../../hdd/junhong/temp_data/breaking_bad/volume_constrained
     parser.add_argument('--data_category', type=str, default='everyday', choices=['everyday', 'artifact'])
@@ -191,11 +198,13 @@ if __name__ == '__main__':
     
     # Inference arguments
     parser.add_argument('--infer_match_option', type=str, default='topk', choices=['topk', 'mutual_topk', 'soft_topk', 'unidirectional_nn_matching', 'injective_matching', 'bijective_matching'])
-    parser.add_argument('--infer_topk', type=int, default=128)
+    parser.add_argument('--infer_topk', type=float, default=128)
     parser.add_argument('--infer_score_threshold_ratio', type=float, default=0.0)
     parser.add_argument('--use_RANSAC', action='store_true', help='If True, use RANSAC for transformation estimation')
-    parser.add_argument('--RANSAC_type', type=str, default='default', choices=['default', 'score_dependent'])
+    parser.add_argument('--RANSAC_type', type=str, default='default', choices=['default', 'score_dependent', 'distance_dependent'])
     parser.add_argument('--use_predicted_normal', action='store_true', help='If True, use predicted normal for inlier counting')
+    parser.add_argument('--RANSAC_normal_threshold', type=float, default=0.0, help='Normal threshold in degree for RANSAC when use_predicted_normal is True')
+    parser.add_argument('--RANSAC_strong_normal_threshold', type=float, default=0.0, help='Strong normal threshold in degree for RANSAC when use_predicted_normal is True')
 
 
     # Visualization arguments

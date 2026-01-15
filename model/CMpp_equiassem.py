@@ -19,7 +19,7 @@ from model.local_global_registration import LocalGlobalRegistration
 from RANSAC.ransac import _RANSAC
 
 from common.rotation import gram_schmidt_with_cross, gram_schmidt, rodrigues_to_rotmat, rotate_by_rotation_matrix, src_reverse_trg_normal_gram_schmidt_with_cross
-from common.utils import instance_wise_results_to_json
+from common.utils import instance_wise_results_to_json, save_final_result_as_txt
 from common.viz import visualize_negative_hard_mask, save_pcd_for_light_visualization, draw_frames, draw_normal_error_histogram, draw_test_results_histogram
 from common.misc import extract_all_objects, batch_scaling
 
@@ -86,7 +86,9 @@ class EquiAssem(pl.LightningModule):
             infer_score_threshold_ratio=0.0,
             use_RANSAC=False,
             RANSAC_type='default',
-            use_predicted_normal=False
+            use_predicted_normal=False,
+            RANSAC_normal_threshold=0,
+            RANSAC_strong_normal_threshold=0
             ):
         """Equivariant Assembly Model for 3D Object Assembly
 
@@ -148,7 +150,7 @@ class EquiAssem(pl.LightningModule):
             infer_topk (int, optional): Topk value for matching. Defaults to 128.
             infer_score_threshold_ratio (float, optional): Score threshold ratio for filtering correspondences. Defaults to 0.01.
             use_RANSAC (bool, optional): Whether to use RANSAC for transformation estimation. Defaults to False.
-            RANSAC_type (str, optional): 'default' or 'score_dependent'. Defaults to 'default'.
+            RANSAC_type (str, optional): 'default', 'score_dependent' or 'distance_dependent'. Defaults to 'default'.
             use_predicted_normal (bool, optional): Whether to use predicted normal for inlier counting. Defaults to False.
         """
         super(EquiAssem, self).__init__()
@@ -199,6 +201,8 @@ class EquiAssem(pl.LightningModule):
         print(f"use_RANSAC: {use_RANSAC}")
         print(f"RANSAC_type: {RANSAC_type}")
         print(f"use_predicted_normal: {use_predicted_normal}")
+        print(f"RANSAC_normal_threshold: {RANSAC_normal_threshold}")
+        print(f"RANSAC_strong_normal_threshold: {RANSAC_strong_normal_threshold}")
         print("------------------------------------------------------")
 
         self.lr = lr
@@ -229,6 +233,8 @@ class EquiAssem(pl.LightningModule):
         self.use_RANSAC = use_RANSAC
         self.RANSAC_type = RANSAC_type
         self.use_predicted_normal = use_predicted_normal
+        self.RANSAC_normal_threshold = RANSAC_normal_threshold
+        self.RANSAC_strong_normal_threshold = RANSAC_strong_normal_threshold
         
         # Output feature dimension of Feature Extractor
         self.feat_dim = 1024
@@ -506,6 +512,7 @@ class EquiAssem(pl.LightningModule):
             avg_result = {k: v.sum() / v.size(0) for k, v in result_avg_dict.items()}
             self.test_results = avg_result
             self.log_dict(avg_result, logger=True, sync_dist=False, batch_size=1,)
+            save_final_result_as_txt(avg_result, self.ckp_dir.split('/')[1], 'Autoexp_results.txt')
             
             # Json dump for instance-wise results
             instance_wise_results_to_json(total_instance_score_dict, self.ckp_dir, 'test_results')
@@ -995,7 +1002,9 @@ class EquiAssem(pl.LightningModule):
                                                      trg_predicted_frame=trg_predicted_frame,
                                                      match_option=self.infer_match_option, 
                                                      RANSAC_type=self.RANSAC_type, 
-                                                     topk=self.infer_topk)
+                                                     topk=self.infer_topk,
+                                                     normal_threshold=self.RANSAC_normal_threshold,
+                                                     strong_normal_threshold=self.RANSAC_strong_normal_threshold)
 
         else:
             # fine_matching predict Rt to move points from src_points to ref_points
@@ -1467,13 +1476,41 @@ class EquiAssem(pl.LightningModule):
         corr_dist = torch.cdist(src_pcd_raw, trg_pcd_raw, p=2) # (N, M)
         pos_mask = corr_dist < pos_radius # (N, M)
 
-        # Find pairs that have topk scores
-        topk_scores = torch.topk(matching_scores.reshape(-1), k=topk, dim=-1)[0] # (N*M) -> (topk)
-        kth_biggest_score = topk_scores[-1] # (topk) -> (1, )
-        topk_mask = matching_scores >= kth_biggest_score # (N, M)
+        # # Find pairs that have topk scores
+        # topk_scores = torch.topk(matching_scores.reshape(-1), k=topk, dim=-1)[0] # (N*M) -> (topk)
+        # kth_biggest_score = topk_scores[-1] # (topk) -> (1, )
+        # topk_mask = matching_scores >= kth_biggest_score # (N, M)
 
-        # Calculate ratio of GT among topk scores
-        ratio_of_gt_among_topk_scores = torch.logical_and(topk_mask, pos_mask).sum() / topk_mask.sum() # (N, M) -> (1, )
+        # # Calculate ratio of GT among topk scores
+        # ratio_of_gt_among_topk_scores = torch.logical_and(topk_mask, pos_mask).sum() / topk_mask.sum() # (N, M) -> (1, )
+
+
+        # Get initial matches based on specified matching option
+        matching_scores_before_Sinkhorn = matching_scores
+        match_option = self.infer_match_option
+        from RANSAC.match_selection import topk_matching, mutual_topk_matching, soft_topk_matching, unidirectional_nn_matching, injective_matching, bijective_matching 
+        if match_option == 'topk':
+            if topk < 0:
+                topk = int((matching_scores_before_Sinkhorn.shape[0] + matching_scores_before_Sinkhorn.shape[1]) / (-topk))
+            initial_matches = topk_matching(matching_scores_before_Sinkhorn, k=int(topk)) # (K, 2)
+        elif match_option == 'mutual_topk':
+            initial_matches = mutual_topk_matching(matching_scores_before_Sinkhorn, topk=int(topk)) # (K, 2)
+        elif match_option == 'soft_topk':
+            initial_matches = soft_topk_matching(matching_scores_before_Sinkhorn, topk=int(topk)) # (K, 2)
+        elif match_option == 'unidirectional_nn_matching':
+            initial_matches = unidirectional_nn_matching(matching_scores_before_Sinkhorn, topk=int(topk)) # (K, 2)
+        elif match_option == 'injective_matching':
+            initial_matches = injective_matching(matching_scores_before_Sinkhorn) # (K, 2)
+        elif match_option == 'bijective_matching':
+            initial_matches = bijective_matching(matching_scores_before_Sinkhorn) # (K, 2)
+        else:
+            raise ValueError(f"Invalid match option: {match_option}")
+        
+        matching_mask = torch.zeros_like(matching_scores, dtype=torch.bool) # (N, M)
+        matching_mask[initial_matches[:,0], initial_matches[:,1]] = True # (N, M)
+
+        ratio_of_gt_among_topk_scores = torch.logical_and(matching_mask, pos_mask).sum() # (N, M) -> (1, )
+        # ratio_of_gt_among_topk_scores = torch.logical_and(topk_mask, pos_mask).sum() / pos_mask.sum() # (N, M) -> (1, )
         return ratio_of_gt_among_topk_scores
 
 
