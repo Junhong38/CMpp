@@ -1189,7 +1189,11 @@ class EquiAssem(pl.LightningModule):
         # Calculate accuracy of segmentation results
         if self.seg_head_mode != 'none':
             eval_dict['seg_recall'], eval_dict['seg_precision'] = calculate_accuracy_of_seg_results(out_mating_surface_seg_results, positive_mask)
-            eval_dict['seg_F1_score'] = 2 * (eval_dict['seg_recall'] * eval_dict['seg_precision']) / (eval_dict['seg_recall'] + eval_dict['seg_precision'])
+
+            if (eval_dict['seg_recall'] + eval_dict['seg_precision']) > 0:
+                eval_dict['seg_F1_score'] = 2 * (eval_dict['seg_recall'] * eval_dict['seg_precision']) / (eval_dict['seg_recall'] + eval_dict['seg_precision'])
+            else:
+                eval_dict['seg_F1_score'] = torch.tensor(0.0).to(src_pcd_raw.device)
 
         return out_dict, eval_dict
     
