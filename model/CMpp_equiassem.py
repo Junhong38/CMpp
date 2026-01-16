@@ -446,17 +446,16 @@ class EquiAssem(pl.LightningModule):
                     param.requires_grad = False
             
             for name, param in self.proj.named_parameters():
-                if param.dim() == 2:  # weight matrix (out_channels, in_channels)
-                    param.requires_grad = True
-                    # Register hook to set the gradient of the 1st row to 0
-                    def make_hook(row_idx):
-                        def hook(grad):
-                            if grad is not None:
-                                grad = grad.clone()
-                                grad[row_idx, :] = 0  # 해당 행의 gradient를 0으로 설정
-                            return grad
-                        return hook
-                    param.register_hook(make_hook(0))
+                param.requires_grad = True
+                # Register hook to set the gradient of the 1st row to 0
+                def make_hook(row_idx):
+                    def hook(grad):
+                        if grad is not None:
+                            grad = grad.clone()
+                            grad[row_idx, :] = 0 
+                        return grad
+                    return hook
+                param.register_hook(make_hook(0))
     
 
     def freeze_all_except_seg_head(self):
