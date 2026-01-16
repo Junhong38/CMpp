@@ -22,7 +22,7 @@ end
 
 
 # 2nd stage -> shape training, but freeze frame backbone and normal prediction proj. 2nd vector proj will be not frozen
-rm -rf checkpoint/SECOND_FREEZEN2ND_G8NDB3_NPCFNR4C1/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --scale full --load_ori checkpoint_1stStage/FIRST_G8NDB6SN_NPCFNR4C1/models/last.ckpt --freeze_ori_2nd_stage no_2nd --logpath SECOND_FREEZEN2ND_G8NDB3_NPCFNR4C1 --epochs 0 --scheduler_mode cos --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --batch_size 3 --flip_normal_mode rightv4 --consistency_loss_weight 1.0 --wandb --wandb_entity CMppProject --wandb_project CMpp
+sleep 5h && rm -rf checkpoint/SECOND_FREEZEN2ND_G8NDB3_NPCFNR4C1/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --scale full --load_ori checkpoint_1stStage/FIRST_G8NDB6SN_NPCFNR4C1/models/last.ckpt --freeze_ori_2nd_stage no_2nd --logpath SECOND_FREEZEN2ND_G8NDB3_NPCFNR4C1 --epochs 0 --scheduler_mode cos --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --batch_size 3 --flip_normal_mode rightv4 --consistency_loss_weight 1.0 --wandb --wandb_entity CMppProject --wandb_project CMpp
 
 
 # 2nd stage -> shape training without freezing orientation backbone network
