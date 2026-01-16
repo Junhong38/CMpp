@@ -429,13 +429,34 @@ class EquiAssem(pl.LightningModule):
             )
     
 
-    def freeze_ori_backbone(self):
-        if self.ori_backbone is not None:
-            for param in self.ori_backbone.parameters():
+    def freeze_ori_backbone(self, freeze_ori_2nd_stage):
+        assert freeze_ori_2nd_stage in ['all', 'no_2nd'], "freeze_ori_2nd_stage must be in ['all', 'no_2nd']"
+
+        if freeze_ori_2nd_stage == 'all':
+            if self.ori_backbone is not None:
+                for param in self.ori_backbone.parameters():
+                    param.requires_grad = False
+            
+            for param in self.proj.parameters():
                 param.requires_grad = False
         
-        for param in self.proj.parameters():
-            param.requires_grad = False
+        else: # freeze_ori_2nd_stage == 'no_2nd'
+            if self.ori_backbone is not None:
+                for param in self.ori_backbone.parameters():
+                    param.requires_grad = False
+            
+            for name, param in self.proj.named_parameters():
+                if param.dim() == 2:  # weight matrix (out_channels, in_channels)
+                    param.requires_grad = True
+                    # Register hook to set the gradient of the 1st row to 0
+                    def make_hook(row_idx):
+                        def hook(grad):
+                            if grad is not None:
+                                grad = grad.clone()
+                                grad[row_idx, :] = 0  # 해당 행의 gradient를 0으로 설정
+                            return grad
+                        return hook
+                    param.register_hook(make_hook(0))
     
 
     def freeze_all_except_seg_head(self):

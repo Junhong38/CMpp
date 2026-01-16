@@ -21,6 +21,9 @@ end
 # rm -rf checkpoint/SECOND_G8NDB3_NPCFNR5C1/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --scale full --load_ori checkpoint_1stStage/FIRST_G8NDB6SN_NPCFNR5C1/models/last.ckpt --freeze_ori_2nd_stage --logpath SECOND_G8NDB3_NPCFNR5C1 --epochs 0 --scheduler_mode cos --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --batch_size 3 --flip_normal_mode rightv5 --wandb --wandb_entity CMppProject --wandb_project CMpp
 
 
+# 2nd stage -> shape training, but freeze frame backbone and normal prediction proj. 2nd vector proj will be not frozen
+rm -rf checkpoint/SECOND_FREEZEN2ND_G8NDB3_NPCFNR4C1/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --scale full --load_ori checkpoint_1stStage/FIRST_G8NDB6SN_NPCFNR4C1/models/last.ckpt --freeze_ori_2nd_stage no_2nd --logpath SECOND_FREEZEN2ND_G8NDB3_NPCFNR4C1 --epochs 0 --scheduler_mode cos --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --batch_size 3 --flip_normal_mode rightv4 --consistency_loss_weight 1.0 --wandb --wandb_entity CMppProject --wandb_project CMpp
+
 
 # 2nd stage -> shape training without freezing orientation backbone network
 rm -rf checkpoint/SECOND_NFREEZE_G8NDB2_NPCFNR4C1/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --scale full --load_ori checkpoint_1stStage/FIRST_G8NDB6SN_NPCFNR4C1/models/last.ckpt --logpath SECOND_NFREEZE_G8NDB2_NPCFNR4C1 --epochs 0 --scheduler_mode cos --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --batch_size 2 --flip_normal_mode rightv4 --consistency_loss_weight 1.0 --wandb --wandb_entity CMppProject --wandb_project CMpp
@@ -32,11 +35,10 @@ rm -rf checkpoint/SECOND_NFREEZE01_G8NDB2_NPCFNR4C1/ && CUDA_VISIBLE_DEVICES=0,1
 rm -rf checkpoint/SECOND_NFREEZE00125_G8NDB2_NPCFNR4C1/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --scale full --load_ori checkpoint_1stStage/FIRST_G8NDB6SN_NPCFNR4C1/models/last.ckpt --logpath SECOND_NFREEZE00125_G8NDB2_NPCFNR4C1 --epochs 0 --scheduler_mode cos --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --batch_size 2 --flip_normal_mode rightv4 --consistency_loss_weight 1.0 --ori_backbone_lr_weight 0.0125 --wandb --wandb_entity CMppProject --wandb_project CMpp
 
 
-
-
 # Single Stage -> shape training + Consistency training
 rm -rf checkpoint/G8NDB2_NPCFNR4C1/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --scale full --logpath G8NDB2_NPCFNR4C1 --epochs 0 --scheduler_mode cos --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --batch_size 2 --flip_normal_mode rightv4 --consistency_loss_weight 1.0 --wandb --wandb_entity CMppProject --wandb_project CMpp
 # rm -rf checkpoint/G8NDB2_NPCFNR5C1/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --scale full --logpath G8NDB2_NPCFNR5C1 --epochs 0 --scheduler_mode cos --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --batch_size 2 --flip_normal_mode rightv5 --consistency_loss_weight 1.0 --wandb --wandb_entity CMppProject --wandb_project CMpp
+
 
 
 

@@ -255,9 +255,9 @@ def main(args):
         print(f"Missing keys: {load_result[0]}")
         print(f"Unexpected keys: {load_result[1]}")
 
-        if args.freeze_ori_2nd_stage:
-            print(f"Freezing orientation backbone network")
-            model.freeze_ori_backbone()
+        if args.freeze_ori_2nd_stage != 'none':
+            print(f"Freezing orientation backbone network, MODE: {args.freeze_ori_2nd_stage}")
+            model.freeze_ori_backbone(args.freeze_ori_2nd_stage)
         else:
             print(f"Not freezing orientation backbone network")
     
@@ -301,7 +301,7 @@ if __name__ == '__main__':
     parser.add_argument('--load', type=str, default='', help='Load checkpoint for training')
     parser.add_argument('--load_except_seg_head', type=str, default='', help='Load checkpoint for training except segmentation head, this is only allowed when seg_head_mode is not none')
     parser.add_argument('--load_ori', type=str, default='', help='Only load the orientation backbone network, this is only allowed when double_backbone, and stage 2')
-    parser.add_argument('--freeze_ori_2nd_stage', action='store_true')
+    parser.add_argument('--freeze_ori_2nd_stage', type=str, default='none', choices=['none', 'all', 'no_2nd'])
     parser.add_argument('--resume', type=str, default='', help='Resume training from the checkpoint')
     parser.add_argument('--scheduler_mode', type=str, default='cos', choices=['none', 'cos', 'onecycle'])
     parser.add_argument('--gradient_clip_val', type=float, default=0.0, help='Gradient clip value')
