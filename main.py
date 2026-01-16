@@ -136,6 +136,7 @@ def main(args):
     checkpoint_callback_rrmse = ModelCheckpoint(dirpath=ckp_dir, filename='model-rrmse-{epoch:03d}', monitor='val/rrmse', save_top_k=1, mode='min')
     checkpoint_callback_trmse = ModelCheckpoint(dirpath=ckp_dir, filename='model-trmse-{epoch:03d}', monitor='val/trmse', save_top_k=1, mode='min')
     checkpoint_callback_Oloss = ModelCheckpoint(dirpath=ckp_dir, filename='model-Oloss-{epoch:03d}', monitor='val/o_loss', save_top_k=1, mode='min')
+    checkpoint_callback_seg_F1 = ModelCheckpoint(dirpath=ckp_dir, filename='model-seg_F1-{epoch:03d}', monitor='val/seg_F1_score', save_top_k=1, mode='max')
     latest_checkpoint_callback = ModelCheckpoint(dirpath=ckp_dir, filename='model-latest', save_last=True)
     
     
@@ -147,6 +148,7 @@ def main(args):
             checkpoint_callback_rrmse,
             checkpoint_callback_trmse,
             checkpoint_callback_Oloss,
+            checkpoint_callback_seg_F1,
             latest_checkpoint_callback,
         ]
     else: # Only train the normal vector
@@ -213,6 +215,32 @@ def main(args):
         ckp_path = None
         model.load_state_dict(ckp['state_dict'])
     
+    elif args.load_except_seg_head != '': # Load checkpoint
+        # This loading is only for training segmentation head after loading checkpoints
+        # Hence, if the model does not use segmentation head, assertion error will be raised during freezing
+        ckp = torch.load(args.load_except_seg_head, map_location='cpu')
+        print(f"Loading checkpoint from {ckp.keys()}")
+        ckp_path = None
+
+        loaded_weights = {}
+        for key in ckp['state_dict'].keys():
+            if key.startswith('seg_head.') \
+                or key.startswith('layer_norm_for_self_atten.') \
+                or key.startswith('layer_norm_for_global_atten.') \
+                or key.startswith('final_layer_norm.') \
+                or key.startswith('self_attn_to_qkv.') \
+                or key.startswith('global_attn_to_qkv.'):
+                pass
+            else:
+                loaded_weights[key] = ckp['state_dict'][key]
+        
+        load_result = model.load_state_dict(loaded_weights, strict=False)
+        print(f"Missing keys: {load_result[0]}")
+        print(f"Unexpected keys: {load_result[1]}")
+
+        print("Freezing all except segmentation head")
+        model.freeze_all_except_seg_head()
+    
     elif args.load_ori != '': # Load orientation backbone network
         ckp = torch.load(args.load_ori, map_location='cpu')
         print(f"Loading orientation backbone network from {ckp.keys()}")
@@ -271,6 +299,7 @@ if __name__ == '__main__':
     parser.add_argument('--epochs', type=int, default=0, help='Number of epochs. If 0, it is automatically set to 90 for everyday dataset and 300 for other datasets.')
     parser.add_argument('--n_worker', type=int, default=4, help='Number of workers. If you use multi-GPU training, the number of workers is multiplied by the number of GPUs.')
     parser.add_argument('--load', type=str, default='', help='Load checkpoint for training')
+    parser.add_argument('--load_except_seg_head', type=str, default='', help='Load checkpoint for training except segmentation head, this is only allowed when seg_head_mode is not none')
     parser.add_argument('--load_ori', type=str, default='', help='Only load the orientation backbone network, this is only allowed when double_backbone, and stage 2')
     parser.add_argument('--freeze_ori_2nd_stage', action='store_true')
     parser.add_argument('--resume', type=str, default='', help='Resume training from the checkpoint')
@@ -388,6 +417,5 @@ if __name__ == '__main__':
     
     if args.learnable_softmax_temperature:
         assert args.matching_norm_mode == 'softmax', f"learnable_softmax_temperature is only allowed when matching_norm_mode is softmax, but got {args.matching_norm_mode}"
-    
     
     main(args)

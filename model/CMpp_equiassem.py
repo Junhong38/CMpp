@@ -438,6 +438,18 @@ class EquiAssem(pl.LightningModule):
             param.requires_grad = False
     
 
+    def freeze_all_except_seg_head(self):
+        assert self.seg_head is not None, "Segmentation head is not defined"
+        seg_head_module_names = ['seg_head', 'layer_norm_for_self_atten', 'layer_norm_for_global_atten', 'final_layer_norm', 'self_attn_to_qkv', 'global_attn_to_qkv']
+        
+        for name, param in self.named_parameters():
+            if any(name.startswith(module_name) for module_name in seg_head_module_names):
+                pass
+            
+            else:
+                param.requires_grad = False
+    
+
     def configure_optimizers(self):
         """Build optimizer and lr scheduler."""
         # Lightning 2.x: Support this funcionality
@@ -1176,7 +1188,8 @@ class EquiAssem(pl.LightningModule):
 
         # Calculate accuracy of segmentation results
         if self.seg_head_mode != 'none':
-            eval_dict['seg_coverage'], eval_dict['seg_accuracy'] = calculate_accuracy_of_seg_results(out_mating_surface_seg_results, positive_mask)
+            eval_dict['seg_recall'], eval_dict['seg_precision'] = calculate_accuracy_of_seg_results(out_mating_surface_seg_results, positive_mask)
+            eval_dict['seg_F1_score'] = 2 * (eval_dict['seg_recall'] * eval_dict['seg_precision']) / (eval_dict['seg_recall'] + eval_dict['seg_precision'])
 
         return out_dict, eval_dict
     
