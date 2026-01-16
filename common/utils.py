@@ -99,8 +99,11 @@ def calculate_accuracy_of_seg_results(seg_results, positive_mask):
 
     intersection = torch.logical_and(seg_pred, total_gt) # (N+M, )
 
-    seg_recall = intersection.sum() / total_gt.sum() # Among all gt points, how many points are covered by the predicted points
-    seg_precision = intersection.sum() / seg_pred.sum() # Among all predicted points, how many points are correctly predicted
+    sum_of_total_gt = total_gt.sum()
+    sum_of_seg_pred = seg_pred.sum()
+    sum_of_intersection = intersection.sum()
+    seg_recall = sum_of_intersection / sum_of_total_gt if sum_of_total_gt > 0 else 0.0 # Among all gt points, how many points are covered by the predicted points
+    seg_precision = sum_of_intersection / sum_of_seg_pred if sum_of_seg_pred > 0 else 0.0 # Among all predicted points, how many points are correctly predicted
     return seg_recall, seg_precision
 
 
