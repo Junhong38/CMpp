@@ -148,7 +148,6 @@ def main(args):
             checkpoint_callback_rrmse,
             checkpoint_callback_trmse,
             checkpoint_callback_Oloss,
-            checkpoint_callback_seg_F1,
             latest_checkpoint_callback,
         ]
     else: # Only train the normal vector
@@ -157,6 +156,9 @@ def main(args):
             checkpoint_callback_Oloss,
             latest_checkpoint_callback,
         ]
+    
+    if args.seg_head_mode != 'none':
+        callbacks.append(checkpoint_callback_seg_F1)
 
 
     # Wandb logger

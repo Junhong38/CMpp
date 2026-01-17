@@ -53,4 +53,8 @@ rm -rf checkpoint/SECOND_G8NDB3_SEGMLPDICE_LOAD_G8NDB3_W10/ && CUDA_VISIBLE_DEVI
 
 
 
+rm -rf checkpoint/IMPLE/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --scale small --load_except_seg_head checkpoint_backup/G8NDB3_F_BV0V0_MH_P0075M0075+N145M145+BD+HNM+NK0+DCOS+AD+W10_MCM+MNSoft_S1P1_6/models/last.ckpt --logpath IMPLE --epochs 0 --scheduler_mode cos --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --batch_size 6 --flip_normal_mode none --seg_head_mode mlp --seg_loss_mode dice
+
+
+
 
