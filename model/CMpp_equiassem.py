@@ -1,31 +1,30 @@
 import os
-from scipy.spatial.transform import Rotation
-
 import pytorch_lightning as pl
 
-from chamfer_distance import ChamferDistance as chamfer_dist
+
 
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from einops import rearrange
 
+import flash_attn
+
 from model.backbone.vn_dgcnn import EQCNN_equi_unet, EQCNN_equi_unet_v2
 from model.backbone.vn_layers import VNLinear, VNLinearLeakyReLU
+from model.backbone.simple_mlps import return_simple_mlps
 from model.loss import CircleLoss, PointMatchingLoss, OrientationLoss, DiceLoss, binary_cross_entropy_loss
 from model.learnable_sinkhorn import LearnableLogOptimalTransport
 from model.local_global_registration import LocalGlobalRegistration
 
 from RANSAC.ransac import _RANSAC
 
-from common.rotation import gram_schmidt_with_cross, gram_schmidt, rodrigues_to_rotmat, rotate_by_rotation_matrix, src_reverse_trg_normal_gram_schmidt_with_cross
-from common.utils import instance_wise_results_to_json, calculate_accuracy_of_seg_results, divide_parameters_into_ori_and_others
-from common.viz import visualize_negative_hard_mask, save_pcd_for_light_visualization, draw_frames, draw_normal_error_histogram, draw_test_results_histogram
+
+from common.metric_utils import *
 from common.misc import extract_all_objects, batch_scaling, batch2offset, offset2bincount
-
-from pytorch3d.ops import iterative_closest_point
-
-import flash_attn
+from common.rotation import gram_schmidt_with_cross, gram_schmidt, rodrigues_to_rotmat, rotate_by_rotation_matrix, src_reverse_trg_normal_gram_schmidt_with_cross
+from common.utils import is_trg_larger, pairwise_mating, instance_wise_results_to_json, divide_parameters_into_ori_and_others
+from common.viz import visualize_negative_hard_mask, save_pcd_for_light_visualization, draw_frames, draw_normal_error_histogram, draw_test_results_histogram
 
 
 class EquiAssem(pl.LightningModule):
@@ -318,70 +317,9 @@ class EquiAssem(pl.LightningModule):
             self.equi_layer = nn.Sequential(*([VNLinearLeakyReLU(self.feat_dim//3, self.feat_dim//3, no_norm=False)] + [VNLinearLeakyReLU(self.feat_dim//3, self.feat_dim//3, no_norm=only_one_norm) for _ in range(n_avn-1)]))
         else:
             self.equi_layer = nn.Identity()
-
-        if mlp_mode == 'deep':
-            channel_dim_of_shape_feats = self.feat_dim
-            self.shape_mlp = nn.Sequential(nn.Conv1d((self.feat_dim//3) * 3, self.feat_dim//2, kernel_size=1, bias=False),
-                                           nn.InstanceNorm1d(self.feat_dim//2),
-                                           nn.LeakyReLU(negative_slope=0.2),
-                                           nn.Conv1d(self.feat_dim//2, self.feat_dim//2, kernel_size=1, bias=False),
-                                           nn.InstanceNorm1d(self.feat_dim//2),
-                                           nn.LeakyReLU(negative_slope=0.2),
-                                           nn.Conv1d(self.feat_dim//2, self.feat_dim//2, kernel_size=1, bias=False),
-                                           nn.InstanceNorm1d(self.feat_dim//2),
-                                           nn.LeakyReLU(negative_slope=0.2),
-                                           nn.Conv1d(self.feat_dim//2, self.feat_dim//2, kernel_size=1, bias=False),
-                                           nn.InstanceNorm1d(self.feat_dim//2),
-                                           nn.LeakyReLU(negative_slope=0.2),
-                                           nn.Conv1d(self.feat_dim//2, self.feat_dim//2, kernel_size=1, bias=False),
-                                           nn.InstanceNorm1d(self.feat_dim//2),
-                                           nn.LeakyReLU(negative_slope=0.2),
-                                           nn.Conv1d(self.feat_dim//2, self.feat_dim, kernel_size=1, bias=False),
-                                           nn.InstanceNorm1d(self.feat_dim),
-                                           nn.LeakyReLU(negative_slope=0.2),
-                                           )
         
-        elif mlp_mode == 'half':
-            channel_dim_of_shape_feats = self.feat_dim//2
-            self.shape_mlp = nn.Sequential(nn.Conv1d((self.feat_dim//3) * 3, self.feat_dim//2, kernel_size=1, bias=False),
-                                           nn.InstanceNorm1d(self.feat_dim//2),
-                                           nn.LeakyReLU(negative_slope=0.2),
-                                           nn.Conv1d(self.feat_dim//2, self.feat_dim//2, kernel_size=1, bias=False),
-                                           nn.InstanceNorm1d(self.feat_dim//2),
-                                           nn.LeakyReLU(negative_slope=0.2),
-                                           nn.Conv1d(self.feat_dim//2, self.feat_dim//2, kernel_size=1, bias=False),
-                                           nn.InstanceNorm1d(self.feat_dim//2),
-                                           nn.LeakyReLU(negative_slope=0.2),
-                                           )
-        
-        
-        elif mlp_mode == 'CMpp':
-            channel_dim_of_shape_feats = self.feat_dim
-            self.shape_mlp = nn.Sequential(nn.Conv1d((self.feat_dim//3) * 3, self.feat_dim, kernel_size=1, bias=False),
-                                           nn.InstanceNorm1d(self.feat_dim),
-                                           nn.LeakyReLU(negative_slope=0.2),
-                                           nn.Conv1d(self.feat_dim, self.feat_dim, kernel_size=1, bias=False),
-                                           nn.InstanceNorm1d(self.feat_dim),
-                                           nn.LeakyReLU(negative_slope=0.2),
-                                           nn.Conv1d(self.feat_dim, self.feat_dim, kernel_size=1, bias=False),
-                                           nn.InstanceNorm1d(self.feat_dim),
-                                           nn.LeakyReLU(negative_slope=0.2),
-                                           )
-        
-        elif mlp_mode == 'CMpp_half':
-            channel_dim_of_shape_feats = self.feat_dim
-            self.shape_mlp = nn.Sequential(nn.Conv1d((self.feat_dim//3) * 3, self.feat_dim//2, kernel_size=1, bias=False),
-                                           nn.InstanceNorm1d(self.feat_dim//2),
-                                           nn.LeakyReLU(negative_slope=0.2),
-                                           nn.Conv1d(self.feat_dim//2, self.feat_dim, kernel_size=1, bias=False),
-                                           nn.InstanceNorm1d(self.feat_dim),
-                                           nn.LeakyReLU(negative_slope=0.2),
-                                           nn.Conv1d(self.feat_dim, self.feat_dim, kernel_size=1, bias=False),
-                                           nn.InstanceNorm1d(self.feat_dim),
-                                           nn.LeakyReLU(negative_slope=0.2),
-                                           )
-        
-        
+        # Layer for invariant shape features
+        self.shape_mlp, channel_dim_of_shape_feats = return_simple_mlps(mlp_mode, self.feat_dim)
 
         # Segmentation head
         if seg_head_mode == 'none':
@@ -416,8 +354,7 @@ class EquiAssem(pl.LightningModule):
                 self.register_parameter('softmax_temperature', torch.nn.Parameter(torch.tensor(2.0)))
             else:
                 self.softmax_temperature = 1.0 # We do not use temperature for softmax
-
-
+        
         if not self.use_RANSAC: # If not using RANSAC, use LGR for fine matching
             # LGR
             self.fine_matching = LocalGlobalRegistration(
@@ -531,6 +468,7 @@ class EquiAssem(pl.LightningModule):
 
     def on_train_epoch_start(self):
         self.circle_loss.update_start_hard_neg_epoch(self.current_epoch)
+    
     
     def training_step(self, in_dict, batch_idx):
         _, loss_dict = self.forward_pass(in_dict, mode='train', batch_idx=batch_idx)
@@ -751,7 +689,7 @@ class EquiAssem(pl.LightningModule):
             # Compute Normal Error
             with torch.no_grad():
                 # (d) Compute Normal Error
-                loss['n_error'], _, loss['n_suc_rate'] = self._normal_error(in_dict, out_dict, success_criterion_in_degree=self.success_criterion_in_degree)
+                loss['n_error'], _, loss['n_suc_rate'] = normal_error(in_dict, out_dict, success_criterion_in_degree=self.success_criterion_in_degree)
             
             if mode == 'train':
                 self.log_for_training(loss=loss, pos_neg_distribution=None, mode=mode)
@@ -817,7 +755,7 @@ class EquiAssem(pl.LightningModule):
             if mode == 'train':
                 with torch.no_grad():
                     # This is for checking the normal error
-                    loss['n_error'], _, loss['n_suc_rate'] = self._normal_error(in_dict, out_dict, success_criterion_in_degree=self.success_criterion_in_degree)
+                    loss['n_error'], _, loss['n_suc_rate'] = normal_error(in_dict, out_dict, success_criterion_in_degree=self.success_criterion_in_degree)
 
                     if ((not self.trainer.sanity_checking) and self.viz_train_epoch > 0 and batch_idx == 0 and (self.current_epoch % self.viz_train_epoch == 0 or self.current_epoch == self.trainer.max_epochs-1)):
                         visualize_negative_hard_mask(in_dict, neg_hard_mask_for_viz['neg_mask'], neg_hard_mask_for_viz['hard_neg_mask'], active_mask, self.ckp_dir, self.current_epoch, self.trainer.global_rank, self.pos_radius, self.safe_radius)
@@ -1198,10 +1136,10 @@ class EquiAssem(pl.LightningModule):
         eval_dict = self.evaluate_prediction(in_dict, split_input_dict, out_dict, mode)
 
         # Matching Recall
-        eval_dict.update(self._calculate_recall(postprocessed_matching_scores_drop, gt_corr))
+        eval_dict.update(calculate_recall(postprocessed_matching_scores_drop, gt_corr))
 
         # Calculate ratio of GT among topk scores
-        eval_dict['gt_among_topk'] = self.calculate_ratio_of_gt_among_topk_scores(src_pcd_raw, trg_pcd_raw, postprocessed_matching_scores_drop, topk=self.infer_topk, pos_radius=self.pos_radius)
+        eval_dict['gt_among_topk'] = calculate_ratio_of_gt_among_topk_scores(src_pcd_raw, trg_pcd_raw, postprocessed_matching_scores_drop, topk=self.infer_topk, pos_radius=self.pos_radius)
 
         # log size of gt_corr
         eval_dict['gt_corr_size'] = torch.tensor(gt_corr.shape[0]).to(src_pcd_raw.device)
@@ -1247,7 +1185,7 @@ class EquiAssem(pl.LightningModule):
 
 
         # Move larger point cloud
-        if self.move_smaller and not self._is_trg_larger(src_pcd, trg_pcd):
+        if self.move_smaller and not is_trg_larger(src_pcd, trg_pcd):
             # if source point cloud is bigger than target point cloud, we want to move trg to src
             # However, our code is designed to move src to trg
             # So, we need to inverse the relative transformation
@@ -1264,24 +1202,24 @@ class EquiAssem(pl.LightningModule):
 
 
         # Assemble using prediction, pseudo-gt, and ground-truth
-        assm_pred, pcds_pred = self._pairwise_mating(src_pcd, trg_pcd, pred_relative_trsfm[0], pred_relative_trsfm[1])
-        assm_grtr, pcds_grtr = self._pairwise_mating(src_pcd, trg_pcd, grtr_relative_trsfm[0], grtr_relative_trsfm[1])
+        assm_pred, pcds_pred = pairwise_mating(src_pcd, trg_pcd, pred_relative_trsfm[0], pred_relative_trsfm[1])
+        assm_grtr, pcds_grtr = pairwise_mating(src_pcd, trg_pcd, grtr_relative_trsfm[0], grtr_relative_trsfm[1])
 
         assm_pred, assm_grtr = assm_pred.float(), assm_grtr.float()
         
         # (a) Compute CD between prediction & ground-truth
-        eval_result['cd'] = self._chamfer_distance(assm_pred, assm_grtr)
+        eval_result['cd'] = chamfer_distance(assm_pred, assm_grtr)
 
         # (b) Compute MSE between prediction & ground-truth for rotation (in degree) and translation
-        eval_result['rrmse_rpf'], eval_result['trmse_rpf'] = self._transformation_error_RPFver(pcds_pred, pcds_grtr)
-        eval_result['rrmse'], eval_result['trmse'] = self._transformation_error(pred_relative_trsfm, grtr_relative_trsfm)
-        eval_result['rrmse_geo'], eval_result['trmse_geo'] = self._transformation_error_geodesic(pred_relative_trsfm, grtr_relative_trsfm)
+        eval_result['rrmse_rpf'], eval_result['trmse_rpf'] = transformation_error_RPFver(pcds_pred, pcds_grtr)
+        eval_result['rrmse'], eval_result['trmse'] = transformation_error(pred_relative_trsfm, grtr_relative_trsfm)
+        eval_result['rrmse_geo'], eval_result['trmse_geo'] = transformation_error_geodesic(pred_relative_trsfm, grtr_relative_trsfm)
 
         # (c) Compute CoRrespondence Distance (CRD) betwween prediction & ground-truth
-        eval_result['crd'] = self._correspondence_distance(assm_pred, assm_grtr)
+        eval_result['crd'] = correspondence_distance(assm_pred, assm_grtr)
 
         # (d) Compute Normal Error
-        eval_result['n_error'], normal_error_hist, eval_result['n_suc_rate'] = self._normal_error(in_dict, out_dict, success_criterion_in_degree=self.success_criterion_in_degree)
+        eval_result['n_error'], normal_error_hist, eval_result['n_suc_rate'] = normal_error(in_dict, out_dict, success_criterion_in_degree=self.success_criterion_in_degree)
 
         if mode == 'test':
             if self.viz_metric_name == 'none':
@@ -1338,9 +1276,9 @@ class EquiAssem(pl.LightningModule):
                 zero_trans = torch.zeros(3).to(grtr_relative_trsfm[0].device)
 
                 # Rotate by using gt
-                _, rot_frame_ori_in_gt = self._pairwise_mating(reshaped_output_src_ori, reshaped_output_trg_ori, grtr_relative_trsfm[0], zero_trans)
-                _, rot_gt_normals_in_gt = self._pairwise_mating(gt_src_normals, gt_trg_normals, grtr_relative_trsfm[0], zero_trans)
-                _, rot_mesh_verts_in_gt = self._pairwise_mating(src_mesh_verts, trg_mesh_verts, grtr_relative_trsfm[0], grtr_relative_trsfm[1])
+                _, rot_frame_ori_in_gt = pairwise_mating(reshaped_output_src_ori, reshaped_output_trg_ori, grtr_relative_trsfm[0], zero_trans)
+                _, rot_gt_normals_in_gt = pairwise_mating(gt_src_normals, gt_trg_normals, grtr_relative_trsfm[0], zero_trans)
+                _, rot_mesh_verts_in_gt = pairwise_mating(src_mesh_verts, trg_mesh_verts, grtr_relative_trsfm[0], grtr_relative_trsfm[1])
 
 
                 # DRAW FRAME by using gt
@@ -1351,9 +1289,9 @@ class EquiAssem(pl.LightningModule):
                             viz_piece=True, viz_full=True)
 
                 # Rotate by using pred
-                _, rot_frame_ori_in_pred = self._pairwise_mating(reshaped_output_src_ori, reshaped_output_trg_ori, pred_relative_trsfm[0], zero_trans)
-                _, rot_gt_normals_in_pred = self._pairwise_mating(gt_src_normals, gt_trg_normals, pred_relative_trsfm[0], zero_trans)
-                _, rot_mesh_verts_in_pred = self._pairwise_mating(src_mesh_verts, trg_mesh_verts, pred_relative_trsfm[0], pred_relative_trsfm[1])
+                _, rot_frame_ori_in_pred = pairwise_mating(reshaped_output_src_ori, reshaped_output_trg_ori, pred_relative_trsfm[0], zero_trans)
+                _, rot_gt_normals_in_pred = pairwise_mating(gt_src_normals, gt_trg_normals, pred_relative_trsfm[0], zero_trans)
+                _, rot_mesh_verts_in_pred = pairwise_mating(src_mesh_verts, trg_mesh_verts, pred_relative_trsfm[0], pred_relative_trsfm[1])
 
                 # DRAW FRAME by using prediction
                 draw_frames(mesh_verts=rot_mesh_verts_in_pred, mesh_faces=mesh_faces_for_viz, 
@@ -1372,306 +1310,7 @@ class EquiAssem(pl.LightningModule):
         return eval_result
     
 
-    def _is_trg_larger(self, src_pcd, trg_pcd):
-        """
-        Args:
-            src_pcd (torch.Tensor): (N, 3)
-            trg_pcd (torch.Tensor): (M, 3)
 
-        Returns:
-            bool: True if source point cloud is smaller than target point cloud
-        """
-        # max - min -> volume
-        # Calculate max - min for all xyz coordinates, and product for all xyz.
-        # Finally, we can calculate bounding box volume
-        src_volume = (src_pcd.max(dim=0)[0] - src_pcd.min(dim=0)[0]).prod(dim=0)
-        trg_volume = (trg_pcd.max(dim=0)[0] - trg_pcd.min(dim=0)[0]).prod(dim=0)
-        return src_volume < trg_volume
-    
-    
-    def _pairwise_mating(self, src_pcd, trg_pcd, rotat, trans):
-        """
-        move src to trg
-
-        Args:
-            src_pcd (torch.Tensor): (N, 3)
-            trg_pcd (torch.Tensor): (M, 3)
-            rotat (torch.Tensor): (3, 3)
-            trans (torch.Tensor): (3)
-
-        Returns:
-            pcd_t (torch.Tensor): (N+M, 3)
-            pcd_t (list): [(N, 3), (M, 3)] if is_trg_larger else [(N, 3), (M, 3)]
-        """
-        # Remind:
-        # estimated_transform: trg_pcd = R * src_pcd + t
-
-        # When GT
-        # GT Rt format already fits to R * src + t
-
-        # When pred
-        # target_point = R * source_point + t
-        # Hence, pred format already fits to R * src + t format
-
-        pcd_t = []
-        # Fix target point, and move source point to target point
-        # src_pcd_t = R * src_pcd + t
-        src_pcd_t = self._transform(src_pcd, rotat, trans)
-        pcd_t = [src_pcd_t, trg_pcd]
-        
-        return torch.cat(pcd_t, dim=0), pcd_t
-    
-
-    def _transform(self, pcd, rotat=None, trans=None):
-        """
-        rotat * pcd + trans
-
-        Args:
-            pcd (torch.Tensor): (N, 3)
-            rotat (torch.Tensor, optional): (3, 3). Defaults to None.
-            trans (torch.Tensor, optional): (3). Defaults to None.
-
-        Returns:
-            pcd_t (torch.Tensor): (N, 3) 
-        """
-        if rotat == None: rotat = torch.eye(3, 3)
-        if trans == None: trans = torch.zeros(3)
-
-        rotat = rotat.to(pcd.device)
-        trans = trans.to(pcd.device)
-
-        return torch.einsum('x y, n y -> n x', rotat, pcd) + trans
-
-
-    def _correspondence_distance(self, assm1, assm2, scaling=100):
-        """
-        Args:
-            assm1 (torch.Tensor): (N, 3)
-            assm2 (torch.Tensor): (M, 3)
-            scaling (int, optional): Scaling factor for CD. Defaults to 100.
-
-        Returns:
-            corr_dist (torch.Tensor): (1)
-        """
-        corr_dist = (assm1 - assm2).norm(dim=-1).mean(dim=-1) * scaling
-        return corr_dist
-
-
-    def _chamfer_distance(self, assm1, assm2, scaling=1000):
-        """
-        Args:
-            assm1 (torch.Tensor): (N, 3)
-            assm2 (torch.Tensor): (M, 3)
-            scaling (int, optional): Scaling factor for CD. Defaults to 1000.
-
-        Returns:
-            cd (torch.Tensor): (1)
-        """
-        chd = chamfer_dist()
-        dist1, dist2, idx1, idx2 = chd(assm1.unsqueeze(0), assm2.unsqueeze(0))
-        cd = (dist1.mean(dim=-1) + dist2.mean(dim=-1)) * scaling
-        return cd
-    
-
-    def _transformation_error(self, trnsf1, trnsf2, trmse_scaling=100):
-        """
-        Args:
-            trnsf1 (tuple): (3, 3), (3)
-            trnsf2 (tuple): (3, 3), (3)
-            trmse_scaling (int, optional): Scaling factor for TRMSE. Defaults to 100.
-
-        Returns:
-            rrmse (torch.Tensor): (1)
-            trmse (torch.Tensor): (1)
-        """
-        rotat1, trans1 = [trnsf1[0]], [trnsf1[1]]
-        rotat2, trans2 = [trnsf2[0]], [trnsf2[1]]
-        
-        rrmse, trmse = 0., 0.
-        for r1, r2, t1, t2 in zip(rotat1, rotat2, trans1, trans2):
-            r1_deg = torch.tensor(Rotation.from_matrix(r1.cpu()).as_euler('xyz', degrees=True))
-            r2_deg = torch.tensor(Rotation.from_matrix(r2.cpu()).as_euler('xyz', degrees=True))
-            diff1 = (r1_deg - r2_deg).abs()
-            diff2 = 360. - (r1_deg - r2_deg).abs()
-            diff = torch.minimum(diff1, diff2)
-            rrmse += diff.pow(2).mean().pow(0.5)
-            trmse += (t1 - t2).pow(2).mean().pow(0.5) * trmse_scaling
-        
-        # div = len(rotat1) if multi_part else 1
-        div = 1
-        return (rrmse / div).to(trmse.device), trmse / div
-
-
-    def _transformation_error_geodesic(self, trnsf1, trnsf2, trmse_scaling=100):
-        """
-        Args:
-            trnsf1 (tuple): (3, 3), (3)
-            trnsf2 (tuple): (3, 3), (3)
-            trmse_scaling (int, optional): Scaling factor for TRMSE. Defaults to 100.
-
-        Returns:
-            rrmse (torch.Tensor): (1)
-            trmse (torch.Tensor): (1)
-        """
-        rotat1, trans1 = [trnsf1[0]], [trnsf1[1]]
-        rotat2, trans2 = [trnsf2[0]], [trnsf2[1]]
-        
-        rrmse_geo, trmse_geo = 0., 0.
-        for r1, r2, t1, t2 in zip(rotat1, rotat2, trans1, trans2):
-            # pred_rotat^T @ gt_rotat
-            relative_rotat = r1 @ r2.T
-
-            # tr(R) = 1 + 2cos(θ) -> θ = acos((tr(R) - 1) / 2), torch.acos is in radian, so we need to convert to degree
-            rrmse_geo += torch.rad2deg(torch.acos(torch.clamp(0.5 * (torch.trace(relative_rotat) - 1.0), -1.0, 1.0)))
-            trmse_geo += torch.norm(t1 - t2) * trmse_scaling
-        
-        div = 1
-        return (rrmse_geo / div).to(trmse_geo.device), trmse_geo / div
-
-
-    def _transformation_error_RPFver(self, pcds_pred, pcds_grtr, scaling=100):
-        """
-        Args:
-            pcds_pred (list): [(N, 3), (M, 3)]
-            pcds_grtr (list): [(N, 3), (M, 3)]
-            scaling (int, optional): Scaling factor for TRMSE. Defaults to 100. 
-
-        Returns:
-            rrmse (torch.Tensor): (1)
-            trmse (torch.Tensor): (1)
-        """
-        
-        num_parts = len(pcds_grtr)
-        rot_errors = torch.zeros(num_parts, device=pcds_grtr[0].device) # (K), rotation error
-        trans_errors = torch.zeros(num_parts, device=pcds_grtr[0].device)  # (K), translation error
-
-        for p in range(num_parts):
-            pcd_pred = pcds_pred[p].unsqueeze(0) # (N, 3) -> (1, N, 3)
-            pcd_grtr = pcds_grtr[p].unsqueeze(0) # (N, 3) -> (1, N, 3)
-            assert pcd_pred.shape == pcd_grtr.shape, f"Point clouds should be same size, but got {pcd_pred.shape} and {pcd_grtr.shape}"
-
-            # ICP algorithm
-            error = iterative_closest_point(pcd_grtr, pcd_pred).RTs
-
-            
-            # tr(R) = 1 + 2cos(θ) -> θ = acos((tr(R) - 1) / 2), torch.acos is in radian, so we need to convert to degree
-            rot_errors[p] = torch.rad2deg(torch.acos(torch.clamp(0.5 * (torch.trace(error.R[0]) - 1.0), -1.0, 1.0)))
-            trans_errors[p] = torch.norm(error.T[0]) * scaling
-
-        div = len(pcds_grtr)
-        return rot_errors.sum() / div, trans_errors.sum() / div 
-    
-
-    def _normal_error(self, in_dict, out_dict, success_criterion_in_degree=10):
-        """
-        Args:
-            in_dict (dict): it is same as forward_pass. From in_dict, only need gt_normals, which is torch.Tensor: (B, N+M, 3)
-            out_dict (dict): it is same as forward_pass. From out_dict, only need src_ori and trg_ori, which are torch.Tensor: (B, N+M, 3, 3) and torch.Tensor: (B, N+M, 3, 3)
-            success_criterion_in_degree (int, optional): Success criterion in degree. Defaults to 10.
-
-        Returns:
-            normal_error (torch.Tensor): (1)
-        """
-        pred_oris = out_dict['oris'] #  (B, N+M, 3, 3)
-        gt_normals = in_dict['gt_normals'] # (B, N+M, 3)
-
-        pred_normals = pred_oris[:,:,0,:] # (B, N+M, 3)
-
-        cosine_similarity = torch.clamp(torch.nn.functional.cosine_similarity(pred_normals, gt_normals, dim=-1), min=-1, max=1) # (B, N+M, )
-        theta_deg = torch.rad2deg(torch.acos(cosine_similarity)).reshape(-1) # (B, N+M, ) -> (B*(N+M), )
-        
-        normal_error = theta_deg.mean()
-        normal_error_hist = torch.histogram(theta_deg.cpu(), bins=90, range=(0, 180)) # Total 180 degrees, so we choose 90 bins
-
-        success_mask = theta_deg <= success_criterion_in_degree
-        success_count = success_mask.sum()
-        total_count = theta_deg.shape[0]
-        success_rate = success_count / total_count
-
-        return normal_error, normal_error_hist, success_rate
-    
-
-    def _calculate_recall(self, matching_scores_drop, gt_corr, topks=[1,5,10,20]):
-        """
-        Calculate recall of matching scores
-
-        Args:
-            matching_scores_drop (torch.Tensor): (N, M)
-            gt_corr (torch.Tensor): (P, 2)
-            topks (list, optional): Recall@1, Recall@5, Recall@10, Recall@20.
-
-        Returns:
-            matching_recall (torch.Tensor): (1)
-        """
-        _N, _M = matching_scores_drop.shape # (N, M)
-
-        result_dict = dict()
-
-        if len(gt_corr) == 0:
-            for topk in topks:
-                result_dict[f"recall@{str(topk)}"] = 0.0
-            return result_dict
-
-        correspondence_mask = torch.zeros((_N, _M), device=matching_scores_drop.device)
-        correspondence_mask[gt_corr[:,0], gt_corr[:,1]] = True
-        correspondence_mask_src = correspondence_mask.sum(dim=-1) > 0 # (N, M) -> N
-        correspondence_mask_trg = correspondence_mask.sum(dim=-2) > 0 # (N, M) -> M
-        
-        for topk in topks:
-            ## Recall from src
-            _, topk_inds_src = torch.topk(matching_scores_drop[correspondence_mask_src, :], k=topk, dim=-1) # (N, M) -> (gt_N, M) -> (gt_N, topk)
-            topk_mask_src = torch.zeros((_N, _M), device=matching_scores_drop.device) # (N, M)
-            for i, _ in enumerate(range(topk_inds_src.shape[-1])): # for i in range(topk)
-                # [all gt_N, ith topk from gt_src]
-                topk_mask_src[torch.nonzero(correspondence_mask_src)[:, 0], topk_inds_src[:, i]] = True
-
-            # (N, M) -> N
-            is_success_src = (topk_mask_src * correspondence_mask).sum(dim=-1) > 0
-            recall_src = is_success_src[correspondence_mask_src].sum() / correspondence_mask_src.sum()
-
-            ## Recall from trg
-            _, topk_inds_trg = torch.topk(matching_scores_drop[:, correspondence_mask_trg], k=topk, dim=-2) # (N, M) -> (N, gt_M) -> (topk, gt_M)
-            topk_mask_trg = torch.zeros((_N, _M), device=matching_scores_drop.device) # (N, M)
-            for i, _ in enumerate(range(topk_inds_trg.shape[-2])): # for i in range(topk)
-                # [ith topk from gt_trg, all gt_N]
-                topk_mask_trg[topk_inds_trg[i, :], torch.nonzero(correspondence_mask_trg)[:, 0]] = True
-
-            # (N, M) -> M
-            is_success_trg = (topk_mask_trg * correspondence_mask).sum(dim=-2) > 0
-            recall_trg = is_success_trg[correspondence_mask_trg].sum() / correspondence_mask_trg.sum()
-            
-            recall_dot_k = (recall_src + recall_trg) / 2
-
-            ## Logging results
-            result_dict[f"recall@{str(topk)}"] = recall_dot_k
-        
-        return result_dict
-    
-
-    def calculate_ratio_of_gt_among_topk_scores(self, src_pcd_raw, trg_pcd_raw, matching_scores, topk=128, pos_radius=0.018):
-        """Calculate ratio of GT among topk scores
-
-        Args:
-            src_pcd (torch.Tensor): (N, 3)
-            trg_pcd (torch.Tensor): (M, 3)
-            matching_scores (torch.Tensor): (N, M)
-            topk (int, optional): Topk value for matching. Defaults to 128.
-
-        Returns:
-            ratio_of_gt_among_topk_scores (torch.Tensor): (1)
-        """
-        # Calculate distance between source and target points, and check if it is within the positive radius
-        corr_dist = torch.cdist(src_pcd_raw, trg_pcd_raw, p=2) # (N, M)
-        pos_mask = corr_dist < pos_radius # (N, M)
-
-        # Find pairs that have topk scores
-        topk_scores = torch.topk(matching_scores.reshape(-1), k=topk, dim=-1)[0] # (N*M) -> (topk)
-        kth_biggest_score = topk_scores[-1] # (topk) -> (1, )
-        topk_mask = matching_scores >= kth_biggest_score # (N, M)
-
-        # Calculate ratio of GT among topk scores
-        ratio_of_gt_among_topk_scores = torch.logical_and(topk_mask, pos_mask).sum() / topk_mask.sum() # (N, M) -> (1, )
-        return ratio_of_gt_among_topk_scores
 
 
 

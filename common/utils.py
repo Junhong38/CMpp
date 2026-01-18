@@ -1,9 +1,80 @@
 r""" Helper functions """
-import random
-import numpy as np
 import torch
 import json
 import os
+
+
+
+def is_trg_larger(src_pcd, trg_pcd):
+    """
+    Args:
+        src_pcd (torch.Tensor): (N, 3)
+        trg_pcd (torch.Tensor): (M, 3)
+
+    Returns:
+        bool: True if source point cloud is smaller than target point cloud
+    """
+    # max - min -> volume
+    # Calculate max - min for all xyz coordinates, and product for all xyz.
+    # Finally, we can calculate bounding box volume
+    src_volume = (src_pcd.max(dim=0)[0] - src_pcd.min(dim=0)[0]).prod(dim=0)
+    trg_volume = (trg_pcd.max(dim=0)[0] - trg_pcd.min(dim=0)[0]).prod(dim=0)
+    return src_volume < trg_volume
+
+
+def pairwise_mating(src_pcd, trg_pcd, rotat, trans):
+    """
+    move src to trg
+
+    Args:
+        src_pcd (torch.Tensor): (N, 3)
+        trg_pcd (torch.Tensor): (M, 3)
+        rotat (torch.Tensor): (3, 3)
+        trans (torch.Tensor): (3)
+
+    Returns:
+        pcd_t (torch.Tensor): (N+M, 3)
+        pcd_t (list): [(N, 3), (M, 3)] if is_trg_larger else [(N, 3), (M, 3)]
+    """
+    # Remind:
+    # estimated_transform: trg_pcd = R * src_pcd + t
+
+    # When GT
+    # GT Rt format already fits to R * src + t
+
+    # When pred
+    # target_point = R * source_point + t
+    # Hence, pred format already fits to R * src + t format
+
+    pcd_t = []
+    # Fix target point, and move source point to target point
+    # src_pcd_t = R * src_pcd + t
+    src_pcd_t = _transform(src_pcd, rotat, trans)
+    pcd_t = [src_pcd_t, trg_pcd]
+    
+    return torch.cat(pcd_t, dim=0), pcd_t
+
+
+def _transform(pcd, rotat=None, trans=None):
+    """
+    rotat * pcd + trans
+
+    Args:
+        pcd (torch.Tensor): (N, 3)
+        rotat (torch.Tensor, optional): (3, 3). Defaults to None.
+        trans (torch.Tensor, optional): (3). Defaults to None.
+
+    Returns:
+        pcd_t (torch.Tensor): (N, 3) 
+    """
+    if rotat == None: rotat = torch.eye(3, 3)
+    if trans == None: trans = torch.zeros(3)
+
+    rotat = rotat.to(pcd.device)
+    trans = trans.to(pcd.device)
+
+    return torch.einsum('x y, n y -> n x', rotat, pcd) + trans
+
 
 
 def check_inf_or_nan(tensor, message: str, log=None):
@@ -16,48 +87,6 @@ def check_inf_or_nan(tensor, message: str, log=None):
         log(f'DEBUG/{str(message)}-mean', tensor.mean().item(), prog_bar=False, logger=True, sync_dist=True, rank_zero_only=True, on_step=True, on_epoch=False, batch_size=1)
         log(f'DEBUG/{str(message)}-max', tensor.max().item(), prog_bar=False, logger=True, sync_dist=True, rank_zero_only=True, on_step=True, on_epoch=False, batch_size=1)
         log(f'DEBUG/{str(message)}-min', tensor.min().item(), prog_bar=False, logger=True, sync_dist=True, rank_zero_only=True, on_step=True, on_epoch=False, batch_size=1)
-
-
-def fix_randseed(seed):
-    r""" Set random seeds for reproducibility """
-    if seed is None:
-        seed = int(random.random() * 1e5)
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    torch.backends.cudnn.benchmark = False
-    torch.backends.cudnn.deterministic = True
-
-
-def mean(x):
-    return sum(x) / len(x) if len(x) > 0 else 0.0
-
-
-def to_cuda(batch):
-    for key, value in batch.items():
-        if isinstance(value, dict):
-            # continue
-            for k, v in value.items():
-                if isinstance(v[0], torch.Tensor):
-                    value[k] = [v_.cuda() for v_ in v]
-        elif isinstance(value[0], torch.Tensor):
-            batch[key] = [v.cuda() for v in value]
-    batch['filepath'] = batch['filepath'][0]
-    batch['obj_class'] = batch['obj_class'][0]
-    batch['gt_correspondence'] = batch['gt_correspondence'][0]
-
-    if batch.get('n_frac') is not None: batch['n_frac'] = batch['n_frac'][0]
-    if batch.get('order') is not None: batch['order'] = batch['order'][0]
-    if batch.get('anchor_idx') is not None: batch['anchor_idx'] = batch['anchor_idx'][0]
-
-    return batch
-
-
-def to_cpu(tensor):
-    return tensor.detach().clone().cpu()
-
 
 
 def instance_wise_results_to_json(instance_wise_results, dir_path, filename):
@@ -82,32 +111,6 @@ def instance_wise_results_to_json(instance_wise_results, dir_path, filename):
         json.dump(json_results, f, indent=4)
 
 
-
-def calculate_accuracy_of_seg_results(seg_results, positive_mask):
-    """
-    Args:
-        seg_results (torch.Tensor): (N+M)
-        target (torch.Tensor): (N, M)
-    Returns:
-        accuracy (float): accuracy of segmentation results
-    """
-    seg_pred = seg_results > 0.5
-
-    src_part_gt = positive_mask.any(dim=-1) # (N, )
-    trg_part_gt = positive_mask.any(dim=-2) # (M, )
-    total_gt = torch.concat([src_part_gt, trg_part_gt], dim=0) # (N+M, )
-
-    intersection = torch.logical_and(seg_pred, total_gt) # (N+M, )
-
-    sum_of_total_gt = total_gt.sum()
-    sum_of_seg_pred = seg_pred.sum()
-    sum_of_intersection = intersection.sum()
-    seg_recall = sum_of_intersection / sum_of_total_gt if sum_of_total_gt > 0 else torch.tensor(0.0, device=seg_results.device) # Among all gt points, how many points are covered by the predicted points
-    seg_precision = sum_of_intersection / sum_of_seg_pred if sum_of_seg_pred > 0 else torch.tensor(0.0, device=seg_results.device) # Among all predicted points, how many points are correctly predicted
-    return seg_recall, seg_precision
-
-
-
 def divide_parameters_into_ori_and_others(named_parameters):
     ori_parameters = []
     other_parameters = []
@@ -119,4 +122,5 @@ def divide_parameters_into_ori_and_others(named_parameters):
             other_parameters.append(param)
     
     return ori_parameters, other_parameters
+
 

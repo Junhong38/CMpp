@@ -55,3 +55,13 @@ rm -rf checkpoint/SECOND_G8NDB3_SEGATTENDICELR0001_LOAD_G8NDB3_W10/ && CUDA_VISI
 
 
 
+
+rm -rf checkpoint/IMPLE/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --scale full --load_ori checkpoint_1stStage/FIRST_G8NDB6SN_NPCFNR5C1/models/last.ckpt --freeze_ori_2nd_stage all --logpath IMPLE --epochs 0 --scheduler_mode cos --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --batch_size 3 --flip_normal_mode rightv5 --wandb --wandb_entity CMppProject --wandb_project CMpp
+
+
+rm -rf checkpoint/IMPLE/ && CUDA_VISIBLE_DEVICES=0 python main.py --scale full --load_ori checkpoint_1stStage/FIRST_G8NDB6SN_NPCFNR5C1/models/last.ckpt --freeze_ori_2nd_stage all --logpath IMPLE --epochs 0 --scheduler_mode cos --gpus 0 --n_worker 6 --batch_size 3 --flip_normal_mode rightv5
+
+
+rm -rf checkpoint/IMPLE/ && CUDA_VISIBLE_DEVICES=0 python main.py --scale overfitting --load_ori checkpoint_1stStage/FIRST_G8NDB6SN_NPCFNR5C1/models/last.ckpt --freeze_ori_2nd_stage all --logpath IMPLE --epochs 0 --scheduler_mode cos --gpus 0 --n_worker 1 --batch_size 1 --flip_normal_mode rightv5
+
+
