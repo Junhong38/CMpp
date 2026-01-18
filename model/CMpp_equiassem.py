@@ -603,34 +603,7 @@ class EquiAssem(pl.LightningModule):
 
             mode (string): ['train', 'val', 'test']
 
-        Returns:
-            out_dict (dict)
-                - During training,
-                    - o_loss: (1, )
-                    - s_loss: (1, )
-                    - p_loss: (1, )
-                    - loss: (1, )
-                
-                - During validation or test, the following keys are added
-                    - estimated_rotat: (3, 3)
-                    - estimated_trans: (3)
-                    - src_ori: (1, N, 3, 3)
-                    - trg_ori: (1, M, 3, 3)
-
-            loss (dict)
-                - During training,
-                    - o_loss: (1, )
-                    - s_loss: (1, )
-                    - p_loss: (1, )
-                    - loss: (1, )
-                
-                - During validation or test, the following keys are added
-                    - cd: (1, )
-                    - crd: (1, )
-                    - rrmse: (1, )
-                    - trmse: (1, )
-                    - rpf_rmse: (1, )
-                    - rpf_tmse: (1, )
+            batch_idx (int): Batch index, only for visualization
         """
         assert in_dict['pcd_batch_info'].max() == 1, f"We assume there are two objects in the batch, but got {in_dict['pcd_batch_info'].max()}"
 
@@ -832,7 +805,7 @@ class EquiAssem(pl.LightningModule):
         result = do_multibatch_optimal_transport(matching_scores, batch_info, active_mask, auxiliary_info_dict, mode=mode)
         return result
     
-    
+
     @torch.no_grad()
     def evaluate_prediction(self, in_dict, out_dict, mode):
 
