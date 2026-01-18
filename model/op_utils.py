@@ -72,9 +72,9 @@ def make_inv_feats(oris, oris_batch_info, equi_feats, flip_normal_mode, src_flip
         oris (torch.Tensor): (B, N+M, 3, 3)
         oris_batch_info (torch.Tensor): (B, N+M, ), batch index of the point cloud
         equi_feats (torch.Tensor): (B, C, 3, N+M)
-        src_flip (bool, optional): Whether to flip the normal vector of src. Defaults to True.
         flip_normal_mode (str, optional): 'right', 'rightv1_2', 'rightv1_3', 'rightv2', 'rightv3', 'rightv4', 'rightv5', 'mix', 'none'. Defaults to 'none'.
-
+        src_flip (bool, optional): Whether to flip the normal vector of src. Defaults to True.
+        
     Returns:
         inv_feats (torch.Tensor): (B, C*3, N)
     """

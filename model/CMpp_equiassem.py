@@ -639,7 +639,7 @@ class EquiAssem(pl.LightningModule):
 
         
         # 5. Invariant Features
-        inv_feats = make_inv_feats(oris, pcd_batch_info, equi_feats, self.flip_normal_mode,src_flip=True) # (B, C*3, N+M)
+        inv_feats = make_inv_feats(oris, pcd_batch_info, equi_feats, self.flip_normal_mode, src_flip=True) # (B, C*3, N+M)
         if self.flip_normal_mode != 'none' and mode in ['train', 'val']:
             symmetric_inv_feats = make_inv_feats(oris, pcd_batch_info, equi_feats, self.flip_normal_mode, src_flip=False) # (B, C*3, N+M)
         
