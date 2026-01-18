@@ -14,11 +14,12 @@ def ransac_rigid(
         scores: torch.Tensor,
         score_threshold: float,
         num_iters: int = 100,
-        threshold: float = 0.009,
+        threshold: float = 0.01,
         normal_threshold: float = 0.0,
-        matching_choice: str = 'one-to-one', # if sampling is the "same"
-        # matching_choice: str = 'many-to-many', # if sampling is just uniform
+        # matching_choice: str = 'one-to-one', # if sampling is the "same"
+        matching_choice: str = 'many-to-many', # if sampling is just uniform
         strong_normal_threshold = 0.0
+
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """
     Robustly estimate a rigid transform that aligns ``src_pcd`` to ``trg_pcd``.
@@ -116,7 +117,7 @@ def ransac_rigid(
     # print(f"best_translation: {best_translation}")
 
     # Optimal Estimation
-    strong_distance_threshold = 0.009
+    strong_distance_threshold = 0.008
     # strong_distance_threshold = threshold
     num_iters_for_optimal_estimation = 100
     

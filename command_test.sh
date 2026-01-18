@@ -149,3 +149,15 @@ python test.py --logpath sd-RANSAC_MS_SS_top0.05%_norm90_Snorm90_dist0.01-0.008 
 
 
 --flip_normal_mode rightv1_2 --n_worker 6 --load ./checkpoint/checkpoint_CMpp/G8NDB2_F_BV0V0_MH_P0075M0075+N145M145+BD+HNM+NK0+DCOS+AD_NPCFNR1-2_MCM+MNSoft_S1P1_6/models/last.ckpt --gpus 0 1 2 3 4 5 6 7
+
+
+
+
+rm -rf checkpoint/TOP128NP5000SAMPLERAND_LOAD_G8NDB3_SEGMLPDICE_W10/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python test.py --load checkpoint/checkpoint_CMpp/G8NDB3_SEGMLPDICE_W10/models/last.ckpt --scale full --logpath TOP128NP5000SAMPLERAND_LOAD_G8NDB3_SEGMLPDICE_W10 --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --flip_normal_mode none --seg_head_mode mlp --move_smaller --wandb --wandb_entity CMppProject --wandb_project CMpp_test
+rm -rf checkpoint/TOP128NP5000SAMPLERAND+SEG_LOAD_G8NDB3_SEGMLPDICE_W10/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python test.py --load checkpoint/checkpoint_CMpp/G8NDB3_SEGMLPDICE_W10/models/last.ckpt --scale full --logpath TOP128NP5000SAMPLERAND+SEG_LOAD_G8NDB3_SEGMLPDICE_W10 --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --flip_normal_mode none --seg_head_mode mlp --use_seg_result --move_smaller --wandb --wandb_entity CMppProject --wandb_project CMpp_test
+
+python test.py --load checkpoint/checkpoint_CMpp/NO_FLIP_W10/SECOND_G8NDB3_SEGMLPDICE_LOAD_G8NDB3_W10/models/last.ckpt --scale full --logpath test --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --flip_normal_mode none --seg_head_mode mlp --use_seg_result --move_smaller
+python test.py --logpath M_threshold-sd-RANSAC_MS_top64_norm135_Snorm154 --seg_head_mode mlp --use_seg_result --using_seg_mode threshold --RANSAC_type score_dependent --infer_topk 64 --RANSAC_normal_threshold 135 --RANSAC_strong_normal_threshold 154 --use_RANSAC --use_predicted_normal --move_smaller --flip_normal_mode none --n_worker 6 --load checkpoint/checkpoint_CMpp/NO_FLIP_W10/SECOND_G8NDB3_SEGMLPDICE_LOAD_G8NDB3_W10/models/last.ckpt --gpus 0 1 2 3 4 5 6 7
+
+
+python test.py --logpath mating-sd-RANSAC_MS_top128_norm135_Snorm160 --seg_head_mode mlp --use_seg_result --RANSAC_type score_dependent --infer_topk 128 --RANSAC_normal_threshold 135 --RANSAC_strong_normal_threshold 160 --use_RANSAC --use_predicted_normal --move_smaller --flip_normal_mode none --n_worker 6 --load checkpoint/checkpoint_CMpp/G8NDB3_SEGMLPDICE_W10/models/last.ckpt --gpus 0 1 2 3 4 5 6 7

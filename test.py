@@ -33,9 +33,11 @@ def test(args):
 
     # Model initialization
     model = EquiAssem(lr=0, # We don't need to use learning rate for testing
+                      ori_backbone_lr_weight=0.0, # We don't need to use this parameter for testing
                       scheduler_mode=None, # We don't need to use this parameter for testing
                       backbone=args.backbone,
                       double_bacbone=args.double_bacbone,
+                      seg_head_mode=args.seg_head_mode,
 
                       # Circle loss and point matching loss arguments
                       pos_radius=args.pos_radius,
@@ -58,6 +60,8 @@ def test(args):
                       s_loss_weight=0.0, # We don't need to use this parameter for testing
                       p_loss_weight=0.0, # We don't need to use this parameter for testing
                       o_loss_weight=0.0, # We don't need to use this parameter for testing
+                      seg_loss_weight=0.0, # We don't need to use this parameter for testing
+                      seg_loss_mode='bce', # We don't need to use this parameter for testing
 
                       visualize_mode=args.visualize_mode,
                       viz_metric_name=args.viz_metric_name,
@@ -90,7 +94,10 @@ def test(args):
                       RANSAC_type=args.RANSAC_type,
                       use_predicted_normal=args.use_predicted_normal,
                       RANSAC_normal_threshold=args.RANSAC_normal_threshold,
-                      RANSAC_strong_normal_threshold=args.RANSAC_strong_normal_threshold
+                      RANSAC_strong_normal_threshold=args.RANSAC_strong_normal_threshold,
+                      use_seg_result=args.use_seg_result,
+                      using_seg_mode=args.using_seg_mode,
+                      sampling_mode=args.sampling_mode,
                       )
     
     # Wandb logger
@@ -178,6 +185,7 @@ if __name__ == '__main__':
     parser.add_argument('--n_avn', type=int, default=0, help='Number of AVN layers for the equivariant shape feature')
     parser.add_argument('--mlp_mode', type=str, default='half', choices=['CMpp', 'CMpp_half', 'half', 'deep'])
     parser.add_argument('--normal_pred_mode', type=str, default='cross', choices=['cross', 'gram'])
+    parser.add_argument('--seg_head_mode', type=str, default='none', choices=['none', 'mlp', 'atten'])
 
 
     # Only for evaluation metrics
@@ -205,6 +213,8 @@ if __name__ == '__main__':
     parser.add_argument('--use_predicted_normal', action='store_true', help='If True, use predicted normal for inlier counting')
     parser.add_argument('--RANSAC_normal_threshold', type=float, default=0.0, help='Normal threshold in degree for RANSAC when use_predicted_normal is True')
     parser.add_argument('--RANSAC_strong_normal_threshold', type=float, default=0.0, help='Strong normal threshold in degree for RANSAC when use_predicted_normal is True')
+    parser.add_argument('--use_seg_result', action='store_true', help='If True, use segmentation result for matching')
+    parser.add_argument('--using_seg_mode', type=str, default='threshold', choices=['threshold', 'weight', 'logit_and_mean', 'logit_and_sum'])
 
 
     # Visualization arguments
@@ -248,5 +258,8 @@ if __name__ == '__main__':
     if args.learnable_softmax_temperature:
         assert args.matching_norm_mode == 'softmax', f"learnable_softmax_temperature is only allowed when matching_norm_mode is softmax, but got {args.matching_norm_mode}"
 
+    
+    if args.use_seg_result:
+        assert args.seg_head_mode != 'none', f"use_seg_result is only allowed when seg_head_mode is not none, but got {args.seg_head_mode}"
 
     test(args)

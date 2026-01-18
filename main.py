@@ -36,9 +36,11 @@ def main(args):
 
     # Model initialization        
     model = EquiAssem(lr=args.lr,
+                      ori_backbone_lr_weight=args.ori_backbone_lr_weight,
                       scheduler_mode=args.scheduler_mode,
                       backbone=args.backbone,
                       double_bacbone=args.double_bacbone,
+                      seg_head_mode=args.seg_head_mode,
 
                       # Circle loss and point matching loss arguments
                       pos_radius=args.pos_radius,
@@ -61,6 +63,8 @@ def main(args):
                       s_loss_weight=args.s_loss_weight,
                       p_loss_weight=args.p_loss_weight,
                       o_loss_weight=args.o_loss_weight,
+                      seg_loss_weight=args.seg_loss_weight,
+                      seg_loss_mode=args.seg_loss_mode,
 
                       visualize_mode=args.visualize_mode,
                       viz_metric_name='none', # This is not used for training
@@ -91,7 +95,8 @@ def main(args):
                       infer_score_threshold_ratio=0.0, # Block filtering correspondences during training
                       use_RANSAC=False, # RANSAC is not used for training
                       RANSAC_type='default', # RANSAC is not used for training
-                      use_predicted_normal=False # RANSAC is not used for training
+                      use_predicted_normal=False, # RANSAC is not used for training
+                      use_seg_result=False # During training, we do not use the segmentation result
                       )
 
     
@@ -147,6 +152,7 @@ def main(args):
     else: # Only train the normal vector
         callbacks = [
             LearningRateMonitor('epoch'),
+            checkpoint_callback_Oloss,
             latest_checkpoint_callback,
         ]
 
@@ -221,8 +227,11 @@ def main(args):
         print(f"Missing keys: {load_result[0]}")
         print(f"Unexpected keys: {load_result[1]}")
 
-        print(f"Freezing orientation backbone network")
-        model.freeze_ori_backbone()
+        if args.freeze_ori_2nd_stage:
+            print(f"Freezing orientation backbone network")
+            model.freeze_ori_backbone()
+        else:
+            print(f"Not freezing orientation backbone network")
     
     elif args.resume != '': # Resume training from the checkpoint
         ckp_path = args.resume
@@ -263,9 +272,11 @@ if __name__ == '__main__':
     parser.add_argument('--n_worker', type=int, default=4, help='Number of workers. If you use multi-GPU training, the number of workers is multiplied by the number of GPUs.')
     parser.add_argument('--load', type=str, default='', help='Load checkpoint for training')
     parser.add_argument('--load_ori', type=str, default='', help='Only load the orientation backbone network, this is only allowed when double_backbone, and stage 2')
+    parser.add_argument('--freeze_ori_2nd_stage', action='store_true')
     parser.add_argument('--resume', type=str, default='', help='Resume training from the checkpoint')
     parser.add_argument('--scheduler_mode', type=str, default='cos', choices=['none', 'cos', 'onecycle'])
     parser.add_argument('--gradient_clip_val', type=float, default=0.0, help='Gradient clip value')
+    parser.add_argument('--ori_backbone_lr_weight', type=float, default=1.0, help='Gradient clip value')
 
 
     # Model arguments
@@ -276,12 +287,15 @@ if __name__ == '__main__':
     parser.add_argument('--n_avn', type=int, default=0, help='Number of AVN layers for the equivariant shape feature')
     parser.add_argument('--mlp_mode', type=str, default='half', choices=['CMpp', 'CMpp_half', 'half', 'deep'])
     parser.add_argument('--normal_pred_mode', type=str, default='cross', choices=['cross', 'gram'])
+    parser.add_argument('--seg_head_mode', type=str, default='none', choices=['none', 'mlp', 'atten'])
     
 
     # Weights for losses
     parser.add_argument('--s_loss_weight', type=float, default=1.0, help='Weight for shape loss')
     parser.add_argument('--p_loss_weight', type=float, default=1.0, help='Weight for point loss')
     parser.add_argument('--o_loss_weight', type=float, default=1.0, help='Weight for orientation loss')
+    parser.add_argument('--seg_loss_weight', type=float, default=0.1, help='Weight for segmentation loss')
+    parser.add_argument('--seg_loss_mode', type=str, default='bce', choices=['dice', 'bce'])
 
 
     # Margin arguments which are used in circle loss

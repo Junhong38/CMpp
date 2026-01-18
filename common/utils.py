@@ -145,3 +145,38 @@ def save_final_result_as_txt(
         f.write(text)
 
     print(f"[Saved] {out_txt_path}")
+
+def calculate_accuracy_of_seg_results(seg_results, positive_mask):
+    """
+    Args:
+        seg_results (torch.Tensor): (N+M)
+        target (torch.Tensor): (N, M)
+    Returns:
+        accuracy (float): accuracy of segmentation results
+    """
+    seg_pred = seg_results > 0.5
+
+    src_part_gt = positive_mask.any(dim=-1) # (N, )
+    trg_part_gt = positive_mask.any(dim=-2) # (M, )
+    total_gt = torch.concat([src_part_gt, trg_part_gt], dim=0) # (N+M, )
+
+    intersection = torch.logical_and(seg_pred, total_gt) # (N+M, )
+
+    seg_coverage = intersection.sum() / total_gt.sum() # Among all gt points, how many points are covered by the predicted points
+    seg_accuracy = intersection.sum() / seg_pred.sum() # Among all predicted points, how many points are correctly predicted
+    return seg_coverage, seg_accuracy
+
+
+
+def divide_parameters_into_ori_and_others(named_parameters):
+    ori_parameters = []
+    other_parameters = []
+    
+    for name, param in named_parameters:
+        if name.startswith('ori_backbone.') or name.startswith('proj.'):
+            ori_parameters.append(param)
+        else:
+            other_parameters.append(param)
+    
+    return ori_parameters, other_parameters
+

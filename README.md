@@ -33,6 +33,9 @@ python setup.py install
 
 # install additional lib
 pip install rtree
+
+# install flash attention
+pip install flash-attn==2.7.3 --no-build-isolation
 ```
 
 ### Useful commands
