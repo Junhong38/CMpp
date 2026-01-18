@@ -9,11 +9,6 @@
 
 import torch
 import torch.nn as nn
-import torch.nn.init as init
-import torch.nn.functional as F
-
-from common.misc import batch2offset
-from pointcept_libs.pointops2.functions import pointops2 as pointops
 
 EPS = 1e-6
 

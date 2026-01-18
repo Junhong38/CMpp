@@ -1,9 +1,7 @@
-import torch
 import torch.nn as nn
 from model.backbone.vn_layers import get_graph_feature, mean_pool
 from model.backbone.vn_layers import VNLinearLeakyReLU, VNMaxPool
 
-# from lib.pointops.functions import pointops
 from pointcept_libs.pointops2.functions import pointops2 as pointops
 
 from common.misc import batch2offset

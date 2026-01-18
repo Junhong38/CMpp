@@ -1,4 +1,3 @@
-import torch
 import torch.nn as nn
 
 def return_simple_mlps(options, feat_dim):

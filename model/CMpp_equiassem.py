@@ -1,4 +1,3 @@
-import os
 import pytorch_lightning as pl
 from functools import partial
 
@@ -6,9 +5,6 @@ from functools import partial
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from einops import rearrange
-
-import flash_attn
 
 from model.backbone.vn_dgcnn import EQCNN_equi_unet, EQCNN_equi_unet_v2
 from model.backbone.vn_layers import VNLinear, VNLinearLeakyReLU
@@ -22,8 +18,7 @@ from model.op_utils import *
 from RANSAC.ransac import _RANSAC
 
 from common.metric_utils import *
-from common.misc import batch_scaling, batch2offset, offset2bincount
-from common.rotation import gram_schmidt_with_cross, gram_schmidt, rodrigues_to_rotmat, rotate_by_rotation_matrix, src_reverse_trg_normal_gram_schmidt_with_cross
+from common.misc import batch_scaling
 from common.utils import instance_wise_results_to_json, divide_parameters_into_ori_and_others
 from common.viz import visualize_negative_hard_mask, draw_test_results_histogram
 
