@@ -64,7 +64,7 @@ def get_feats_and_oris(backbone, ori_backbone, equi_layer, proj, normal_pred_mod
 
 
 
-def make_inv_feats(oris, oris_batch_info, equi_feats, flip_normal_mode, src_flip=True):
+def make_inv_feats(oris, oris_batch_info, equi_feats, flip_normal_mode, flip_mode='src'):
     """Make invariant features
     Assume there are two objects in the batch
     
@@ -73,8 +73,7 @@ def make_inv_feats(oris, oris_batch_info, equi_feats, flip_normal_mode, src_flip
         oris_batch_info (torch.Tensor): (B, N+M, ), batch index of the point cloud
         equi_feats (torch.Tensor): (B, C, 3, N+M)
         flip_normal_mode (str, optional): 'right', 'rightv1_2', 'rightv1_3', 'rightv2', 'rightv3', 'rightv4', 'rightv5', 'mix', 'none'. Defaults to 'none'.
-        src_flip (bool, optional): Whether to flip the normal vector of src. Defaults to True.
-        
+        flip_mode (str, optional): 'src' or 'trg' or 'all'. Defaults to 'src'.
     Returns:
         inv_feats (torch.Tensor): (B, C*3, N)
     """
@@ -100,20 +99,26 @@ def make_inv_feats(oris, oris_batch_info, equi_feats, flip_normal_mode, src_flip
         elif flip_normal_mode == 'rightv5':
             postprocessed_oris = - oris
         
-        if src_flip: # Flip the normal vector of src
+        if flip_mode == 'src': # Flip the normal vector of src
             # We assume there are two objects in the batch
             src_batch_info = oris_batch_info == 0 # (B, N+M, )
             result_oris = postprocessed_oris * src_batch_info[:,:,None,None] + oris * (~ src_batch_info)[:,:,None,None]
         
-        else: # Flip the normal vector of trg
+        elif flip_mode == 'trg': # Flip the normal vector of trg
             trg_batch_info = oris_batch_info == 1 # (B, N+M, )
             result_oris = postprocessed_oris * trg_batch_info[:,:,None,None] + oris * (~ trg_batch_info)[:,:,None,None]
+        
+        elif flip_mode == 'all': # Flip the normal vector of src and trg
+            result_oris = postprocessed_oris
+        
+        else:
+            raise ValueError(f"flip_mode must be in ['src', 'trg', 'all'], but got {flip_mode}")
     
     elif flip_normal_mode == 'none':
         result_oris = oris
     
     else:
-        raise ValueError(f"flip_normal_mode must be in ['right', 'mix', 'none'], but got {flip_normal_mode}")
+        raise ValueError(f"flip_normal_mode must be in ['right', 'rightv1_2', 'rightv1_3', 'rightv2', 'rightv3', 'rightv4', 'rightv5', 'mix', 'none'], but got {flip_normal_mode}")
     
     # (B, C, 3, N) -> (B, N, C, 3) @ (B, N, 3, 3) -> (B, N, 3, 3) => (B, N, C, 3)
     inv_feats = torch.matmul(equi_feats.permute(0, 3, 1, 2).float(), result_oris.transpose(-2,-1).float()) 
@@ -212,27 +217,32 @@ def return_active_mask(batch_info):
     return active_parts
 
 
-def calculate_matching_score(shape_feats, active_mask, eps=1e-8, mode='CM'):
+def calculate_matching_score(src_shape_feats, trg_shape_feats, active_mask, eps=1e-8, mode='CM'):
     """
     Calculate matching score between src and trg features
     Assume there are two objects in the batch
 
     Args:
-        shape_feats (torch.Tensor): (B, D, N+M)
+        src_shape_feats (torch.Tensor): (B, D, N+M)
+        trg_shape_feats (torch.Tensor): (B, D, N+M)
         active_mask (torch.Tensor): (B, N+M, N+M), True if the point is active
         eps (float, optional): Epsilon for avoiding division by zero. Defaults to 1e-8.
         mode (str, optional): 'CM' or 'cossim'. Defaults to 'CM'.
     Returns:
         matching_scores (torch.Tensor): (B, N+M, N+M)
     """
+    assert src_shape_feats.shape[1] == trg_shape_feats.shape[1], f"src_shape_feats.shape: {src_shape_feats.shape}, trg_shape_feats.shape: {trg_shape_feats.shape}"
+    assert src_shape_feats.shape[2] == active_mask.shape[1], f"src_shape_feats.shape: {src_shape_feats.shape}, trg_shape_feats.shape: {active_mask.shape}"
+    assert trg_shape_feats.shape[2] == active_mask.shape[2], f"trg_shape_feats.shape: {trg_shape_feats.shape}, active_mask.shape: {active_mask.shape}"
 
     if mode == 'CM':
-        matching_scores = torch.einsum('b c n , b c m -> b n m', shape_feats, shape_feats) # (B, N+M, N+M)
-        matching_scores = matching_scores / (shape_feats.shape[1] ** 0.5 + eps) # 1e-8 is for avoiding division by zero
+        matching_scores = torch.einsum('b c n , b c m -> b n m', src_shape_feats, trg_shape_feats) # (B, N+M, N+M)
+        matching_scores = matching_scores / (src_shape_feats.shape[1] ** 0.5 + eps) # 1e-8 is for avoiding division by zero
     
     else:
-        normalized_shape_feats = nn.functional.normalize(shape_feats, p=2, dim=1) # (B, D, N+M)
-        matching_scores = torch.einsum('b c n , b c m -> b n m', normalized_shape_feats, normalized_shape_feats) # (B, N+M, N+M)
+        normalized_src_shape_feats = nn.functional.normalize(src_shape_feats, p=2, dim=1) # (B, D, N+M)
+        normalized_trg_shape_feats = nn.functional.normalize(trg_shape_feats, p=2, dim=1) # (B, D, N+M)
+        matching_scores = torch.einsum('b c n , b c m -> b n m', normalized_src_shape_feats, normalized_trg_shape_feats) # (B, N+M, N+M)
 
     # Remove the matching scores between the same objects
     matching_scores = matching_scores * active_mask

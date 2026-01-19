@@ -82,3 +82,20 @@ def extract_all_objects(tensor, batch_info):
         result_objs.append(selected_part)
     
     return result_objs
+
+
+def extract_all_objects_by_offset(tensor, offset):
+    """
+    Args:
+        tensor (torch.Tensor): (N, ....)
+        offset (torch.Tensor): (B, )
+        target_batch_idx (int): target batch index
+    Returns:
+        tensor (torch.Tensor): (N, ...)
+    """
+    all_objs = []
+    for obj_idx in range(offset.shape[0]-1):
+        obj = tensor[offset[obj_idx]:offset[obj_idx+1]]
+        all_objs.append(obj)
+    return all_objs
+    

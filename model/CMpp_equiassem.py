@@ -14,12 +14,13 @@ from model.learnable_sinkhorn import LearnableLogOptimalTransport
 from model.local_global_registration import LocalGlobalRegistration
 from model.eval_utils import run_evaluation
 from model.op_utils import *
+from model.multi_part_op_utils import *
 
 from RANSAC.ransac import _RANSAC
 
 from common.metric_utils import *
-from common.misc import batch_scaling
-from common.utils import instance_wise_results_to_json, divide_parameters_into_ori_and_others
+from common.misc import batch_scaling, extract_all_objects_by_offset, batch2offset
+from common.utils import instance_wise_results_to_json, divide_parameters_into_ori_and_others, pairwise_mating
 from common.viz import visualize_negative_hard_mask, draw_test_results_histogram
 
 
@@ -89,7 +90,8 @@ class EquiAssem(pl.LightningModule):
             use_RANSAC=False,
             RANSAC_type='default',
             use_predicted_normal=False,
-            use_seg_result=False
+            use_seg_result=False,
+            cos_threshold=0.0,
             ):
         """Equivariant Assembly Model for 3D Object Assembly
 
@@ -158,6 +160,7 @@ class EquiAssem(pl.LightningModule):
             RANSAC_type (str, optional): 'default' or 'score_dependent'. Defaults to 'default'.
             use_predicted_normal (bool, optional): Whether to use predicted normal for inlier counting. Defaults to False.
             use_seg_result (bool, optional): Whether to use segmentation result for matching. Defaults to False.
+            cos_threshold (float, optional): Threshold for cosine similarity. This is used only during multi-part assembly. Defaults to 0.0.
         """
         super(EquiAssem, self).__init__()
 
@@ -211,6 +214,7 @@ class EquiAssem(pl.LightningModule):
         print(f"RANSAC_type: {RANSAC_type}")
         print(f"use_predicted_normal: {use_predicted_normal}")
         print(f"use_seg_result: {use_seg_result}")
+        print(f"cos_threshold: {cos_threshold}")
         print("------------------------------------------------------")
 
         self.lr = lr
@@ -244,6 +248,7 @@ class EquiAssem(pl.LightningModule):
         self.RANSAC_type = RANSAC_type
         self.use_predicted_normal = use_predicted_normal
         self.use_seg_result = use_seg_result
+        self.cos_threshold = cos_threshold
         
         # Output feature dimension of Feature Extractor
         self.feat_dim = 1024
@@ -501,7 +506,17 @@ class EquiAssem(pl.LightningModule):
         else:
             exit("stop")
         """
-        _, loss_dict = self.forward_pass(in_dict, mode='test')
+
+        if in_dict['num_parts'][0] == 2:
+            _, loss_dict = self.forward_pass(in_dict, mode='test')
+        
+        elif in_dict['num_parts'][0] > 2:
+            print(f"in_dict['num_parts']: {in_dict['num_parts'][0]}")
+            _, loss_dict = self.forward_pass_for_multiple_parts(in_dict, mode='test')
+        
+        else:
+            raise ValueError(f"num_parts must be 2 or greater, but got {in_dict['num_parts'][0]}")
+        
         self.test_step_outputs.append(loss_dict)
         return loss_dict
 
@@ -639,9 +654,9 @@ class EquiAssem(pl.LightningModule):
 
         
         # 5. Invariant Features
-        inv_feats = make_inv_feats(oris, pcd_batch_info, equi_feats, self.flip_normal_mode, src_flip=True) # (B, C*3, N+M)
+        inv_feats = make_inv_feats(oris, pcd_batch_info, equi_feats, self.flip_normal_mode, flip_mode='src') # (B, C*3, N+M)
         if self.flip_normal_mode != 'none' and mode in ['train', 'val']:
-            symmetric_inv_feats = make_inv_feats(oris, pcd_batch_info, equi_feats, self.flip_normal_mode, src_flip=False) # (B, C*3, N+M)
+            symmetric_inv_feats = make_inv_feats(oris, pcd_batch_info, equi_feats, self.flip_normal_mode, flip_mode='trg') # (B, C*3, N+M)
         
 
         # 6. SHAPE DESCRIPTOR 
@@ -656,9 +671,9 @@ class EquiAssem(pl.LightningModule):
 
         # 7. Calculate Matching Scores
         active_mask = return_active_mask(pcd_batch_info)
-        shape_matching_scores = calculate_matching_score(shape_feats, active_mask, eps=1e-8, mode=self.matching_score_mode)
+        shape_matching_scores = calculate_matching_score(shape_feats, shape_feats, active_mask, eps=1e-8, mode=self.matching_score_mode)
         if self.flip_normal_mode != 'none' and mode in ['train', 'val']:
-            symmetric_shape_matching_scores = calculate_matching_score(symmetric_shape_feats, active_mask, eps=1e-8, mode=self.matching_score_mode)
+            symmetric_shape_matching_scores = calculate_matching_score(symmetric_shape_feats, symmetric_shape_feats, active_mask, eps=1e-8, mode=self.matching_score_mode)
         
 
         # 8. Optimal Transport
@@ -838,4 +853,111 @@ class EquiAssem(pl.LightningModule):
         out_dict, eval_dict = run_evaluation(in_dict=in_dict, out_dict=out_dict, settings_dict=settings_for_evaluation, func_for_pred=func_for_rot_and_trans, mode=mode)
         return out_dict, eval_dict
     
+
+    def forward_pass_for_multiple_parts(self, in_dict, mode):
+        """
+        Assume batch size must be 1
+
+        Args:
+            in_dict (dict): input dictionary for forward pass, which is same as forward_pass
+            mode (str): ['train', 'val', 'test']
+        """
+        print(f"forward_pass_for_multiple_parts")
+        pred_rot_and_trans_dict, assembled_pcds = self.assemble_obj_by_obj(in_dict)
+        exit("stop")
+    
+    
+    def assemble_obj_by_obj(self, in_dict):
+        """
+        Assume batch size must be 1
+
+        Args:
+            in_dict (dict): input dictionary for forward pass, which is same as forward_pass
+        """
+
+        pcd_input = in_dict['pcd_t'] # (B, N+M, 3)
+        pcd_batch_info = in_dict['pcd_batch_info'] # (B, N+M, )
+        offset = torch.concat([torch.zeros(1, device=pcd_batch_info.device, dtype=torch.int), batch2offset(pcd_batch_info[0])], dim=0) # size of parts
+        num_of_parts = in_dict['num_parts'][0]
+        initial_anchor_idx = in_dict['anchor_idx'][0]
+
+        # Extract all point clouds
+        list_of_all_pcds = extract_all_objects_by_offset(pcd_input[0], offset) # list of (N, 3)
+
+        # Set initial setting
+        # If there are N objs, then let us assume the anchor is the target object, and the rest N-1 objects are the another single huge source object
+        setting_for_assembly = make_setting_for_next_iteration(None, list_of_all_pcds[in_dict['anchor_idx'][0]], list_of_all_pcds, in_dict['anchor_idx'][0], -1)
+
+
+        pred_rot_and_trans = []
+        for i in range(num_of_parts - 1):
+            # Calculate matching scores
+            # setting_for_assembly['two_part_assumption_batch_info']: We assume there are two objects in the batch, so idx:0 means src, idx:1 means trg
+            # Actually, there are N objects in the batch, so we want to backbone to be confused by this batch info
+            # Hence, we give setting_for_assembly['batch_scaled_pcd_batch_info'] to the backbone for distinguishing N objects
+            # However, for orientation, we want to assume that only source object use left-handed rule, so we give setting_for_assembly['two_part_assumption_batch_info']
+            oris, matching_scores_drop, mating_surface_seg_results = self.return_matching_scores(setting_for_assembly['input_pcds'], setting_for_assembly['two_part_assumption_batch_info'], setting_for_assembly['batch_scaled_batch_info'])
+            list_of_oris = extract_all_objects_by_offset(oris[0,:,0,:], setting_for_assembly['offset']) # list of (N, 3), only extract normals
+            
+            # Select object to be assembled
+            list_of_all_src_to_trg_score, selected_obj_idx = select_obj_to_be_assembled(matching_scores_drop, setting_for_assembly['anchor'], setting_for_assembly['offset'], self.infer_topk)
+            final_src_pcd = setting_for_assembly['list_of_input_pcds'][selected_obj_idx]
+            final_trg_pcd = setting_for_assembly['list_of_input_pcds'][setting_for_assembly['anchor']]
+            final_matching_scores_drop = list_of_all_src_to_trg_score[selected_obj_idx]
+
+            # Calculate transformation
+            estimated_transform, used_corr = self.fine_matching(final_src_pcd.unsqueeze(0), final_trg_pcd.unsqueeze(0), final_matching_scores_drop.unsqueeze(0), no_exp=(self.matching_norm_mode != 'sinkhorn'))
+            estimated_rotat = estimated_transform[:3, :3]
+            estimated_trans = estimated_transform[:3, 3]
+
+            # Assemble
+            assm_pred, list_of_assm_pred = pairwise_mating(final_src_pcd, final_trg_pcd, estimated_rotat, estimated_trans) # (N+M, 3)
+
+            # Remove inner parts which is not needed for next iteration
+            assm_pred_after_removing_inner_parts = remove_inner_parts(assm_pred, list_of_assm_pred, list_of_oris, setting_for_assembly['anchor'], selected_obj_idx, pos_radius=self.pos_radius, cos_threshold=self.cos_threshold)
+
+            # Make setting for next iteration
+            setting_for_assembly = make_setting_for_next_iteration(setting_for_assembly, assm_pred_after_removing_inner_parts, setting_for_assembly['list_of_input_pcds'], setting_for_assembly['anchor'], selected_obj_idx)
+
+            # Save prediction
+            pred_rot_and_trans.append([estimated_rotat, estimated_trans])
+        
+        # Apply transformation to the point clouds
+        pred_rot_and_trans_dict = {}
+        assembled_pcds = [list_of_all_pcds[in_dict['anchor_idx'][0]]]
+        for i in range(len(pred_rot_and_trans)):
+            obj_idx_to_move = setting_for_assembly['obj_ids'][0][1+i]
+            origin_src_pcd = list_of_all_pcds[obj_idx_to_move]
+            assm_pred, list_of_assm_pred = pairwise_mating(origin_src_pcd, list_of_all_pcds[in_dict['anchor_idx'][0]], pred_rot_and_trans[i][0], pred_rot_and_trans[i][1]) # (N+M, 3)
+            assembled_pcds.append(list_of_assm_pred[0])
+            pred_rot_and_trans_dict[f"{obj_idx_to_move}-{in_dict['anchor_idx'][0]}"] = [pred_rot_and_trans[i][0], pred_rot_and_trans[i][1]]
+        
+        return pred_rot_and_trans_dict, assembled_pcds
+    
+
+
+    def return_matching_scores(self, pcd_input, batch_info, batch_scaled_batch_info):
+        # Get equivariant features and orientation matrices
+        # equivariant features: (B, C, 3, N+M) , orientation matrices: (B, N+M, 3, 3)
+        equi_feats, oris = get_feats_and_oris(self.backbone, self.ori_backbone, self.equi_layer, self.proj, self.normal_pred_mode, self.flip_normal_mode, self.only_train_normal, pcd_input, batch_info, batch_scaled_batch_info)
+
+        # Invariant Features
+        inv_feats = make_inv_feats(oris, batch_info, equi_feats, self.flip_normal_mode, flip_mode='src') # (B, C*3, N+M)
+
+        # SHAPE DESCRIPTOR 
+        shape_feats = self.shape_mlp(inv_feats) # (B, C*3, N+M) -> (B, D, N+M)
+
+        # [Optional] Segmentation Head
+        mating_surface_seg_results = self.feed_forward_seg_head(shape_feats, batch_scaled_batch_info) if self.seg_head_mode != 'none' else None # (B, D, N+M) -> (B, N+M)
+
+        # Calculate Matching Scores
+        active_mask = return_active_mask(batch_info)
+        shape_matching_scores = calculate_matching_score(shape_feats, shape_feats, active_mask, eps=1e-8, mode=self.matching_score_mode)
+
+        # Optimal Transport
+        # Optimal Transport is in log space, so inside registration, there is exp operation
+        matching_scores = self.multibatch_optimal_transport(shape_matching_scores, batch_info, active_mask, mode=self.matching_norm_mode) # (B, N+M+1, N+M+1) if mode is ['sinkhorn', 'softmax'], otherwise (B, N+M, N+M)
+        matching_scores_drop = matching_scores[:,:-1,:-1] if self.matching_norm_mode in ['sinkhorn', 'softmax'] else matching_scores # (B, N+M, N+M)
+
+        return oris, matching_scores_drop, mating_surface_seg_results
    

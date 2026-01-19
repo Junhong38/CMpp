@@ -156,7 +156,7 @@ class DatasetBreakingBad(Dataset):
             key = f"{src_idx}-{trg_idx}"
             permut_relative_transform[key] = relative_rotat, relative_trans
 
-        if self.split in ['train', 'val']: 
+        if self.split in ['train']: 
             return {'0-1':permut_relative_transform['0-1']}
         else: 
             return permut_relative_transform
@@ -233,6 +233,7 @@ class DatasetBreakingBad(Dataset):
                 'mesh_t': [torch.tensor(_mesh.vertices).float() for _mesh in mesh_t], # list of torch.Tensor, (N', 3)
                 'mesh_faces': [torch.tensor(_mesh.faces) for _mesh in mesh], # list of torch.Tensor, (F, 3)
                 'relative_trsfm': gt_relative_trsfm, # dict, key: string e.g. '0-1', value: tuple of (torch.Tensor (3, 3), torch.Tensor (3, ))
+                'num_parts': len(mesh), # integer e.g. 2
             }
             batch.update(eval_dict)
     
@@ -441,7 +442,7 @@ def collate_fn(batch):
     result_batch = {}
 
     for batch_key in batch[0].keys():
-        if batch_key in ['eval_idx', 'n_frac', 'anchor_idx']: # Single numerical value
+        if batch_key in ['eval_idx', 'n_frac', 'anchor_idx', 'num_parts']: # Single numerical value
             result_batch[batch_key] = torch.tensor([a_batch[batch_key] for a_batch in batch]) # (B, )
 
         elif batch_key in ['filepath', 'obj_class']: # Single string value

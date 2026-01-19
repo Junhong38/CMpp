@@ -93,7 +93,8 @@ def test(args):
                       use_RANSAC=args.use_RANSAC,
                       RANSAC_type=args.RANSAC_type,
                       use_predicted_normal=args.use_predicted_normal,
-                      use_seg_result=args.use_seg_result
+                      use_seg_result=args.use_seg_result,
+                      cos_threshold=args.cos_threshold,
                       )
     
     # Wandb logger
@@ -203,6 +204,7 @@ if __name__ == '__main__':
     parser.add_argument('--RANSAC_type', type=str, default='default', choices=['default', 'score_dependent'])
     parser.add_argument('--use_predicted_normal', action='store_true', help='If True, use predicted normal for inlier counting')
     parser.add_argument('--use_seg_result', action='store_true', help='If True, use segmentation result for matching')
+    parser.add_argument('--cos_threshold', type=float, default=0.0, help='Threshold for cosine similarity. This is used only during multi-part assembly.')
 
 
     # Visualization arguments
