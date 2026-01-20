@@ -21,8 +21,9 @@ from RANSAC.ransac import _RANSAC
 from common.metric_utils import *
 from common.misc import batch_scaling, extract_all_objects_by_offset, batch2offset
 from common.utils import instance_wise_results_to_json, divide_parameters_into_ori_and_others, pairwise_mating
-from common.viz import visualize_negative_hard_mask, draw_test_results_histogram
+from common.viz import visualize_negative_hard_mask, draw_test_results_histogram, save_pc
 
+import os
 
 
 class EquiAssem(pl.LightningModule):
@@ -92,6 +93,7 @@ class EquiAssem(pl.LightningModule):
             use_predicted_normal=False,
             use_seg_result=False,
             cos_threshold=0.0,
+            multi_part_assembly=False,
             ):
         """Equivariant Assembly Model for 3D Object Assembly
 
@@ -161,6 +163,7 @@ class EquiAssem(pl.LightningModule):
             use_predicted_normal (bool, optional): Whether to use predicted normal for inlier counting. Defaults to False.
             use_seg_result (bool, optional): Whether to use segmentation result for matching. Defaults to False.
             cos_threshold (float, optional): Threshold for cosine similarity. This is used only during multi-part assembly. Defaults to 0.0.
+            multi_part_assembly (bool, optional): Whether to use multi-part assembly. Defaults to False.
         """
         super(EquiAssem, self).__init__()
 
@@ -215,6 +218,7 @@ class EquiAssem(pl.LightningModule):
         print(f"use_predicted_normal: {use_predicted_normal}")
         print(f"use_seg_result: {use_seg_result}")
         print(f"cos_threshold: {cos_threshold}")
+        print(f"multi_part_assembly: {multi_part_assembly}")
         print("------------------------------------------------------")
 
         self.lr = lr
@@ -249,6 +253,7 @@ class EquiAssem(pl.LightningModule):
         self.use_predicted_normal = use_predicted_normal
         self.use_seg_result = use_seg_result
         self.cos_threshold = cos_threshold
+        self.multi_part_assembly = multi_part_assembly
         
         # Output feature dimension of Feature Extractor
         self.feat_dim = 1024
@@ -507,15 +512,13 @@ class EquiAssem(pl.LightningModule):
             exit("stop")
         """
 
-        if in_dict['num_parts'][0] == 2:
-            _, loss_dict = self.forward_pass(in_dict, mode='test')
-        
-        elif in_dict['num_parts'][0] > 2:
-            print(f"in_dict['num_parts']: {in_dict['num_parts'][0]}")
-            _, loss_dict = self.forward_pass_for_multiple_parts(in_dict, mode='test')
+        if self.multi_part_assembly:
+            assert in_dict['num_parts'][0] >= 2, f"num_parts must be greater than or equal to 2, but got {in_dict['num_parts'][0]}"
+            loss_dict = self.forward_pass_for_multiple_parts(in_dict, mode='test')
         
         else:
-            raise ValueError(f"num_parts must be 2 or greater, but got {in_dict['num_parts'][0]}")
+            assert in_dict['num_parts'][0] == 2, f"num_parts must be 2, but got {in_dict['num_parts'][0]}"
+            _, loss_dict = self.forward_pass(in_dict, mode='test')
         
         self.test_step_outputs.append(loss_dict)
         return loss_dict
@@ -862,9 +865,34 @@ class EquiAssem(pl.LightningModule):
             in_dict (dict): input dictionary for forward pass, which is same as forward_pass
             mode (str): ['train', 'val', 'test']
         """
-        print(f"forward_pass_for_multiple_parts")
-        pred_rot_and_trans_dict, assembled_pcds = self.assemble_obj_by_obj(in_dict)
-        exit("stop")
+        assert mode in ['test'], f"mode must be in ['test'], but got {mode}"
+        
+        pred_rot_and_trans_dict, list_of_assembled_pcds, list_of_gt_assembled_pcds, step_collector_for_viz = self.assemble_obj_by_obj(in_dict)
+
+        # Compute metrics
+        eval_result = compute_metrics(list_of_assembled_pcds, list_of_gt_assembled_pcds, pred_rot_and_trans_dict, in_dict['relative_trsfm'])
+        eval_result['filepath'] = in_dict['filepath'][0]
+
+        # Visualize results
+
+        if (mode =='test' and (self.visualize_mode != 'none')):
+            # Name of case
+            case_name = in_dict["filepath"][0].replace('/', '_')
+
+            vis_folder = os.path.join(self.ckp_dir, 'vis', f'GPU_{self.trainer.global_rank}', mode, case_name) # For mesh visualization
+            vis_hist_folder = os.path.join(self.ckp_dir, 'vis_hist', f'GPU_{self.trainer.global_rank}', mode, case_name) # For normal error histogram visualization
+            os.makedirs(vis_folder, exist_ok=True)
+            os.makedirs(vis_hist_folder, exist_ok=True)
+
+            # PCD light visualization
+            save_pc(f"{vis_folder}/assembled_pcds.ply", list_of_assembled_pcds)
+            save_pc(f"{vis_folder}/gt_assembled_pcds.ply", list_of_gt_assembled_pcds)
+
+            # Step-by-step assembled PCD visualization
+            for ith_step, step_pcds in enumerate(step_collector_for_viz):
+                save_pc(f"{vis_folder}/step_{ith_step}.ply", step_pcds)
+        
+        return eval_result
     
     
     def assemble_obj_by_obj(self, in_dict):
@@ -878,8 +906,8 @@ class EquiAssem(pl.LightningModule):
         pcd_input = in_dict['pcd_t'] # (B, N+M, 3)
         pcd_batch_info = in_dict['pcd_batch_info'] # (B, N+M, )
         offset = torch.concat([torch.zeros(1, device=pcd_batch_info.device, dtype=torch.int), batch2offset(pcd_batch_info[0])], dim=0) # size of parts
-        num_of_parts = in_dict['num_parts'][0]
-        initial_anchor_idx = in_dict['anchor_idx'][0]
+        num_of_parts = in_dict['num_parts'][0] # int
+        initial_anchor_idx = in_dict['anchor_idx'][0] # int
 
         # Extract all point clouds
         list_of_all_pcds = extract_all_objects_by_offset(pcd_input[0], offset) # list of (N, 3)
@@ -890,13 +918,14 @@ class EquiAssem(pl.LightningModule):
 
 
         pred_rot_and_trans = []
+        step_collector_for_viz = []
         for i in range(num_of_parts - 1):
             # Calculate matching scores
             # setting_for_assembly['two_part_assumption_batch_info']: We assume there are two objects in the batch, so idx:0 means src, idx:1 means trg
-            # Actually, there are N objects in the batch, so we want to backbone to be confused by this batch info
-            # Hence, we give setting_for_assembly['batch_scaled_pcd_batch_info'] to the backbone for distinguishing N objects
-            # However, for orientation, we want to assume that only source object use left-handed rule, so we give setting_for_assembly['two_part_assumption_batch_info']
-            oris, matching_scores_drop, mating_surface_seg_results = self.return_matching_scores(setting_for_assembly['input_pcds'], setting_for_assembly['two_part_assumption_batch_info'], setting_for_assembly['batch_scaled_batch_info'])
+            # Actually, there are N-1 objects in the source part, so we want to make VN-DGCNN run KNN only inside each object
+            # Hence, we give setting_for_assembly['batch_scaled_pcd_batch_info'] to the backbone for distinguishing N-1 objects
+            # However, for orientation, we want to assume that only source object flip in opposite direction, when it is needed, so we give setting_for_assembly['two_part_assumption_batch_info']
+            oris, matching_scores_drop, shape_matching_scores, mating_surface_seg_results = self.return_matching_scores(setting_for_assembly['input_pcds'], setting_for_assembly['two_part_assumption_batch_info'], setting_for_assembly['batch_scaled_batch_info'])
             list_of_oris = extract_all_objects_by_offset(oris[0,:,0,:], setting_for_assembly['offset']) # list of (N, 3), only extract normals
             
             # Select object to be assembled
@@ -906,12 +935,36 @@ class EquiAssem(pl.LightningModule):
             final_matching_scores_drop = list_of_all_src_to_trg_score[selected_obj_idx]
 
             # Calculate transformation
-            estimated_transform, used_corr = self.fine_matching(final_src_pcd.unsqueeze(0), final_trg_pcd.unsqueeze(0), final_matching_scores_drop.unsqueeze(0), no_exp=(self.matching_norm_mode != 'sinkhorn'))
+            if self.use_RANSAC:
+                list_of_shape_matching_scores = make_score_into_list_format(shape_matching_scores, setting_for_assembly['anchor'], setting_for_assembly['offset'])
+                final_shape_matching_scores = list_of_shape_matching_scores[selected_obj_idx]
+
+                if self.use_predicted_normal:
+                    list_of_frames = extract_all_objects_by_offset(oris[0,:,:,:], setting_for_assembly['offset']) # list of (N, 3, 3)
+                    src_frame = list_of_frames[selected_obj_idx] # (N, 3, 3)
+                    trg_frame = list_of_frames[setting_for_assembly['anchor']] # (M, 3, 3)
+                else:
+                    raise ValueError(f"use_predicted_normal must be True, but got {self.use_predicted_normal}")
+
+
+                estimated_transform, used_corr = _RANSAC(in_dict=in_dict, 
+                                                         shape_matching_scores=final_shape_matching_scores, 
+                                                         src_pcd=final_src_pcd, 
+                                                         trg_pcd=final_trg_pcd, 
+                                                         src_predicted_frame=src_frame,
+                                                         trg_predicted_frame=trg_frame,
+                                                         match_option=self.infer_match_option, 
+                                                         RANSAC_type=self.RANSAC_type, 
+                                                         topk=self.infer_topk)
+            else:
+                estimated_transform, used_corr = self.fine_matching(final_src_pcd.unsqueeze(0), final_trg_pcd.unsqueeze(0), final_matching_scores_drop.unsqueeze(0), no_exp=(self.matching_norm_mode != 'sinkhorn'))
+            
             estimated_rotat = estimated_transform[:3, :3]
             estimated_trans = estimated_transform[:3, 3]
 
             # Assemble
             assm_pred, list_of_assm_pred = pairwise_mating(final_src_pcd, final_trg_pcd, estimated_rotat, estimated_trans) # (N+M, 3)
+            step_collector_for_viz.append(list_of_assm_pred)
 
             # Remove inner parts which is not needed for next iteration
             assm_pred_after_removing_inner_parts = remove_inner_parts(assm_pred, list_of_assm_pred, list_of_oris, setting_for_assembly['anchor'], selected_obj_idx, pos_radius=self.pos_radius, cos_threshold=self.cos_threshold)
@@ -922,17 +975,24 @@ class EquiAssem(pl.LightningModule):
             # Save prediction
             pred_rot_and_trans.append([estimated_rotat, estimated_trans])
         
-        # Apply transformation to the point clouds
+        
+        assert len(setting_for_assembly['obj_ids'][1]) == 0, f"There are left objects to be assembled, len(setting_for_assembly['obj_ids'][1]): {len(setting_for_assembly['obj_ids'][1])}"
+
+
+        # Refine predictions
         pred_rot_and_trans_dict = {}
-        assembled_pcds = [list_of_all_pcds[in_dict['anchor_idx'][0]]]
         for i in range(len(pred_rot_and_trans)):
             obj_idx_to_move = setting_for_assembly['obj_ids'][0][1+i]
-            origin_src_pcd = list_of_all_pcds[obj_idx_to_move]
-            assm_pred, list_of_assm_pred = pairwise_mating(origin_src_pcd, list_of_all_pcds[in_dict['anchor_idx'][0]], pred_rot_and_trans[i][0], pred_rot_and_trans[i][1]) # (N+M, 3)
-            assembled_pcds.append(list_of_assm_pred[0])
-            pred_rot_and_trans_dict[f"{obj_idx_to_move}-{in_dict['anchor_idx'][0]}"] = [pred_rot_and_trans[i][0], pred_rot_and_trans[i][1]]
+            pred_rot_and_trans_dict[f"{obj_idx_to_move}-{in_dict['anchor_idx'][0]}"] = (pred_rot_and_trans[i][0], pred_rot_and_trans[i][1])
+
+
+        # Apply transformation to the point clouds
+        list_of_assembled_pcds = apply_transformation_to_point_clouds(list_of_all_pcds, pred_rot_and_trans_dict, initial_anchor_idx, num_of_parts)
+
+        # Apply GT transformation to the point clouds for evaluation
+        list_of_gt_assembled_pcds = apply_transformation_to_point_clouds(list_of_all_pcds, in_dict['relative_trsfm'], initial_anchor_idx, num_of_parts)
         
-        return pred_rot_and_trans_dict, assembled_pcds
+        return pred_rot_and_trans_dict, list_of_assembled_pcds, list_of_gt_assembled_pcds, step_collector_for_viz
     
 
 
@@ -959,5 +1019,5 @@ class EquiAssem(pl.LightningModule):
         matching_scores = self.multibatch_optimal_transport(shape_matching_scores, batch_info, active_mask, mode=self.matching_norm_mode) # (B, N+M+1, N+M+1) if mode is ['sinkhorn', 'softmax'], otherwise (B, N+M, N+M)
         matching_scores_drop = matching_scores[:,:-1,:-1] if self.matching_norm_mode in ['sinkhorn', 'softmax'] else matching_scores # (B, N+M, N+M)
 
-        return oris, matching_scores_drop, mating_surface_seg_results
+        return oris, matching_scores_drop, shape_matching_scores, mating_surface_seg_results
    

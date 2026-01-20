@@ -1,30 +1,7 @@
 import torch
+from common.metric_utils import *
 from common.misc import batch_scaling, extract_all_objects_by_offset, bincount2offset, offset2batch
-
-
-
-def select_obj_to_be_assembled(matching_scores_drop, anchor_idx, offset, infer_topk):
-    anchor_idx_start_idx = offset[anchor_idx]
-    anchor_idx_end_idx = offset[anchor_idx+1]
-    
-    all_src_to_trg_score = matching_scores_drop[0, :, anchor_idx_start_idx:anchor_idx_end_idx] # (N+M, M)
-    list_of_all_src_to_trg_score = extract_all_objects_by_offset(all_src_to_trg_score, offset) # list of (N, M)
-    
-    all_correspondence_scores = []
-    for i in range(len(list_of_all_src_to_trg_score)):
-        if i == anchor_idx:
-            all_correspondence_scores.append(- torch.inf)
-        else:
-            src_to_trg_score = list_of_all_src_to_trg_score[i]
-            topk_correspondences, _ = torch.topk(src_to_trg_score.reshape(-1), k=infer_topk)
-            average_of_topk_correspondences = topk_correspondences.mean()
-            all_correspondence_scores.append(average_of_topk_correspondences)
-    
-    all_correspondence_scores = torch.tensor(all_correspondence_scores)
-    selected_obj_idx = torch.argmax(all_correspondence_scores)
-
-    return list_of_all_src_to_trg_score, selected_obj_idx
-
+from common.utils import pairwise_mating
 
 
 
@@ -67,7 +44,6 @@ def make_setting_for_next_iteration(previous_setting, removed_assm_pred, list_of
 
     two_part_assumption_batch_info = (new_batch_info == new_anchor).int() # idx:0 means src, idx:1 means trg
 
-
     new_setting = {
         'anchor': new_anchor, # int
         'bincount': new_bincount, # (num_of_parts,)
@@ -81,6 +57,50 @@ def make_setting_for_next_iteration(previous_setting, removed_assm_pred, list_of
     }
     
     return new_setting
+
+
+
+def make_score_into_list_format(score_matrix, anchor_idx, offset):
+    """
+    Args:
+        score_matrix (torch.Tensor): (B, N+M, N+M)
+        anchor_idx (int): index of the anchor object
+        offset (torch.Tensor): (num_of_parts+1,)
+    Returns:
+        list_of_scores (list): list of (N, M)
+    """
+    anchor_idx_start_idx = offset[anchor_idx]
+    anchor_idx_end_idx = offset[anchor_idx+1]
+
+    all_src_to_trg_score = score_matrix[0, :, anchor_idx_start_idx:anchor_idx_end_idx] # (N+M, M)
+    list_of_all_src_to_trg_score = extract_all_objects_by_offset(all_src_to_trg_score, offset) # list of (N, M)
+    return list_of_all_src_to_trg_score
+
+
+def select_obj_to_be_assembled(matching_scores_drop, anchor_idx, offset, infer_topk):
+    anchor_idx_start_idx = offset[anchor_idx]
+    anchor_idx_end_idx = offset[anchor_idx+1]
+    
+    all_src_to_trg_score = matching_scores_drop[0, :, anchor_idx_start_idx:anchor_idx_end_idx] # (N+M, M)
+    list_of_all_src_to_trg_score = extract_all_objects_by_offset(all_src_to_trg_score, offset) # list of (N, M)
+    
+    all_correspondence_scores = []
+    for i in range(len(list_of_all_src_to_trg_score)):
+        if i == anchor_idx:
+            all_correspondence_scores.append(- torch.inf)
+        else:
+            src_to_trg_score = list_of_all_src_to_trg_score[i]
+            topk_correspondences, _ = torch.topk(src_to_trg_score.reshape(-1), k=infer_topk)
+            average_of_topk_correspondences = topk_correspondences.mean()
+            all_correspondence_scores.append(average_of_topk_correspondences)
+    
+    all_correspondence_scores = torch.tensor(all_correspondence_scores)
+    selected_obj_idx = torch.argmax(all_correspondence_scores)
+    
+    assert selected_obj_idx != anchor_idx, f"selected_obj_idx: {selected_obj_idx}, anchor_idx: {anchor_idx}, all_correspondence_scores: {all_correspondence_scores}"
+
+    return list_of_all_src_to_trg_score, selected_obj_idx
+
 
 
 def remove_inner_parts(assm_pred, list_of_assm_pred, list_of_oris, anchor_obj_idx, selected_obj_idx, pos_radius=0.018, cos_threshold=0.0):
@@ -125,3 +145,65 @@ def remove_inner_parts(assm_pred, list_of_assm_pred, list_of_oris, anchor_obj_id
 
 
 
+def apply_transformation_to_point_clouds(list_of_pcds, rot_and_trans_dict, anchor_idx, total_num_of_parts):
+    """
+    Apply transformation to the point clouds
+    Args:
+        list_of_pcds (list): list of (N, 3), len == total_num_of_parts
+        rot_and_trans_dict (dict): dictionary of the transformation
+        anchor_idx (int): index of the anchor object
+        total_num_of_parts (int): total number of parts
+    Returns:
+        list_of_pcds_after_transformation (list): list of (N, 3), len == total_num_of_parts
+    """
+    all_obj_idx = list(range(total_num_of_parts))
+    all_obj_idx.remove(anchor_idx)
+
+    assembled_pcds = [list_of_pcds[anchor_idx]]
+    for ith_obj in all_obj_idx:
+        origin_src_pcd = list_of_pcds[ith_obj]
+        rot_and_trans = rot_and_trans_dict[f"{ith_obj}-{anchor_idx}"]
+        assm_pred, list_of_assm_pred = pairwise_mating(origin_src_pcd, list_of_pcds[anchor_idx], rot_and_trans[0], rot_and_trans[1]) # (N+M, 3)
+        assembled_pcds.append(list_of_assm_pred[0])
+    
+    return assembled_pcds
+
+
+
+
+
+def compute_metrics(list_of_assembled_pcds, list_of_gt_assembled_pcds, pred_rot_and_trans_dict, GT_rot_and_trans_dict):
+    """
+    Compute metrics
+    Args:
+        list_of_assembled_pcds (list): list of (N, 3), len == total_num_of_parts
+        list_of_gt_assembled_pcds (list): list of (N, 3), len == total_num_of_parts
+        pred_rot_and_trans_dict (dict): dictionary of the transformation
+        GT_rot_and_trans_dict (dict): dictionary of the transformation
+    Returns:
+        eval_result (dict): dictionary of the evaluation results
+    """
+    eval_result = {}
+    assembled_pcds = torch.cat(list_of_assembled_pcds, dim=0) # (N1+N2+...+Nk, 3)
+    gt_assembled_pcds = torch.cat(list_of_gt_assembled_pcds, dim=0) # (N1+N2+...+Nk, 3)
+
+    # Compute metrics
+    # CD/CRD
+    eval_result['cd'] = chamfer_distance(assembled_pcds, gt_assembled_pcds)
+    eval_result['crd'] = correspondence_distance(assembled_pcds, gt_assembled_pcds)
+
+    # RRMSE_GEO/TRMSE_GEO
+    list_of_pred_rot_and_trans = []
+    list_of_gt_rot_and_trans = []
+    for key, value in pred_rot_and_trans_dict.items():
+        list_of_pred_rot_and_trans.append(value)
+        list_of_gt_rot_and_trans.append(GT_rot_and_trans_dict[key])
+    
+    eval_result['rrmse_geo'], eval_result['trmse_geo'] = transformation_error_geodesic(list_of_pred_rot_and_trans, list_of_gt_rot_and_trans, multi_part=True)
+    
+    
+    # Part Accuracy
+    eval_result['part_acc_cd'] = part_accuracy_based_on_cd(list_of_assembled_pcds, list_of_gt_assembled_pcds)
+    eval_result['part_acc_crd'] = part_accuracy_based_on_crd(list_of_assembled_pcds, list_of_gt_assembled_pcds)
+
+    return eval_result

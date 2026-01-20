@@ -198,14 +198,19 @@ class DatasetBreakingBad(Dataset):
         idx = idx % self.len_filepaths
 
         # Read mesh, point cloud of a fractured object
-        filepath, n_frac, anchor_idx, mesh, pcd, face = self.read_obj_data(idx)
+        filepath, n_frac, mesh, pcd, face = self.read_obj_data(idx)
         
         # Apply random transformation to sampled points
         pcd_t, mesh_t, gt_trans = self._translate(mesh, pcd)
         pcd_t, mesh_t, gt_rotat = self._rotate(mesh_t, pcd_t)
         gt_relative_trsfm = self._compute_relative_transform(gt_trans, gt_rotat)
         gt_normals = self._extract_gt_normals(mesh_t, face)
+
+        # Calculate anchor index based on bounding box volume
+        bounding_box_volume = [(a_pcd.max(dim=0)[0] - a_pcd.min(dim=0)[0]).prod(dim=0) for a_pcd in pcd_t]
+        anchor_idx = bounding_box_volume.index(max(bounding_box_volume))
         
+        # Concatenate point clouds and calculate batch index
         concat_pcd = torch.cat(pcd, dim=0) # (total_N, 3)
         concat_pcd_t = torch.cat(pcd_t, dim=0) # (total_N, 3)
         concat_gt_normals = torch.cat(gt_normals, dim=0) # (total_N, 3)
@@ -253,7 +258,9 @@ class DatasetBreakingBad(Dataset):
         mesh_areas = [mesh_.area for mesh_ in meshes] # area -> Summed area of all triangles in the current mesh
 
         # Set anchor fracture and sum all of areas
-        anchor_idx, total_area = mesh_areas.index(max(mesh_areas)), sum(mesh_areas)
+        # anchor_idx, total_area = mesh_areas.index(max(mesh_areas)), sum(mesh_areas)
+        total_area = sum(mesh_areas)
+        
 
         # Calculate number of points for each part
         remaining_points = self.n_pts - self.min_n_pts * len(meshes)
@@ -310,7 +317,7 @@ class DatasetBreakingBad(Dataset):
             pcds.reverse()
             faces.reverse()
         
-        return filepath, n_frac, anchor_idx, meshes, pcds, faces
+        return filepath, n_frac, meshes, pcds, faces
     
 
     def _post_process_for_same_prev_sampling_mode(self, instance_idx, pcds, faces, meshes, counts):

@@ -95,6 +95,7 @@ def test(args):
                       use_predicted_normal=args.use_predicted_normal,
                       use_seg_result=args.use_seg_result,
                       cos_threshold=args.cos_threshold,
+                      multi_part_assembly=args.multi_part_assembly,
                       )
     
     # Wandb logger
@@ -205,6 +206,7 @@ if __name__ == '__main__':
     parser.add_argument('--use_predicted_normal', action='store_true', help='If True, use predicted normal for inlier counting')
     parser.add_argument('--use_seg_result', action='store_true', help='If True, use segmentation result for matching')
     parser.add_argument('--cos_threshold', type=float, default=0.0, help='Threshold for cosine similarity. This is used only during multi-part assembly.')
+    parser.add_argument('--multi_part_assembly', action='store_true', help='If True, use multi-part assembly')
 
 
     # Visualization arguments

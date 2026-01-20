@@ -63,19 +63,25 @@ def transformation_error(trnsf1, trnsf2, trmse_scaling=100):
     return (rrmse / div).to(trmse.device), trmse / div
 
 
-def transformation_error_geodesic(trnsf1, trnsf2, trmse_scaling=100):
+def transformation_error_geodesic(trnsf1, trnsf2, trmse_scaling=100, multi_part=False):
     """
     Args:
-        trnsf1 (tuple): (3, 3), (3)
-        trnsf2 (tuple): (3, 3), (3)
+        trnsf1 (tuple): (3, 3), (3) , or list of ((3, 3), (3)) for multiple parts
+        trnsf2 (tuple): (3, 3), (3) , or list of ((3, 3), (3)) for multiple parts
         trmse_scaling (int, optional): Scaling factor for TRMSE. Defaults to 100.
 
     Returns:
         rrmse (torch.Tensor): (1)
         trmse (torch.Tensor): (1)
     """
-    rotat1, trans1 = [trnsf1[0]], [trnsf1[1]]
-    rotat2, trans2 = [trnsf2[0]], [trnsf2[1]]
+
+    if multi_part:
+        rotat1, trans1 = [a_trnsf1[0] for a_trnsf1 in trnsf1], [a_trnsf1[1] for a_trnsf1 in trnsf1]
+        rotat2, trans2 = [a_trnsf2[0] for a_trnsf2 in trnsf2], [a_trnsf2[1] for a_trnsf2 in trnsf2]
+
+    else:
+        rotat1, trans1 = [trnsf1[0]], [trnsf1[1]]
+        rotat2, trans2 = [trnsf2[0]], [trnsf2[1]]
     
     rrmse_geo, trmse_geo = 0., 0.
     for r1, r2, t1, t2 in zip(rotat1, rotat2, trans1, trans2):
@@ -86,7 +92,7 @@ def transformation_error_geodesic(trnsf1, trnsf2, trmse_scaling=100):
         rrmse_geo += torch.rad2deg(torch.acos(torch.clamp(0.5 * (torch.trace(relative_rotat) - 1.0), -1.0, 1.0)))
         trmse_geo += torch.norm(t1 - t2) * trmse_scaling
     
-    div = 1
+    div = 1 if len(rotat1) == 1 else len(rotat1) - 1 # -1 because of the anchor part
     return (rrmse_geo / div).to(trmse_geo.device), trmse_geo / div
 
 
@@ -257,4 +263,42 @@ def calculate_accuracy_of_seg_results(seg_results, positive_mask):
     seg_recall = sum_of_intersection / sum_of_total_gt if sum_of_total_gt > 0 else torch.tensor(0.0, device=seg_results.device) # Among all gt points, how many points are covered by the predicted points
     seg_precision = sum_of_intersection / sum_of_seg_pred if sum_of_seg_pred > 0 else torch.tensor(0.0, device=seg_results.device) # Among all predicted points, how many points are correctly predicted
     return seg_recall, seg_precision
+
+
+def part_accuracy_based_on_cd(list_of_pred_pts, list_of_gt_pts, threshold=0.01):
+    """
+    Args:
+        list_of_pred_pts (list): list of (N, 3)
+        list_of_gt_pts (list): list of (N, 3)
+        threshold (float): threshold for the part accuracy
+    Returns:
+        part_accuracy (float): part accuracy based on CD
+    """
+    assert len(list_of_pred_pts) == len(list_of_gt_pts), f"len(list_of_pred_pts): {len(list_of_pred_pts)}, len(list_of_gt_pts): {len(list_of_gt_pts)}"
+
+    success = 0
+    for pred_pts, gt_pts in zip(list_of_pred_pts, list_of_gt_pts):
+        part_cd = chamfer_distance(pred_pts, gt_pts, 1) 
+        if part_cd < threshold: 
+            success += 1
+    return torch.tensor(success / len(list_of_pred_pts))
+
+
+def part_accuracy_based_on_crd(list_of_pred_pts, list_of_gt_pts, threshold=0.1):
+    """
+    Args:
+        list_of_pred_pts (list): list of (N, 3)
+        list_of_gt_pts (list): list of (N, 3)
+        threshold (float): threshold for the part accuracy
+    Returns:
+        part_accuracy (float): part accuracy based on CRD
+    """
+    assert len(list_of_pred_pts) == len(list_of_gt_pts), f"len(list_of_pred_pts): {len(list_of_pred_pts)}, len(list_of_gt_pts): {len(list_of_gt_pts)}"
+
+    success = 0
+    for pred_pts, gt_pts in zip(list_of_pred_pts, list_of_gt_pts):
+        part_crd = correspondence_distance(pred_pts, gt_pts, 1)
+        if part_crd < threshold: 
+            success += 1
+    return torch.tensor(success / len(list_of_pred_pts))
 
