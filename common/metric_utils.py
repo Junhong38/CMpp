@@ -34,7 +34,7 @@ def chamfer_distance(assm1, assm2, scaling=1000):
     return cd
 
 
-def transformation_error(trnsf1, trnsf2, trmse_scaling=100):
+def transformation_error(trnsf1, trnsf2, trmse_scaling=100, multi_part=False):
     """
     Args:
         trnsf1 (tuple): (3, 3), (3)
@@ -45,8 +45,13 @@ def transformation_error(trnsf1, trnsf2, trmse_scaling=100):
         rrmse (torch.Tensor): (1)
         trmse (torch.Tensor): (1)
     """
-    rotat1, trans1 = [trnsf1[0]], [trnsf1[1]]
-    rotat2, trans2 = [trnsf2[0]], [trnsf2[1]]
+    if multi_part:
+        rotat1, trans1 = [a_trnsf1[0] for a_trnsf1 in trnsf1], [a_trnsf1[1] for a_trnsf1 in trnsf1]
+        rotat2, trans2 = [a_trnsf2[0] for a_trnsf2 in trnsf2], [a_trnsf2[1] for a_trnsf2 in trnsf2]
+
+    else:
+        rotat1, trans1 = [trnsf1[0]], [trnsf1[1]]
+        rotat2, trans2 = [trnsf2[0]], [trnsf2[1]]
     
     rrmse, trmse = 0., 0.
     for r1, r2, t1, t2 in zip(rotat1, rotat2, trans1, trans2):
@@ -58,8 +63,7 @@ def transformation_error(trnsf1, trnsf2, trmse_scaling=100):
         rrmse += diff.pow(2).mean().pow(0.5)
         trmse += (t1 - t2).pow(2).mean().pow(0.5) * trmse_scaling
     
-    # div = len(rotat1) if multi_part else 1
-    div = 1
+    div = len(rotat1)
     return (rrmse / div).to(trmse.device), trmse / div
 
 
@@ -92,7 +96,7 @@ def transformation_error_geodesic(trnsf1, trnsf2, trmse_scaling=100, multi_part=
         rrmse_geo += torch.rad2deg(torch.acos(torch.clamp(0.5 * (torch.trace(relative_rotat) - 1.0), -1.0, 1.0)))
         trmse_geo += torch.norm(t1 - t2) * trmse_scaling
     
-    div = 1 if len(rotat1) == 1 else len(rotat1) - 1 # -1 because of the anchor part
+    div = len(rotat1)
     return (rrmse_geo / div).to(trmse_geo.device), trmse_geo / div
 
 

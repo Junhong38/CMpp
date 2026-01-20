@@ -200,6 +200,7 @@ def compute_metrics(list_of_assembled_pcds, list_of_gt_assembled_pcds, pred_rot_
         list_of_gt_rot_and_trans.append(GT_rot_and_trans_dict[key])
     
     eval_result['rrmse_geo'], eval_result['trmse_geo'] = transformation_error_geodesic(list_of_pred_rot_and_trans, list_of_gt_rot_and_trans, multi_part=True)
+    eval_result['rrmse'], eval_result['trmse'] = transformation_error(list_of_pred_rot_and_trans, list_of_gt_rot_and_trans, multi_part=True)
     
     
     # Part Accuracy
