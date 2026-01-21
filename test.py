@@ -11,6 +11,8 @@ from pytorch_lightning.loggers import WandbLogger, CSVLogger
 
 from model.CMpp_equiassem import EquiAssem
 
+import datetime
+
 @torch.no_grad()
 def test(args):
     if not args.not_seed_fix:
@@ -238,7 +240,7 @@ if __name__ == '__main__':
     # Set number of workers automatically
     if len(args.gpus) > 1: # Multi-GPU training
         from pytorch_lightning.strategies import DDPStrategy
-        args.parallel_strategy = DDPStrategy(find_unused_parameters=False)
+        args.parallel_strategy = DDPStrategy(find_unused_parameters=False, timeout=datetime.timedelta(seconds=180000))
     
     else: # Single-GPU training
         args.parallel_strategy = 'auto'

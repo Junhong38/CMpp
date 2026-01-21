@@ -201,7 +201,8 @@ def evaluate_prediction(in_dict, split_input_dict, out_dict, settings_dict, mode
             # Only visualize if the metric is greater than the threshold
             metric_based_visualization = eval_result[settings_dict['viz_metric_name']] >= settings_dict['viz_metric_threshold']
             # metric_based_visualization = in_dict['filepath'][0] == 'everyday/Bottle/d851cbc873de1c4d3b6eb309177a6753/mode_1'
-
+        
+    
     if (mode =='val' and (not settings_dict['trainer_sanity_checking']) and \
         settings_dict['trainer_global_rank'] == 0 and \
         (settings_dict['visualize_mode'] != 'none') and \
