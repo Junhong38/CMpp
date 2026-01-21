@@ -79,6 +79,7 @@ def test(args):
                       consistency_loss_weight=0.0, # We don't need to use this parameter for testing
                         
                       n_knn=args.n_knn,
+                      r_knn=args.r_knn,
                       only_one_norm=args.only_one_norm,
                       n_avn=args.n_avn,
                       mlp_mode=args.mlp_mode,
@@ -176,6 +177,7 @@ if __name__ == '__main__':
     parser.add_argument('--backbone', type=str, default='vn_unet', choices=['vn_unet', 'vn_unet_v2'])
     parser.add_argument('--double_bacbone', type=str, default='vn_unet', choices=['none', 'vn_unet', 'vn_unet_v2'])
     parser.add_argument('--n_knn', type=int, default=20, help='Number of nearest neighbors for KNN')
+    parser.add_argument('--r_knn', type=float, default=0.0, help='Radius for KNN')
     parser.add_argument('--only_one_norm', action='store_true', help='If True, use only one Normalization layer for the equivariant shape feature')
     parser.add_argument('--n_avn', type=int, default=0, help='Number of AVN layers for the equivariant shape feature')
     parser.add_argument('--mlp_mode', type=str, default='half', choices=['CMpp', 'CMpp_half', 'half', 'deep'])

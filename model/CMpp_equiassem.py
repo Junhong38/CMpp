@@ -20,7 +20,7 @@ from RANSAC.ransac import _RANSAC
 
 from common.metric_utils import *
 from common.misc import batch_scaling, extract_all_objects_by_offset, batch2offset
-from common.utils import instance_wise_results_to_json, divide_parameters_into_ori_and_others, pairwise_mating
+from common.utils import instance_wise_results_to_json, divide_parameters_into_ori_and_others, pairwise_mating, save_json
 from common.viz import visualize_negative_hard_mask, draw_test_results_histogram, save_pc
 
 import os
@@ -74,6 +74,7 @@ class EquiAssem(pl.LightningModule):
             consistency_loss_weight=0.0,
             
             n_knn=20,
+            r_knn=0.0,
             only_one_norm=False,
             n_avn=5,
             mlp_mode='CMpp',
@@ -144,6 +145,7 @@ class EquiAssem(pl.LightningModule):
             one_to_one_consistency (bool, optional): Whether to use one-to-one consistency loss. Defaults to False.
 
             n_knn (int, optional): Number of nearest neighbors for KNN. Defaults to 20.
+            r_knn (float, optional): Radius for KNN. Defaults to 0.0.
             only_one_norm (bool, optional): Whether to use only one Normalization layer for the equivariant shape feature. Defaults to False.
             n_avn (int, optional): Number of AVN layers for the equivariant shape feature. Defaults to 5.
             mlp_mode (str, optional): 'CMpp' or 'half' or 'deep'. Defaults to 'CMpp'.
@@ -199,6 +201,7 @@ class EquiAssem(pl.LightningModule):
         print(f"consistency_loss_weight: {consistency_loss_weight}")
 
         print(f"n_knn: {n_knn}")
+        print(f"r_knn: {r_knn}")
         print(f"only_one_norm: {only_one_norm}")
         print(f"n_avn: {n_avn}")
         print(f"mlp_mode: {mlp_mode}")
@@ -296,16 +299,16 @@ class EquiAssem(pl.LightningModule):
         # Declare Modules
         # VN BACKBONE
         if backbone == 'vn_unet':
-            self.backbone = EQCNN_equi_unet(feat_dim=self.feat_dim, pooling="mean", k=n_knn)
+            self.backbone = EQCNN_equi_unet(feat_dim=self.feat_dim, pooling="mean", k=n_knn, r=r_knn)
         elif backbone == 'vn_unet_v2':
-            self.backbone = EQCNN_equi_unet_v2(feat_dim=self.feat_dim, pooling="mean", k=n_knn)
+            self.backbone = EQCNN_equi_unet_v2(feat_dim=self.feat_dim, pooling="mean", k=n_knn, r=r_knn)
         else:
             raise NotImplementedError("DGCNN backbone not implemented")
         
         if double_bacbone == 'vn_unet':
-            self.ori_backbone = EQCNN_equi_unet(feat_dim=self.feat_dim, pooling="mean", k=n_knn)
+            self.ori_backbone = EQCNN_equi_unet(feat_dim=self.feat_dim, pooling="mean", k=n_knn, r=r_knn)
         elif double_bacbone == 'vn_unet_v2':
-            self.ori_backbone = EQCNN_equi_unet_v2(feat_dim=self.feat_dim, pooling="mean", k=n_knn)
+            self.ori_backbone = EQCNN_equi_unet_v2(feat_dim=self.feat_dim, pooling="mean", k=n_knn, r=r_knn)
         elif double_bacbone == 'none':
             self.ori_backbone = None
         else:
@@ -564,6 +567,9 @@ class EquiAssem(pl.LightningModule):
             
             # Json dump for instance-wise results
             instance_wise_results_to_json(total_instance_score_dict, self.ckp_dir, 'test_results')
+
+            # Json dump for test results
+            save_json(self.test_results, os.path.join(self.ckp_dir, 'total.json'))
 
             # Make histogram for each metric
             draw_test_results_histogram(total_instance_score_dict, self.ckp_dir, 'test_metrics_histogram')

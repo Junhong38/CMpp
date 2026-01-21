@@ -111,6 +111,18 @@ def instance_wise_results_to_json(instance_wise_results, dir_path, filename):
         json.dump(json_results, f, indent=4)
 
 
+def save_json(data, file_path):
+    json_results = dict()
+    for k, v in data.items():
+        if isinstance(v, torch.Tensor):
+            json_results[k] = v.cpu().item()
+        else:
+            json_results[k] = v
+
+    with open(file_path, 'w') as f:
+        json.dump(json_results, f, indent=4)
+
+
 def divide_parameters_into_ori_and_others(named_parameters):
     ori_parameters = []
     other_parameters = []

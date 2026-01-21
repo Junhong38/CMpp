@@ -80,6 +80,7 @@ def main(args):
                       consistency_loss_weight=args.consistency_loss_weight,
 
                       n_knn=args.n_knn,
+                      r_knn=0.0, # Radius for KNN is not used for training
                       only_one_norm=args.only_one_norm,
                       n_avn=args.n_avn,
                       mlp_mode=args.mlp_mode,

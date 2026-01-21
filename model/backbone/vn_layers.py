@@ -12,7 +12,7 @@ import torch.nn as nn
 
 EPS = 1e-6
 
-def knn(x, batch_info, k):
+def knn(x, batch_info, k, r=0.0):
     """KNN
 
     Args:
@@ -34,17 +34,31 @@ def knn(x, batch_info, k):
     matrix_batch_info = matrix_batch_info[:,:,:,0] == matrix_batch_info[:,:,:,1] # (B, N+M, N+M) -> True if the point is included in same obj
     pairwise_distance = pairwise_distance * matrix_batch_info + (- 1e9) * ( ~ matrix_batch_info) # (B, N+M, N+M)
 
-    idx = pairwise_distance.topk(k=k, dim=-1)[1]   # (B, N+M, k)
-    return idx
+    if r > 0.0:
+        pairwise_distance_inside_radius = pairwise_distance > - r # (B, N+M, N+M) -> True if the distance is less than r
+        num_of_points_inside_radius = pairwise_distance_inside_radius.sum(dim=-1) # (B, N+M)
+        min_num_of_points_inside_radius = num_of_points_inside_radius.min() # (1,)
+        real_k = min_num_of_points_inside_radius.item()
+        real_k = max(real_k, k)
+        # print(f"real_k: {real_k}")
+
+    else:
+        real_k = k
 
 
-def get_graph_feature(x, batch_info, k=20):
+    idx = pairwise_distance.topk(k=real_k, dim=-1)[1]   # (B, N+M, k)
+    
+    return idx, real_k
+
+
+def get_graph_feature(x, batch_info, k=20, r=0.0):
     """Get graph feature
 
     Args:
         x (torch.Tensor): (B, C, 3, N+M), point features
         batch_info (torch.Tensor): (B, N+M), batch index of the point cloud
         k (int, optional): k. Defaults to 20.
+        r (float, optional): r. Defaults to 0.0.
 
     Returns:
         feature (torch.Tensor): (B, 2C, 3, N+M, k)
@@ -52,7 +66,7 @@ def get_graph_feature(x, batch_info, k=20):
     batch_size = x.size(0)
     num_points = x.size(3)
     x = x.view(batch_size, -1, num_points) 
-    idx = knn(x, batch_info, k=k)   # (B, N+M, k)
+    idx, real_k = knn(x, batch_info, k=k, r=r)   # (B, N+M, k)
 
     device = torch.device('cuda')
     idx_base = torch.arange(0, batch_size, device=device).view(-1, 1, 1)*num_points
@@ -64,8 +78,8 @@ def get_graph_feature(x, batch_info, k=20):
 
     x = x.transpose(2, 1).contiguous() # (B, C*3, N+M) -> (B, N+M, C*3)
     feature = x.view(batch_size*num_points, -1)[idx, :]
-    feature = feature.view(batch_size, num_points, k, num_dims, 3) 
-    x = x.view(batch_size, num_points, 1, num_dims, 3).repeat(1, 1, k, 1, 1)
+    feature = feature.view(batch_size, num_points, real_k, num_dims, 3) 
+    x = x.view(batch_size, num_points, 1, num_dims, 3).repeat(1, 1, real_k, 1, 1)
     
     feature = torch.cat((feature-x, x), dim=3).permute(0, 3, 4, 1, 2).contiguous()
   
