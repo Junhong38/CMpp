@@ -93,7 +93,7 @@ class EquiAssem(pl.LightningModule):
             use_predicted_normal=False,
             use_seg_result=False,
             cos_threshold=0.0,
-            multi_part_assembly=False,
+            multi_part_assembly='none',
             ):
         """Equivariant Assembly Model for 3D Object Assembly
 
@@ -163,7 +163,7 @@ class EquiAssem(pl.LightningModule):
             use_predicted_normal (bool, optional): Whether to use predicted normal for inlier counting. Defaults to False.
             use_seg_result (bool, optional): Whether to use segmentation result for matching. Defaults to False.
             cos_threshold (float, optional): Threshold for cosine similarity. This is used only during multi-part assembly. Defaults to 0.0.
-            multi_part_assembly (bool, optional): Whether to use multi-part assembly. Defaults to False.
+            multi_part_assembly (str, optional): 'none' or 'naive' or 'shonan'. Defaults to 'none'.
         """
         super(EquiAssem, self).__init__()
 
@@ -512,9 +512,9 @@ class EquiAssem(pl.LightningModule):
             exit("stop")
         """
 
-        if self.multi_part_assembly:
+        if self.multi_part_assembly != 'none':
             assert in_dict['num_parts'][0] >= 2, f"num_parts must be greater than or equal to 2, but got {in_dict['num_parts'][0]}"
-            loss_dict = self.forward_pass_for_multiple_parts(in_dict, mode='test')
+            loss_dict = self.forward_pass_for_multiple_parts(in_dict, mode='test', infer_mode=self.multi_part_assembly)
         
         else:
             assert in_dict['num_parts'][0] == 2, f"num_parts must be 2, but got {in_dict['num_parts'][0]}"
@@ -857,15 +857,24 @@ class EquiAssem(pl.LightningModule):
         return out_dict, eval_dict
     
 
-    def forward_pass_for_multiple_parts(self, in_dict, mode):
+    def forward_pass_for_multiple_parts(self, in_dict, mode, infer_mode):
         """
         Assume batch size must be 1
 
         Args:
             in_dict (dict): input dictionary for forward pass, which is same as forward_pass
             mode (str): ['train', 'val', 'test']
+            infer_mode (str): 'naive' or 'shonan'
         """
         assert mode in ['test'], f"mode must be in ['test'], but got {mode}"
+        
+        if infer_mode == 'naive':
+            pred_rot_and_trans_dict, list_of_assembled_pcds, list_of_gt_assembled_pcds, step_collector_for_viz = self.assemble_obj_by_obj(in_dict)
+        elif infer_mode == 'shonan':
+            # TODO: Implement shonan assembly
+            pass
+        else:
+            raise ValueError(f"infer_mode must be in ['naive', 'shonan'], but got {infer_mode}")
         
         pred_rot_and_trans_dict, list_of_assembled_pcds, list_of_gt_assembled_pcds, step_collector_for_viz = self.assemble_obj_by_obj(in_dict)
 
@@ -901,6 +910,12 @@ class EquiAssem(pl.LightningModule):
 
         Args:
             in_dict (dict): input dictionary for forward pass, which is same as forward_pass
+        
+        Returns:
+            pred_rot_and_trans_dict (dict): dictionary of predicted rotations and translations
+            list_of_assembled_pcds (list): list of assembled point clouds
+            list_of_gt_assembled_pcds (list): list of GT assembled point clouds
+            step_collector_for_viz (list): list of step-by-step assembled point clouds for visualization
         """
 
         pcd_input = in_dict['pcd_t'] # (B, N+M, 3)
@@ -1020,4 +1035,20 @@ class EquiAssem(pl.LightningModule):
         matching_scores_drop = matching_scores[:,:-1,:-1] if self.matching_norm_mode in ['sinkhorn', 'softmax'] else matching_scores # (B, N+M, N+M)
 
         return oris, matching_scores_drop, shape_matching_scores, mating_surface_seg_results
+    
+
+    def assemble_shonan(self, in_dict):
+        """
+        Assume batch size must be 1
+
+        Args:
+            in_dict (dict): input dictionary for forward pass, which is same as forward_pass
+        
+        Returns:
+            pred_rot_and_trans_dict (dict): dictionary of predicted rotations and translations
+            list_of_assembled_pcds (list): list of assembled point clouds
+            list_of_gt_assembled_pcds (list): list of GT assembled point clouds
+            step_collector_for_viz (list): list of step-by-step assembled point clouds for visualization
+        """
+        pass
    
