@@ -74,6 +74,7 @@ class EquiAssem(pl.LightningModule):
             consistency_loss_weight=0.0,
             
             n_knn=20,
+            m_knn=1.0,
             r_knn=0.0,
             only_one_norm=False,
             n_avn=5,
@@ -145,6 +146,7 @@ class EquiAssem(pl.LightningModule):
             one_to_one_consistency (bool, optional): Whether to use one-to-one consistency loss. Defaults to False.
 
             n_knn (int, optional): Number of nearest neighbors for KNN. Defaults to 20.
+            m_knn (float, optional): Multiplicative factor for KNN, which corresponds to the number of points in the point cloud. Defaults to 1.0.
             r_knn (float, optional): Radius for KNN. Defaults to 0.0.
             only_one_norm (bool, optional): Whether to use only one Normalization layer for the equivariant shape feature. Defaults to False.
             n_avn (int, optional): Number of AVN layers for the equivariant shape feature. Defaults to 5.
@@ -201,6 +203,7 @@ class EquiAssem(pl.LightningModule):
         print(f"consistency_loss_weight: {consistency_loss_weight}")
 
         print(f"n_knn: {n_knn}")
+        print(f"m_knn: {m_knn}")
         print(f"r_knn: {r_knn}")
         print(f"only_one_norm: {only_one_norm}")
         print(f"n_avn: {n_avn}")
@@ -299,16 +302,16 @@ class EquiAssem(pl.LightningModule):
         # Declare Modules
         # VN BACKBONE
         if backbone == 'vn_unet':
-            self.backbone = EQCNN_equi_unet(feat_dim=self.feat_dim, pooling="mean", k=n_knn, r=r_knn)
+            self.backbone = EQCNN_equi_unet(feat_dim=self.feat_dim, pooling="mean", k=n_knn, m=m_knn, r=r_knn)
         elif backbone == 'vn_unet_v2':
-            self.backbone = EQCNN_equi_unet_v2(feat_dim=self.feat_dim, pooling="mean", k=n_knn, r=r_knn)
+            self.backbone = EQCNN_equi_unet_v2(feat_dim=self.feat_dim, pooling="mean", k=n_knn, m=m_knn, r=r_knn)
         else:
             raise NotImplementedError("DGCNN backbone not implemented")
         
         if double_bacbone == 'vn_unet':
-            self.ori_backbone = EQCNN_equi_unet(feat_dim=self.feat_dim, pooling="mean", k=n_knn, r=r_knn)
+            self.ori_backbone = EQCNN_equi_unet(feat_dim=self.feat_dim, pooling="mean", k=n_knn, m=m_knn, r=r_knn)
         elif double_bacbone == 'vn_unet_v2':
-            self.ori_backbone = EQCNN_equi_unet_v2(feat_dim=self.feat_dim, pooling="mean", k=n_knn, r=r_knn)
+            self.ori_backbone = EQCNN_equi_unet_v2(feat_dim=self.feat_dim, pooling="mean", k=n_knn, m=m_knn, r=r_knn)
         elif double_bacbone == 'none':
             self.ori_backbone = None
         else:

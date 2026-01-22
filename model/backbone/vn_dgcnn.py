@@ -105,9 +105,10 @@ class TransitionUp(nn.Module):
 
 class EQCNN_equi_unet(nn.Module): 
 
-    def __init__(self, feat_dim, pooling='mean', k=20, r=0.0):
+    def __init__(self, feat_dim, pooling='mean', k=20, m=1.0, r=0.0):
         super(EQCNN_equi_unet, self).__init__()
         self.k = k
+        self.m = int(m ** 3) # For taking care of volume, so we need to cubic the m
         self.r = r
 
         if pooling == 'max':
@@ -170,48 +171,48 @@ class EQCNN_equi_unet(nn.Module):
         o1 = batch2offset(batch_scaled_batch_info.reshape(-1)).int() # (B*num_of_objs, ) 
         
         ### ENCODER 1
-        x1 = get_graph_feature(x1, batch_info=b1, k=self.k, r=(self.r * 1)) # (B, 2, 3, N+M, k) 
+        x1 = get_graph_feature(x1, batch_info=b1, k=self.k, m=self.m, r=(self.r * 1)) # (B, 2, 3, N+M, k) 
         x1 = self.conv1(x1) # (B, 2, 3, N+M, k)  -> (B, C', 3, N+M, k)
         x1 = self.pool1(x1) # (B, C', 3, N+M, k) -> (B, C', 3, N+M)
 
         ### ENCODER 2
         p2, x2, b2, o2 = self.downsample1(p1, x1, b1, o1) # (B*sampled_points, 3), (B, C', 3, sampled_points), (B*num_parts, )
-        x2 = get_graph_feature(x2, batch_info=b2, k=self.k, r=(self.r * 2))
+        x2 = get_graph_feature(x2, batch_info=b2, k=self.k, m=self.m, r=(self.r * 2))
         x2 = self.conv2(x2)
         x2 = self.pool2(x2) # (B, C, 3, (N+M)/2)
 
         ### ENCODER 3
         p3, x3, b3, o3 = self.downsample2(p2, x2, b2, o2)
-        x3 = get_graph_feature(x3, batch_info=b3, k=self.k, r=(self.r * 4))
+        x3 = get_graph_feature(x3, batch_info=b3, k=self.k, m=self.m, r=(self.r * 4))
         x3 = self.conv3(x3)
         x3 = self.pool3(x3) # (B, C, 3, (N+M)/4)
 
         ### ENCODER 4
         p4, x4, b4, o4 = self.downsample3(p3, x3, b3, o3)
-        x4 = get_graph_feature(x4, batch_info=b4, k=self.k, r=(self.r * 8))
+        x4 = get_graph_feature(x4, batch_info=b4, k=self.k, m=self.m, r=(self.r * 8))
         x4 = self.conv4(x4)
         x4 = self.pool4(x4) # (B, C, 3, (N+M)/8)
 
         ### MID
-        x4 = get_graph_feature(x4, batch_info=b4, k=self.k, r=(self.r * 8))
+        x4 = get_graph_feature(x4, batch_info=b4, k=self.k, m=self.m, r=(self.r * 8))
         x4 = self.conv5(x4)
         x4 = self.pool5(x4) # (B, C, 3, (N+M)/8)
 
         ### DECODER 1
         x5 = self.upsample1((p3, x3, o3), (p4, x4, o4)) 
-        x5 = get_graph_feature(x5.contiguous(), batch_info=b3, k=self.k, r=(self.r * 4))
+        x5 = get_graph_feature(x5.contiguous(), batch_info=b3, k=self.k, m=self.m, r=(self.r * 4))
         x5 = self.conv6(x5)
         x5 = self.pool6(x5) # (B, C, 3, (N+M)/4)
 
         ### DECODER 2
         x6 = self.upsample2((p2, x2, o2), (p3, x5, o3))
-        x6 = get_graph_feature(x6.contiguous(), batch_info=b2, k=self.k, r=(self.r * 2))
+        x6 = get_graph_feature(x6.contiguous(), batch_info=b2, k=self.k, m=self.m, r=(self.r * 2))
         x6 = self.conv7(x6)
         x6 = self.pool7(x6) # (B, C, 3, (N+M)/2)
 
         ### DECODER 3
         x7 = self.upsample3((p1, x1, o1), (p2, x6, o2))
-        x7 = get_graph_feature(x7.contiguous(), batch_info=b1, k=self.k, r=(self.r * 1))
+        x7 = get_graph_feature(x7.contiguous(), batch_info=b1, k=self.k, m=self.m, r=(self.r * 1))
         x7 = self.conv8(x7)
         x7 = self.pool8(x7) # (B, C, 3, N+M)
 
@@ -222,9 +223,10 @@ class EQCNN_equi_unet(nn.Module):
 
 class EQCNN_equi_unet_v2(nn.Module): 
 
-    def __init__(self, feat_dim, pooling='mean', k=20, r=0.0):
+    def __init__(self, feat_dim, pooling='mean', k=20, m=1.0, r=0.0):
         super(EQCNN_equi_unet_v2, self).__init__()
         self.k = k
+        self.m = int(m ** 3) # For taking care of volume, so we need to cubic the m
         self.r = r
 
         if pooling == 'max':
@@ -300,72 +302,72 @@ class EQCNN_equi_unet_v2(nn.Module):
         o1 = batch2offset(batch_scaled_batch_info.reshape(-1)).int() # (B*num_of_objs, ) 
         
         ### ENCODER 1
-        x1 = get_graph_feature(x1, batch_info=b1, k=self.k, r=(self.r * 1)) # (B, 2, 3, N+M, k) 
+        x1 = get_graph_feature(x1, batch_info=b1, k=self.k, m=self.m, r=(self.r * 1)) # (B, 2, 3, N+M, k) 
         x1 = self.conv1_1(x1) # (B, 2, 3, N+M, k)  -> (B, C', 3, N+M, k)
         x1 = self.pool1_1(x1) # (B, C', 3, N+M, k) -> (B, C', 3, N+M)
-        x1 = get_graph_feature(x1, batch_info=b1, k=self.k, r=(self.r * 1))
+        x1 = get_graph_feature(x1, batch_info=b1, k=self.k, m=self.m, r=(self.r * 1))
         x1 = self.conv1_2(x1)
         x1 = self.pool1_2(x1)
 
         ### ENCODER 2
         p2, x2, b2, o2 = self.downsample1(p1, x1, b1, o1) # (B*sampled_points, 3), (B, C', 3, sampled_points), (B*num_parts, )
-        x2 = get_graph_feature(x2, batch_info=b2, k=self.k, r=(self.r * 2))
+        x2 = get_graph_feature(x2, batch_info=b2, k=self.k, m=self.m, r=(self.r * 2))
         x2 = self.conv2_1(x2)
         x2 = self.pool2_1(x2)
-        x2 = get_graph_feature(x2, batch_info=b2, k=self.k, r=(self.r * 2))
+        x2 = get_graph_feature(x2, batch_info=b2, k=self.k, m=self.m, r=(self.r * 2))
         x2 = self.conv2_2(x2)
         x2 = self.pool2_2(x2)
 
         ### ENCODER 3
         p3, x3, b3, o3 = self.downsample2(p2, x2, b2, o2)
-        x3 = get_graph_feature(x3, batch_info=b3, k=self.k, r=(self.r * 4))
+        x3 = get_graph_feature(x3, batch_info=b3, k=self.k, m=self.m, r=(self.r * 4))
         x3 = self.conv3_1(x3)
         x3 = self.pool3_1(x3)
-        x3 = get_graph_feature(x3, batch_info=b3, k=self.k, r=(self.r * 4))
+        x3 = get_graph_feature(x3, batch_info=b3, k=self.k, m=self.m, r=(self.r * 4))
         x3 = self.conv3_2(x3)
         x3 = self.pool3_2(x3)
 
         ### ENCODER 4
         p4, x4, b4, o4 = self.downsample3(p3, x3, b3, o3)
-        x4 = get_graph_feature(x4, batch_info=b4, k=self.k, r=(self.r * 8))
+        x4 = get_graph_feature(x4, batch_info=b4, k=self.k, m=self.m, r=(self.r * 8))
         x4 = self.conv4_1(x4)
         x4 = self.pool4_1(x4)
-        x4 = get_graph_feature(x4, batch_info=b4, k=self.k, r=(self.r * 8))
+        x4 = get_graph_feature(x4, batch_info=b4, k=self.k, m=self.m, r=(self.r * 8))
         x4 = self.conv4_2(x4)
         x4 = self.pool4_2(x4)
 
         ### MID
-        x4 = get_graph_feature(x4, batch_info=b4, k=self.k, r=(self.r * 8))
+        x4 = get_graph_feature(x4, batch_info=b4, k=self.k, m=self.m, r=(self.r * 8))
         x4 = self.conv5_1(x4)
         x4 = self.pool5_1(x4)
-        x4 = get_graph_feature(x4, batch_info=b4, k=self.k, r=(self.r * 8))
+        x4 = get_graph_feature(x4, batch_info=b4, k=self.k, m=self.m, r=(self.r * 8))
         x4 = self.conv5_2(x4)
         x4 = self.pool5_2(x4)
 
         ### DECODER 1
         x5 = self.upsample1((p3, x3, o3), (p4, x4, o4)) 
-        x5 = get_graph_feature(x5.contiguous(), batch_info=b3, k=self.k, r=(self.r * 4))
+        x5 = get_graph_feature(x5.contiguous(), batch_info=b3, k=self.k, m=self.m, r=(self.r * 4))
         x5 = self.conv6_1(x5)
         x5 = self.pool6_1(x5)
-        x5 = get_graph_feature(x5, batch_info=b3, k=self.k, r=(self.r * 4))
+        x5 = get_graph_feature(x5, batch_info=b3, k=self.k, m=self.m, r=(self.r * 4))
         x5 = self.conv6_2(x5)
         x5 = self.pool6_2(x5)
 
         ### DECODER 2
         x6 = self.upsample2((p2, x2, o2), (p3, x5, o3))
-        x6 = get_graph_feature(x6.contiguous(), batch_info=b2, k=self.k, r=(self.r * 2))
+        x6 = get_graph_feature(x6.contiguous(), batch_info=b2, k=self.k, m=self.m, r=(self.r * 2))
         x6 = self.conv7_1(x6)
         x6 = self.pool7_1(x6)
-        x6 = get_graph_feature(x6, batch_info=b2, k=self.k, r=(self.r * 2))
+        x6 = get_graph_feature(x6, batch_info=b2, k=self.k, m=self.m, r=(self.r * 2))
         x6 = self.conv7_2(x6)
         x6 = self.pool7_2(x6)
 
         ### DECODER 3
         x7 = self.upsample3((p1, x1, o1), (p2, x6, o2))
-        x7 = get_graph_feature(x7.contiguous(), batch_info=b1, k=self.k, r=(self.r * 1))
+        x7 = get_graph_feature(x7.contiguous(), batch_info=b1, k=self.k, m=self.m, r=(self.r * 1))
         x7 = self.conv8_1(x7)
         x7 = self.pool8_1(x7)
-        x7 = get_graph_feature(x7, batch_info=b1, k=self.k, r=(self.r * 1))
+        x7 = get_graph_feature(x7, batch_info=b1, k=self.k, m=self.m, r=(self.r * 1))
         x7 = self.conv8_2(x7)
         x7 = self.pool8_2(x7)
 

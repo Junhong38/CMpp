@@ -79,6 +79,7 @@ def test(args):
                       consistency_loss_weight=0.0, # We don't need to use this parameter for testing
                         
                       n_knn=args.n_knn,
+                      m_knn=args.m_knn,
                       r_knn=args.r_knn,
                       only_one_norm=args.only_one_norm,
                       n_avn=args.n_avn,
@@ -177,6 +178,7 @@ if __name__ == '__main__':
     parser.add_argument('--backbone', type=str, default='vn_unet', choices=['vn_unet', 'vn_unet_v2'])
     parser.add_argument('--double_bacbone', type=str, default='vn_unet', choices=['none', 'vn_unet', 'vn_unet_v2'])
     parser.add_argument('--n_knn', type=int, default=20, help='Number of nearest neighbors for KNN')
+    parser.add_argument('--m_knn', type=int, default=1, help='Multiplicative factor for KNN, which corresponds to the number of points in the point cloud')
     parser.add_argument('--r_knn', type=float, default=0.0, help='Radius for KNN')
     parser.add_argument('--only_one_norm', action='store_true', help='If True, use only one Normalization layer for the equivariant shape feature')
     parser.add_argument('--n_avn', type=int, default=0, help='Number of AVN layers for the equivariant shape feature')
@@ -258,4 +260,15 @@ if __name__ == '__main__':
     if args.use_seg_result:
         assert args.seg_head_mode != 'none', f"use_seg_result is only allowed when seg_head_mode is not none, but got {args.seg_head_mode}"
 
+    
+    assert args.m_knn >= 1.0, f"m_knn must be greater than or equal to 1.0, but got {args.m_knn}"
+
+
+    # Only one of r_knn and m_knn can be used
+    if args.m_knn > 1:
+        assert args.r_knn == 0.0, f"r_knn is not allowed when m_knn is greater than 1.0, but got {args.r_knn}"
+    
+    if args.r_knn > 0.0:
+        assert args.m_knn == 1, f"m_knn is not allowed when r_knn is greater than 0.0, but got {args.m_knn}"
+    
     test(args)

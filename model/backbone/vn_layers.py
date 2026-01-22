@@ -12,7 +12,7 @@ import torch.nn as nn
 
 EPS = 1e-6
 
-def knn(x, batch_info, k, r=0.0):
+def knn(x, batch_info, k, m=1.0, r=0.0):
     """KNN
 
     Args:
@@ -35,6 +35,7 @@ def knn(x, batch_info, k, r=0.0):
     pairwise_distance = pairwise_distance * matrix_batch_info + (- 1e9) * ( ~ matrix_batch_info) # (B, N+M, N+M)
 
     if r > 0.0:
+        assert m == 1.0, f"m is not allowed when r is greater than 0.0, but got {m}"
         pairwise_distance_inside_radius = pairwise_distance > - r # (B, N+M, N+M) -> True if the distance is less than r
         num_of_points_inside_radius = pairwise_distance_inside_radius.sum(dim=-1) # (B, N+M)
         min_num_of_points_inside_radius = num_of_points_inside_radius.min() # (1,)
@@ -42,22 +43,31 @@ def knn(x, batch_info, k, r=0.0):
         real_k = max(real_k, k)
         # print(f"real_k: {real_k}")
 
+    elif m > 1.0:
+        assert r == 0.0, f"r is not allowed when m is greater than 1.0, but got {r}"
+        real_k = m * k
+    
     else:
         real_k = k
 
 
     idx = pairwise_distance.topk(k=real_k, dim=-1)[1]   # (B, N+M, k)
+
+    if m > 1.0:
+        idx = idx[:,:,::m]
+        real_k = k
     
     return idx, real_k
 
 
-def get_graph_feature(x, batch_info, k=20, r=0.0):
+def get_graph_feature(x, batch_info, k=20, m=1.0, r=0.0):
     """Get graph feature
 
     Args:
         x (torch.Tensor): (B, C, 3, N+M), point features
         batch_info (torch.Tensor): (B, N+M), batch index of the point cloud
         k (int, optional): k. Defaults to 20.
+        m (float, optional): m. Defaults to 1.0.
         r (float, optional): r. Defaults to 0.0.
 
     Returns:
@@ -66,7 +76,7 @@ def get_graph_feature(x, batch_info, k=20, r=0.0):
     batch_size = x.size(0)
     num_points = x.size(3)
     x = x.view(batch_size, -1, num_points) 
-    idx, real_k = knn(x, batch_info, k=k, r=r)   # (B, N+M, k)
+    idx, real_k = knn(x, batch_info, k=k, m=m, r=r)   # (B, N+M, k)
 
     device = torch.device('cuda')
     idx_base = torch.arange(0, batch_size, device=device).view(-1, 1, 1)*num_points
