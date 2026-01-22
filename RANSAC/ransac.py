@@ -17,7 +17,8 @@ def _RANSAC(
         src_predicted_frame=None, trg_predicted_frame=None, 
         match_option='topk', RANSAC_type='default', topk=128,
         normal_threshold=0, strong_normal_threshold=0,
-        matching_choice='many-to-many', src_trg_seg_result=None
+        matching_choice='many-to-many', src_trg_seg_result=None,
+        gt_corr=None, gtRT=None
         ):
     """
     RANSAC for point cloud registration
@@ -36,6 +37,7 @@ def _RANSAC(
     # segmentation thresholding
     if src_trg_seg_result is not None:
         assert shape_matching_scores.shape == src_trg_seg_result.shape, "Shape mismatch between shape matching scores and segmentation result"
+        shape_matching_scores_before_thres = shape_matching_scores
         shape_matching_scores = shape_matching_scores * src_trg_seg_result
         if src_trg_seg_result.sum().item() == 0:
             print(f"number of segmentation predictions : {src_trg_seg_result.sum().item()}")
@@ -55,6 +57,8 @@ def _RANSAC(
         initial_matches = injective_matching(shape_matching_scores) # (K, 2)
     elif match_option == 'bijective_matching':
         initial_matches = bijective_matching(shape_matching_scores) # (K, 2)
+    elif match_option == 'all':
+        initial_matches = torch.nonzero(shape_matching_scores) # (K, 2)
     else:
         raise ValueError(f"Invalid match option: {match_option}")
     
@@ -96,7 +100,7 @@ def _RANSAC(
     N = src_corr_pts.shape[0] + 1e-6
     k = 3  # minimum number of points to estimate the model
     delta = 0.05  # probability of choosing at least one outlier-free subset
-    num_iters = max(math.ceil((N / k) * math.log(N / delta)), 100)
+    num_iters = min(max(math.ceil((N / k) * math.log(N / delta)), 100), 1500)
 
     if RANSAC_type == 'score_dependent':
         ransac_function = score_dependent_ransac_rigid
@@ -112,7 +116,9 @@ def _RANSAC(
         src_normal = src_predicted_frame[:,0,:] # (N, 3, 3) -> (N, 3), select only predicted normal
         trg_normal = trg_predicted_frame[:,0,:] # (M, 3, 3) -> (M, 3), 
     
-    # print(src_corr_pts.shape[0])
+    # print(src_corr_pts.shape[0], num_iters)
+    if src_trg_seg_result is not None:
+        shape_matching_scores = shape_matching_scores_before_thres
     if src_corr_pts.shape[0] < 3:
         # Not enough correspondences for RANSAC
         from RANSAC.weighted_procrustes import weighted_procrustes
@@ -120,7 +126,7 @@ def _RANSAC(
                                            weights=shape_matching_scores[src_idx, trg_idx],
                                            return_transform=False)
     else:
-        inl_R, inl_t, inliers = ransac_function(src_corr_pts, trg_corr_pts, 
+        inl_R, inl_t, inliers, re, te = ransac_function(src_corr_pts, trg_corr_pts, 
                                                 src_pcd.squeeze(0), trg_pcd.squeeze(0),
                                                 src_normal, trg_normal,
                                                 scores = shape_matching_scores,
@@ -128,13 +134,19 @@ def _RANSAC(
                                                 num_iters = num_iters,
                                                 normal_threshold=normal_threshold,
                                                 strong_normal_threshold=strong_normal_threshold,
-                                                matching_choice=matching_choice
+                                                matching_choice=matching_choice,
+                                                gt_corr=gt_corr,
+                                                file_path=in_dict['filepath'],
+                                                gtRT=gtRT
                                                 )
 
 
     estimated_transform = torch.eye(4, device=inl_R.device, dtype=inl_R.dtype)
     estimated_transform[:3, :3] = inl_R
     estimated_transform[:3, 3] = inl_t
+    
+    if src_corr_pts.shape[0] < 3:
+        from RANSAC.score_dependent_ransac import _transformation_error_geodesic
+        re, te = _transformation_error_geodesic(gtRT, [inl_R, inl_t])
 
-
-    return estimated_transform, used_corr
+    return estimated_transform, used_corr, re, te

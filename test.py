@@ -158,12 +158,12 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Equivariant Assembly Pytorch Implementation')
 
     # Dataset arguments
-    parser.add_argument('--datapath', type=str, default='../../../../hdd/junhong/temp_data/breaking_bad/volume_constrained') 
+    parser.add_argument('--datapath', type=str, default='../data/temp_breaking_bad/breaking_bad/volume_constrained') 
     #'../../../../hdd/junhong/data/bbad_v2' and /mnt/nvme2n1p1/kimsangki_datasets/breaking_bad/volume_constrained , /home/kimsangki/breaking_bad/volume_constrained 
     # ../data/temp_breaking_bad/breaking_bad/volume_constrained , ../../../../../hdd/junhong/temp_data/breaking_bad/volume_constrained
     parser.add_argument('--data_category', type=str, default='everyday', choices=['everyday', 'artifact'])
     parser.add_argument('--sub_category', type=str, default='all')
-    parser.add_argument('--scale', type=str, default='full', choices=['overfitting', 'tiny', 'small', 'full'])
+    parser.add_argument('--scale', type=str, default='full', choices=['overfitting', 'tiny', 'small', 'full', 'RANSACtest'])
     parser.add_argument('--min_part', type=int, default=2)
     parser.add_argument('--max_part', type=int, default=2)
     parser.add_argument('--min_n_pts', type=int, default=256)
@@ -205,7 +205,7 @@ if __name__ == '__main__':
 
     
     # Inference arguments
-    parser.add_argument('--infer_match_option', type=str, default='topk', choices=['topk', 'mutual_topk', 'soft_topk', 'unidirectional_nn_matching', 'injective_matching', 'bijective_matching'])
+    parser.add_argument('--infer_match_option', type=str, default='topk', choices=['all', 'topk', 'mutual_topk', 'soft_topk', 'unidirectional_nn_matching', 'injective_matching', 'bijective_matching'])
     parser.add_argument('--infer_topk', type=float, default=128)
     parser.add_argument('--infer_score_threshold_ratio', type=float, default=0.0)
     parser.add_argument('--use_RANSAC', action='store_true', help='If True, use RANSAC for transformation estimation')

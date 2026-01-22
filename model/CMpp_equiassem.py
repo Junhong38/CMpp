@@ -1183,7 +1183,7 @@ class EquiAssem(pl.LightningModule):
         matching_choice = 'one-to-one' if self.sampling_mode == 'same' else 'many-to-many'
 
         if self.use_RANSAC:
-            estimated_transform, used_corr = _RANSAC(in_dict=in_dict, 
+            estimated_transform, used_corr, re, te = _RANSAC(in_dict=in_dict, 
                                                      shape_matching_scores=postprocessed_shape_matching_scores, 
                                                      src_pcd=src_pcd, 
                                                      trg_pcd=trg_pcd, 
@@ -1195,7 +1195,8 @@ class EquiAssem(pl.LightningModule):
                                                      normal_threshold=self.RANSAC_normal_threshold,
                                                      strong_normal_threshold=self.RANSAC_strong_normal_threshold,
                                                      matching_choice=matching_choice,
-                                                     src_trg_seg_result = src_trg_seg_result if self.use_seg_result and self.using_seg_mode == 'threshold' else None)
+                                                     src_trg_seg_result = src_trg_seg_result if self.use_seg_result and self.using_seg_mode == 'threshold' else None,
+                                                     gt_corr = gt_corr, gtRT = in_dict['relative_trsfm']['0-1'])
 
         else:
             # fine_matching predict Rt to move points from src_points to ref_points
@@ -1213,6 +1214,8 @@ class EquiAssem(pl.LightningModule):
         eval_dict.update(self._calculate_recall(postprocessed_matching_scores_drop, gt_corr))
 
         # Calculate ratio of GT among topk scores
+        if self.use_seg_result and self.using_seg_mode == 'threshold':
+            postprocessed_matching_scores_drop *= src_trg_seg_result
         eval_dict['gt_among_topk'] = self.calculate_ratio_of_gt_among_topk_scores(src_pcd_raw, trg_pcd_raw, postprocessed_matching_scores_drop, topk=self.infer_topk, pos_radius=self.pos_radius)
 
         # log size of gt_corr
@@ -1222,6 +1225,10 @@ class EquiAssem(pl.LightningModule):
         if self.seg_head_mode != 'none':
             eval_dict['seg_coverage'], eval_dict['seg_accuracy'] = calculate_accuracy_of_seg_results(out_mating_surface_seg_results, positive_mask)
 
+
+        eval_dict['RE'] = re
+        eval_dict['TE'] = te
+        
         return out_dict, eval_dict
     
 
@@ -1698,6 +1705,8 @@ class EquiAssem(pl.LightningModule):
             initial_matches = injective_matching(matching_scores_before_Sinkhorn) # (K, 2)
         elif match_option == 'bijective_matching':
             initial_matches = bijective_matching(matching_scores_before_Sinkhorn) # (K, 2)
+        elif match_option == 'all':
+            initial_matches = torch.nonzero(matching_scores_before_Sinkhorn) # (K, 2)
         else:
             raise ValueError(f"Invalid match option: {match_option}")
         
