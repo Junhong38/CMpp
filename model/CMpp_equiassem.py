@@ -24,6 +24,7 @@ from common.utils import instance_wise_results_to_json, divide_parameters_into_o
 from common.viz import visualize_negative_hard_mask, draw_test_results_histogram, save_pc
 
 import os
+import gtsam
 
 
 class EquiAssem(pl.LightningModule):
@@ -880,12 +881,9 @@ class EquiAssem(pl.LightningModule):
         if infer_mode == 'naive':
             pred_rot_and_trans_dict, list_of_assembled_pcds, list_of_gt_assembled_pcds, step_collector_for_viz = self.assemble_obj_by_obj(in_dict)
         elif infer_mode == 'shonan':
-            # TODO: Implement shonan assembly
-            pass
+            pred_rot_and_trans_dict, list_of_assembled_pcds, list_of_gt_assembled_pcds, step_collector_for_viz = self.assemble_shonan(in_dict)
         else:
             raise ValueError(f"infer_mode must be in ['naive', 'shonan'], but got {infer_mode}")
-        
-        pred_rot_and_trans_dict, list_of_assembled_pcds, list_of_gt_assembled_pcds, step_collector_for_viz = self.assemble_obj_by_obj(in_dict)
 
         # Compute metrics
         eval_result = compute_metrics(list_of_assembled_pcds, list_of_gt_assembled_pcds, pred_rot_and_trans_dict, in_dict['relative_trsfm'])
@@ -909,6 +907,8 @@ class EquiAssem(pl.LightningModule):
             # Step-by-step assembled PCD visualization
             for ith_step, step_pcds in enumerate(step_collector_for_viz):
                 save_pc(f"{vis_folder}/step_{ith_step}.ply", step_pcds)
+        
+        exit("stop")
         
         return eval_result
     
@@ -1018,8 +1018,7 @@ class EquiAssem(pl.LightningModule):
         
         return pred_rot_and_trans_dict, list_of_assembled_pcds, list_of_gt_assembled_pcds, step_collector_for_viz
     
-
-
+    
     def return_matching_scores(self, pcd_input, batch_info, batch_scaled_batch_info):
         # Get equivariant features and orientation matrices
         # equivariant features: (B, C, 3, N+M) , orientation matrices: (B, N+M, 3, 3)
@@ -1059,5 +1058,85 @@ class EquiAssem(pl.LightningModule):
             list_of_gt_assembled_pcds (list): list of GT assembled point clouds
             step_collector_for_viz (list): list of step-by-step assembled point clouds for visualization
         """
-        pass
+
+        pcd_input = in_dict['pcd_t'] # (B, N+M, 3)
+        pcd_batch_info = in_dict['pcd_batch_info'] # (B, N+M, )
+        offset = torch.concat([torch.zeros(1, device=pcd_batch_info.device, dtype=torch.int), batch2offset(pcd_batch_info[0])], dim=0) # size of parts
+        num_of_parts = in_dict['num_parts'][0] # int
+        anchor_idx = in_dict['anchor_idx'][0] # int
+
+
+        # Extract all point clouds
+        list_of_all_pcds = extract_all_objects_by_offset(pcd_input[0], offset) # list of (N, 3)
+        list_of_all_gt_normals = extract_all_objects_by_offset(in_dict['gt_normals'][0], offset) # list of (N, 3)
+
+
+        # Calculate matching scores for all pairs and predict rotation and translation
+        pred_dict = {}
+        pred_rot_and_trans_dict = {}
+        for src_idx in range(num_of_parts):
+            for trg_idx in range(num_of_parts):
+                if src_idx == trg_idx: 
+                    continue
+                
+
+                # Prepare input
+                input_dict = make_input_dicts_for_shonan(src_idx, trg_idx, list_of_all_pcds, list_of_all_gt_normals)
+
+                # Calculate matching scores
+                # (1, N+M, 3, 3), (1, N+M, N+M), (1, N+M, N+M), (1, N+M)
+                oris, matching_scores_drop, shape_matching_scores, mating_surface_seg_results = self.return_matching_scores(input_dict['input_pcds'], input_dict['pcd_batch_info'], input_dict['batch_scaled_batch_info'])
+
+                # Calculate transformation
+                num_of_src_pcd = input_dict['src_pcd'].shape[0]
+
+                if self.use_RANSAC:
+                    final_matching_scores = shape_matching_scores[0,0:num_of_src_pcd,num_of_src_pcd:]
+                    src_frame = oris[0,0:num_of_src_pcd,:,:] if self.use_predicted_normal else None # (N, 3, 3)
+                    trg_frame = oris[0,num_of_src_pcd:,:,:] if self.use_predicted_normal else None # (M, 3, 3)
+
+
+                    estimated_transform, used_corr = _RANSAC(in_dict=input_dict, 
+                                                             shape_matching_scores=final_matching_scores, 
+                                                             src_pcd=input_dict['src_pcd'], 
+                                                             trg_pcd=input_dict['trg_pcd'], 
+                                                             src_predicted_frame=src_frame,
+                                                             trg_predicted_frame=trg_frame,
+                                                             match_option=self.infer_match_option, 
+                                                             RANSAC_type=self.RANSAC_type, 
+                                                             topk=self.infer_topk)
+                else:
+                    final_matching_scores = matching_scores_drop[0,0:num_of_src_pcd,num_of_src_pcd:]
+                    estimated_transform, used_corr = self.fine_matching(input_dict['src_pcd'].unsqueeze(0), input_dict['trg_pcd'].unsqueeze(0), final_matching_scores.unsqueeze(0), no_exp=(self.matching_norm_mode != 'sinkhorn'))
+                
+                score_for_this_assembly = torch.topk(final_matching_scores.reshape(-1), k=self.infer_topk)[0].mean()
+                pred_dict[f"{src_idx}-{trg_idx}"] = (score_for_this_assembly, estimated_transform) # allways move src to trg, src:ith, trg:jth
+
+        # Prepare Graph Optimization
+        factors, params, uncertainty_dict = make_shonan_factors(pred_dict, num_of_parts, selection_mode='max')
+        
+        # Select which edge should be added to the graph
+        abs_rotat = run_shonan_averaging(factors, params, max_iter=60)
+        list_of_relative_rotations = calculate_relative_rotation(abs_rotat, anchor_idx, num_of_parts)
+
+        # Calculate translation after shonan averaging
+        list_of_relative_translations = optimize_translation_after_shonan_averaging(list_of_relative_rotations, factors, anchor_idx, uncertainty_dict)
+
+        # Make relative transformation dictionary
+        pred_rot_and_trans_dict = make_relative_transformation_dict(list_of_relative_rotations, list_of_relative_translations, anchor_idx, num_of_parts, device=pcd_input.device)
+
+        # Apply transformation to the point clouds
+        list_of_assembled_pcds = apply_transformation_to_point_clouds(list_of_all_pcds, pred_rot_and_trans_dict, anchor_idx, num_of_parts)
+
+        # Apply GT transformation to the point clouds for evaluation
+        list_of_gt_assembled_pcds = apply_transformation_to_point_clouds(list_of_all_pcds, in_dict['relative_trsfm'], anchor_idx, num_of_parts)
+
+        return pred_rot_and_trans_dict, list_of_assembled_pcds, list_of_gt_assembled_pcds, []
+
+
+
+
+
+        
+        
    

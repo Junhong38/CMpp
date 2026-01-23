@@ -2,8 +2,9 @@ import torch
 from common.metric_utils import *
 from common.misc import batch_scaling, extract_all_objects_by_offset, bincount2offset, offset2batch
 from common.utils import pairwise_mating
-
-
+from scipy.spatial.transform import Rotation as scipy_rot
+import numpy as np
+import gtsam
 
 def make_setting_for_next_iteration(previous_setting, removed_assm_pred, list_of_all_pcds, anchor_obj_idx, selected_obj_idx):
     """
@@ -208,3 +209,213 @@ def compute_metrics(list_of_assembled_pcds, list_of_gt_assembled_pcds, pred_rot_
     eval_result['part_acc_crd'] = part_accuracy_based_on_crd(list_of_assembled_pcds, list_of_gt_assembled_pcds)
 
     return eval_result
+
+
+def make_input_dicts_for_shonan(src_idx, trg_idx, list_of_all_pcds, list_of_all_gt_normals):
+    """
+    Args:
+        src_idx (int): index of the source object
+        trg_idx (int): index of the target object
+        list_of_all_pcds (list): list of (N, 3), len == total_num_of_parts
+        list_of_all_gt_normals (list): list of (N, 3), len == total_num_of_parts
+    Returns:
+        input_dict (dict): dictionary of the input
+            src_pcd (torch.Tensor): (N, 3)
+            trg_pcd (torch.Tensor): (M, 3)
+            input_pcds (torch.Tensor): (1, N+M, 3)
+            batch_info (torch.Tensor): (1, N+M, )
+            batch_scaled_batch_info (torch.Tensor): (1, N+M, )
+        
+    """
+    src_pcd = list_of_all_pcds[src_idx] # (N, 3)
+    trg_pcd = list_of_all_pcds[trg_idx] # (M, 3)
+    src_gt_normals = list_of_all_gt_normals[src_idx] # (N, 3)
+    trg_gt_normals = list_of_all_gt_normals[trg_idx] # (M, 3)
+    bincount = torch.tensor([a_pcd.shape[0] for a_pcd in [src_pcd, trg_pcd]], device=src_pcd.device) # (2,)
+    offset = bincount2offset(bincount) # (3,)
+    batch_info = offset2batch(offset).unsqueeze(0) # (1, N+M)
+    batch_scaled_batch_info = batch_scaling(batch_info) # (1, N+M)
+    input_pcds = torch.cat([src_pcd, trg_pcd], dim=0).unsqueeze(0) # (1, N+M, 3)
+    gt_normals = torch.cat([src_gt_normals, trg_gt_normals], dim=0).unsqueeze(0) # (1, N+M, 3)
+
+    input_dict = {
+        'src_pcd': src_pcd, # (N, 3)
+        'trg_pcd': trg_pcd, # (M, 3)
+        'input_pcds': input_pcds, # (1, N+M, 3)
+        'pcd_batch_info': batch_info, # (1, N+M, )
+        'batch_scaled_batch_info': batch_scaled_batch_info, # (1, N+M, )
+        'gt_normals': gt_normals, # (1, N+M, 3)
+    }
+    
+    return input_dict
+
+
+def make_shonan_factors(pred_dict, num_of_parts, selection_mode='max'):
+    """
+    Args:
+        pred_dict (dict): dictionary of the predicted transformation
+            - key: (src_idx-trg_idx), value: (score, estimated_transform)
+        num_of_parts (int): number of parts
+        selection_mode (str): 'max'
+    Returns:
+        factors (gtsam.BetweenFactorPose3s): factors of the problem
+        params (gtsam.ShonanAveragingParameters3): parameters of the shonan averaging
+    """
+    params = gtsam.ShonanAveragingParameters3(gtsam.LevenbergMarquardtParams.CeresDefaults())
+    factors = gtsam.BetweenFactorPose3s()
+
+    uncertainty_dict = {}
+    for src_idx in range(num_of_parts):
+        max_score = - torch.inf
+        max_idx = -1
+        for trg_idx in range(num_of_parts):
+            if src_idx == trg_idx:
+                continue
+            key = f"{src_idx}-{trg_idx}"
+            score = pred_dict[key][0]
+
+            if max_score < score:
+                max_score = score
+                max_idx = trg_idx
+        
+        assert max_idx != -1, f"max_idx: {max_idx}, src_idx: {src_idx}, num_of_parts: {num_of_parts}"
+
+        rot_and_trans = pred_dict[f"{src_idx}-{max_idx}"][1] # move src_idx to max_idx
+        rot_matrix = rot_and_trans[:3,:3].cpu().numpy()
+        translation = rot_and_trans[:3,3].cpu().numpy()
+        rot_quat = scipy_rot.from_matrix(rot_matrix).as_quat()
+        max_score = max_score.cpu().numpy()
+
+        # add factor
+        pose = gtsam.Pose3(gtsam.Rot3.Quaternion(rot_quat[3], rot_quat[0], rot_quat[1], rot_quat[2]), gtsam.Point3(translation))
+        factors.append(gtsam.BetweenFactorPose3(src_idx, max_idx, pose, gtsam.noiseModel.Diagonal.Information(max_score * np.eye(6))))
+        uncertainty_dict[f"{src_idx}-{max_idx}"] = 1/max_score
+
+    return factors, params, uncertainty_dict
+
+
+
+
+def run_shonan_averaging(factors, params, max_iter=60):
+    """
+    Run shonan averaging
+    Args:
+        factors (gtsam.BetweenFactorPose3s): factors of the problem
+        params (gtsam.ShonanAveragingParameters3): parameters of the shonan averaging
+        max_iter (int): maximum number of iterations
+    Returns:
+        abs_rotat (gtsam.Values): absolute rotations
+    """
+
+    # Run shonan averaging
+    sa3 = gtsam.ShonanAveraging3(factors, params)
+    initial = sa3.initializeRandomly()
+    pMax = 20
+    while True:
+        pMax += 20
+        try: 
+            abs_rotat, _ = sa3.run(initial, 3, pMax)
+            break
+        except RuntimeError as e:
+            print(f"An error occurred during Shonan::run: with pMax {pMax}")
+        
+        if pMax >= max_iter:
+            raise RuntimeError(f"Shonan averaging failed after {max_iter} iterations")
+    
+    return abs_rotat
+
+
+
+def calculate_relative_rotation(abs_rotat, anchor_idx, num_of_parts):
+    """
+    Calculate relative rotation
+    Args:
+        abs_rotat (gtsam.Values): absolute rotations
+        anchor_idx (int): index of the anchor object
+        num_of_parts (int): number of parts
+        device (torch.device): device
+    Returns:
+        relative_rotation (gtsam.Values): relative rotations
+    """
+    list_of_relative_rotations = []
+    anchor_rot = np.array(abs_rotat.atRot3(anchor_idx).matrix())
+    inverse_anchor_rot = np.linalg.inv(anchor_rot)
+
+    for ith_obj in range(num_of_parts):
+        # if ith_obj == anchor_idx:
+        #     list_of_relative_rotations.append(np.eye(3))
+        # else:
+        obj_rot = np.array(abs_rotat.atRot3(ith_obj).matrix())
+        relative_rotation = inverse_anchor_rot @ obj_rot
+        list_of_relative_rotations.append(relative_rotation)
+    
+    return list_of_relative_rotations
+    
+
+
+def optimize_translation_after_shonan_averaging(list_of_relative_rotations, factors, anchor_idx, uncertainty_dict, scale=1e-2):
+    """
+    Optimize translation after shonan averaging
+    Args:
+        list_of_relative_rotations (list): list of the relative rotation
+        factors (gtsam.BetweenFactorPose3s): factors of the problem
+        num_of_parts (int): number of parts
+        anchor_idx (int): index of the anchor object
+        uncertainty_dict (dict): dictionary of the uncertainty
+    Returns:
+        abs_trans (gtsam.Values): absolute translations
+    """
+
+    graph = gtsam.GaussianFactorGraph()
+
+    # Add a factor anchoring t_anchor
+    graph.add(anchor_idx, np.eye(3), np.zeros((3,)), gtsam.noiseModel.Unit.Create(3))
+
+    # Rij @ src_i + tij = trg_j
+    # Because of absolute rotation, R_anchor @ anchor + T_anchor
+    # relative @ src_i + relative_trans = identity @ anchor + 
+
+    # Add a factor saying t_j - t_i = Ri * t_ij for all edges (i,j)
+    for idx in range(len(factors)):
+        factor = factors[idx]
+        keys = factor.keys()
+        src_i, trg_j, Tij = keys[0], keys[1], factor.measured()
+        assert src_i != trg_j, f"src_i: {src_i}, trg_j: {trg_j}"
+
+        relative_rot = list_of_relative_rotations[trg_j]
+        measured = np.linalg.inv(relative_rot) @ Tij.translation()
+        graph.add(src_i, np.eye(3), trg_j, -np.eye(3), measured, gtsam.noiseModel.Diagonal.Variances(uncertainty_dict[f"{src_i}-{trg_j}"] * scale * np.ones(3)))
+
+
+    # Solve linear system
+    result_translations = []
+    translations = graph.optimize()
+    for i in range(translations.size()):
+        result_translations.append(translations.at(i))
+
+
+    return result_translations
+
+
+def make_relative_transformation_dict(list_of_relative_rotations, list_of_relative_translations, anchor_idx, num_of_parts, device):
+    """
+    Make relative transformation dictionary
+    Args:
+        list_of_relative_rotations (list): list of the relative rotation
+        abs_trans (gtsam.Values): absolute translations
+        anchor_idx (int): index of the anchor object
+        num_of_parts (int): number of parts
+    Returns:
+        relative_transformation_dict (dict): dictionary of the relative transformation
+    """
+    anchor_trans = list_of_relative_translations[anchor_idx]
+
+    relative_transformation_dict = {}
+    for ith_obj in range(num_of_parts):
+        if ith_obj == anchor_idx:
+            continue
+        rot_matrix = torch.tensor(list_of_relative_rotations[ith_obj], device=device).inverse().float()
+        trans_vector = torch.tensor(list_of_relative_translations[ith_obj] - anchor_trans, device=device).float()
+        relative_transformation_dict[f"{ith_obj}-{anchor_idx}"] = (rot_matrix, trans_vector)
+
+    return relative_transformation_dict

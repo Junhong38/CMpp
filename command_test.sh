@@ -57,11 +57,7 @@ rm -rf checkpoint/MARANSAC2t20_LOAD_THIRD_SEGMLPDICE_NFREEZE00125_G8NDB2_NPCFNR4
 
 
 
-
-
-
 rm -rf checkpoint/TEST/ && CUDA_VISIBLE_DEVICES=0 python test.py --load checkpoint_backup/THIRD_SEGMLPDICE_NFREEZE00125_G8NDB2_NPCFNR4C1/models/last.ckpt --logpath TEST --gpus 0 --n_worker 1 --flip_normal_mode rightv4 --seg_head_mode mlp --move_smaller --min_part 2 --max_part 2 --n_pts 5000 --r_knn 0.00
-
 rm -rf checkpoint/TEST/ && CUDA_VISIBLE_DEVICES=0 python test.py --scale overfitting --load checkpoint_backup/THIRD_SEGMLPDICE_NFREEZE00125_G8NDB2_NPCFNR4C1/models/last.ckpt --logpath TEST --gpus 0 --n_worker 1 --flip_normal_mode rightv4 --seg_head_mode mlp --move_smaller --min_part 2 --max_part 2 --n_pts 5000 --r_knn 0.00
 
 
@@ -80,10 +76,15 @@ end
 
 
 
-
 # rm -rf checkpoint/TEST_m1/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python test.py --load checkpoint_backup/THIRD_SEGMLPDICE_NFREEZE00125_G8NDB2_NPCFNR4C1/models/last.ckpt --logpath TEST_m1 --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --flip_normal_mode rightv4 --seg_head_mode mlp --move_smaller --min_part 2 --max_part 2 --n_pts 5000 --m_knn 1 --r_knn 0.00
-rm -rf checkpoint/TEST_n10000_m2V2/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python test.py --load checkpoint_backup/THIRD_SEGMLPDICE_NFREEZE00125_G8NDB2_NPCFNR4C1/models/last.ckpt --logpath TEST_n10000_m2V2 --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --flip_normal_mode rightv4 --seg_head_mode mlp --move_smaller --min_part 2 --max_part 2 --n_pts 10000 --m_knn 2 --r_knn 0.00
-rm -rf checkpoint/TEST_n20000_m4V2/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python test.py --load checkpoint_backup/THIRD_SEGMLPDICE_NFREEZE00125_G8NDB2_NPCFNR4C1/models/last.ckpt --logpath TEST_n20000_m4V2 --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --flip_normal_mode rightv4 --seg_head_mode mlp --move_smaller --min_part 2 --max_part 2 --n_pts 20000 --m_knn 4 --r_knn 0.00
+# rm -rf checkpoint/TEST_n10000_m2V2/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python test.py --load checkpoint_backup/THIRD_SEGMLPDICE_NFREEZE00125_G8NDB2_NPCFNR4C1/models/last.ckpt --logpath TEST_n10000_m2V2 --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --flip_normal_mode rightv4 --seg_head_mode mlp --move_smaller --min_part 2 --max_part 2 --n_pts 10000 --m_knn 2 --r_knn 0.00
+# rm -rf checkpoint/TEST_n20000_m4V2/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python test.py --load checkpoint_backup/THIRD_SEGMLPDICE_NFREEZE00125_G8NDB2_NPCFNR4C1/models/last.ckpt --logpath TEST_n20000_m4V2 --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --flip_normal_mode rightv4 --seg_head_mode mlp --move_smaller --min_part 2 --max_part 2 --n_pts 20000 --m_knn 4 --r_knn 0.00
+
+
+
+
+rm -rf checkpoint/TEST/ && CUDA_VISIBLE_DEVICES=0 python test.py --load checkpoint_backup/THIRD_SEGMLPDICE_NFREEZE00125_G8NDB2_NPCFNR4C1/models/last.ckpt --logpath TEST --gpus 0 --n_worker 1 --flip_normal_mode rightv4 --seg_head_mode mlp --move_smaller --min_part 2 --max_part 2 --multi_part_assembly shonan
+
 
 
 

@@ -36,6 +36,9 @@ pip install rtree
 
 # install flash attention
 pip install flash-attn==2.7.3 --no-build-isolation
+
+# install gstam for shonan
+pip install gtsam
 ```
 
 ### Useful commands
