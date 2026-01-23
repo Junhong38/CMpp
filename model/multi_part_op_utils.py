@@ -339,14 +339,15 @@ def calculate_relative_rotation(abs_rotat, anchor_idx, num_of_parts):
     """
     list_of_relative_rotations = []
     anchor_rot = np.array(abs_rotat.atRot3(anchor_idx).matrix())
-    inverse_anchor_rot = np.linalg.inv(anchor_rot)
+    # inverse_anchor_rot = np.linalg.inv(anchor_rot)
 
     for ith_obj in range(num_of_parts):
         # if ith_obj == anchor_idx:
         #     list_of_relative_rotations.append(np.eye(3))
         # else:
         obj_rot = np.array(abs_rotat.atRot3(ith_obj).matrix())
-        relative_rotation = inverse_anchor_rot @ obj_rot
+        # relative_rotation = inverse_anchor_rot @ obj_rot
+        relative_rotation = anchor_rot @ np.linalg.inv(obj_rot)
         list_of_relative_rotations.append(relative_rotation)
     
     return list_of_relative_rotations
@@ -414,7 +415,8 @@ def make_relative_transformation_dict(list_of_relative_rotations, list_of_relati
     for ith_obj in range(num_of_parts):
         if ith_obj == anchor_idx:
             continue
-        rot_matrix = torch.tensor(list_of_relative_rotations[ith_obj], device=device).inverse().float()
+        # rot_matrix = torch.tensor(list_of_relative_rotations[ith_obj], device=device).inverse().float()
+        rot_matrix = torch.tensor(list_of_relative_rotations[ith_obj], device=device).float()
         trans_vector = torch.tensor(list_of_relative_translations[ith_obj] - anchor_trans, device=device).float()
         relative_transformation_dict[f"{ith_obj}-{anchor_idx}"] = (rot_matrix, trans_vector)
 
