@@ -1099,13 +1099,10 @@ class EquiAssem(pl.LightningModule):
         pred_dict_with_transform = {}
         for src_idx, trg_idx in selected_keys:
             input_dict = make_input_dicts_for_shonan(src_idx, trg_idx, list_of_all_pcds, list_of_all_gt_normals)
-            # oris, matching_scores_drop, shape_matching_scores, mating_surface_seg_results = self.return_matching_scores(input_dict['input_pcds'], input_dict['pcd_batch_info'], input_dict['batch_scaled_batch_info'])
             oris, final_matching_scores = pred_dict_for_score[f"{src_idx}-{trg_idx}"][1:]
-            
             num_of_src_pcd = input_dict['src_pcd'].shape[0]
 
             if self.use_RANSAC:
-                # final_matching_scores = shape_matching_scores[0,0:num_of_src_pcd,num_of_src_pcd:]
                 src_frame = oris[0,0:num_of_src_pcd,:,:] if self.use_predicted_normal else None # (N, 3, 3)
                 trg_frame = oris[0,num_of_src_pcd:,:,:] if self.use_predicted_normal else None # (M, 3, 3)
                 estimated_transform, used_corr = _RANSAC(in_dict=input_dict, 
@@ -1118,7 +1115,6 @@ class EquiAssem(pl.LightningModule):
                                                          RANSAC_type=self.RANSAC_type, 
                                                          topk=self.infer_topk)
             else:
-                # final_matching_scores = matching_scores_drop[0,0:num_of_src_pcd,num_of_src_pcd:]
                 estimated_transform, used_corr = self.fine_matching(input_dict['src_pcd'].unsqueeze(0), input_dict['trg_pcd'].unsqueeze(0), final_matching_scores.unsqueeze(0), no_exp=(self.matching_norm_mode != 'sinkhorn'))
             
             pred_dict_with_transform[f"{src_idx}-{trg_idx}"] = estimated_transform

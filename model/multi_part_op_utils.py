@@ -258,7 +258,7 @@ def make_connection_graph(pred_dict_for_score, num_of_parts, anchor_idx):
     """
     Args:
         pred_dict (dict): dictionary of the predicted transformation
-            - key: (src_idx-trg_idx), value: (score, matching_scores)
+            - key: (src_idx-trg_idx), value: (score, oris, matching_scores)
         num_of_parts (int): number of parts
         anchor_idx (int): index of the anchor object
     Returns:
@@ -381,7 +381,7 @@ def make_shonan_factors(pred_dict_with_transform, max_score_dict):
     return factors, params
 
 
-def run_shonan_averaging(factors, params, max_iter=60):
+def run_shonan_averaging(factors, params, max_iter=120):
     """
     Run shonan averaging
     Args:
@@ -397,7 +397,6 @@ def run_shonan_averaging(factors, params, max_iter=60):
     initial = sa3.initializeRandomly()
     pMax = 20
     while True:
-        pMax += 20
         try: 
             abs_rotat, _ = sa3.run(initial, 3, pMax)
             break
@@ -406,6 +405,8 @@ def run_shonan_averaging(factors, params, max_iter=60):
         
         if pMax >= max_iter:
             raise RuntimeError(f"Shonan averaging failed after {max_iter} iterations")
+        
+        pMax += 20
     
     return abs_rotat
 
