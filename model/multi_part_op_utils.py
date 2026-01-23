@@ -339,15 +339,15 @@ def calculate_relative_rotation(abs_rotat, anchor_idx, num_of_parts):
     """
     list_of_relative_rotations = []
     anchor_rot = np.array(abs_rotat.atRot3(anchor_idx).matrix())
-    # inverse_anchor_rot = np.linalg.inv(anchor_rot)
 
     for ith_obj in range(num_of_parts):
-        # if ith_obj == anchor_idx:
-        #     list_of_relative_rotations.append(np.eye(3))
-        # else:
         obj_rot = np.array(abs_rotat.atRot3(ith_obj).matrix())
-        # relative_rotation = inverse_anchor_rot @ obj_rot
-        relative_rotation = anchor_rot @ np.linalg.inv(obj_rot)
+
+        # Align obj in anchor coordinate system, then rotate object
+        # Result from shonan averaging is rotation from local to world coordinate system
+        # Hence, for real obj rotation, we need to invert the rotation
+        relative_rotation = np.linalg.inv(obj_rot) @ anchor_rot
+        
         list_of_relative_rotations.append(relative_rotation)
     
     return list_of_relative_rotations
@@ -357,10 +357,11 @@ def calculate_relative_rotation(abs_rotat, anchor_idx, num_of_parts):
 def optimize_translation_after_shonan_averaging(list_of_relative_rotations, factors, anchor_idx, uncertainty_dict, scale=1e-2):
     """
     Optimize translation after shonan averaging
+    Because shonan averaging only gives relative rotation, we need to optimize translation to make the assembled point cloud
+
     Args:
         list_of_relative_rotations (list): list of the relative rotation
         factors (gtsam.BetweenFactorPose3s): factors of the problem
-        num_of_parts (int): number of parts
         anchor_idx (int): index of the anchor object
         uncertainty_dict (dict): dictionary of the uncertainty
     Returns:
@@ -369,12 +370,8 @@ def optimize_translation_after_shonan_averaging(list_of_relative_rotations, fact
 
     graph = gtsam.GaussianFactorGraph()
 
-    # Add a factor anchoring t_anchor
+    # We assume that the coordinate system of the anchor object is the world coordinate system
     graph.add(anchor_idx, np.eye(3), np.zeros((3,)), gtsam.noiseModel.Unit.Create(3))
-
-    # Rij @ src_i + tij = trg_j
-    # Because of absolute rotation, R_anchor @ anchor + T_anchor
-    # relative @ src_i + relative_trans = identity @ anchor + 
 
     # Add a factor saying t_j - t_i = Ri * t_ij for all edges (i,j)
     for idx in range(len(factors)):
@@ -384,7 +381,11 @@ def optimize_translation_after_shonan_averaging(list_of_relative_rotations, fact
         assert src_i != trg_j, f"src_i: {src_i}, trg_j: {trg_j}"
 
         relative_rot = list_of_relative_rotations[trg_j]
-        measured = np.linalg.inv(relative_rot) @ Tij.translation()
+        measured = relative_rot @ Tij.translation()
+        
+        # Relative translation must be kept
+        # In anchor coordinate system, translation is src_i - trg_j
+        # This will be kept even after rotation, which is relative_rot @ Tij.translation()
         graph.add(src_i, np.eye(3), trg_j, -np.eye(3), measured, gtsam.noiseModel.Diagonal.Variances(uncertainty_dict[f"{src_i}-{trg_j}"] * scale * np.ones(3)))
 
 
@@ -403,9 +404,10 @@ def make_relative_transformation_dict(list_of_relative_rotations, list_of_relati
     Make relative transformation dictionary
     Args:
         list_of_relative_rotations (list): list of the relative rotation
-        abs_trans (gtsam.Values): absolute translations
+        list_of_relative_translations (list): list of the relative translation
         anchor_idx (int): index of the anchor object
         num_of_parts (int): number of parts
+        device (torch.device): device
     Returns:
         relative_transformation_dict (dict): dictionary of the relative transformation
     """
@@ -415,7 +417,7 @@ def make_relative_transformation_dict(list_of_relative_rotations, list_of_relati
     for ith_obj in range(num_of_parts):
         if ith_obj == anchor_idx:
             continue
-        # rot_matrix = torch.tensor(list_of_relative_rotations[ith_obj], device=device).inverse().float()
+        
         rot_matrix = torch.tensor(list_of_relative_rotations[ith_obj], device=device).float()
         trans_vector = torch.tensor(list_of_relative_translations[ith_obj] - anchor_trans, device=device).float()
         relative_transformation_dict[f"{ith_obj}-{anchor_idx}"] = (rot_matrix, trans_vector)

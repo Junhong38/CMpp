@@ -908,7 +908,7 @@ class EquiAssem(pl.LightningModule):
             for ith_step, step_pcds in enumerate(step_collector_for_viz):
                 save_pc(f"{vis_folder}/step_{ith_step}.ply", step_pcds)
         
-        exit("stop")
+        # exit("stop")
         
         return eval_result
     
