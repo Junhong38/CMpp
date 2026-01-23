@@ -1072,55 +1072,66 @@ class EquiAssem(pl.LightningModule):
 
 
         # Calculate matching scores for all pairs and predict rotation and translation
-        pred_dict = {}
+        pred_dict_for_score = {}
         pred_rot_and_trans_dict = {}
         for src_idx in range(num_of_parts):
             for trg_idx in range(num_of_parts):
                 if src_idx == trg_idx: 
                     continue
-                
 
                 # Prepare input
                 input_dict = make_input_dicts_for_shonan(src_idx, trg_idx, list_of_all_pcds, list_of_all_gt_normals)
+                num_of_src_pcd = input_dict['src_pcd'].shape[0]
 
                 # Calculate matching scores
                 # (1, N+M, 3, 3), (1, N+M, N+M), (1, N+M, N+M), (1, N+M)
                 oris, matching_scores_drop, shape_matching_scores, mating_surface_seg_results = self.return_matching_scores(input_dict['input_pcds'], input_dict['pcd_batch_info'], input_dict['batch_scaled_batch_info'])
 
-                # Calculate transformation
-                num_of_src_pcd = input_dict['src_pcd'].shape[0]
-
-                if self.use_RANSAC:
-                    final_matching_scores = shape_matching_scores[0,0:num_of_src_pcd,num_of_src_pcd:]
-                    src_frame = oris[0,0:num_of_src_pcd,:,:] if self.use_predicted_normal else None # (N, 3, 3)
-                    trg_frame = oris[0,num_of_src_pcd:,:,:] if self.use_predicted_normal else None # (M, 3, 3)
-
-
-                    estimated_transform, used_corr = _RANSAC(in_dict=input_dict, 
-                                                             shape_matching_scores=final_matching_scores, 
-                                                             src_pcd=input_dict['src_pcd'], 
-                                                             trg_pcd=input_dict['trg_pcd'], 
-                                                             src_predicted_frame=src_frame,
-                                                             trg_predicted_frame=trg_frame,
-                                                             match_option=self.infer_match_option, 
-                                                             RANSAC_type=self.RANSAC_type, 
-                                                             topk=self.infer_topk)
-                else:
-                    final_matching_scores = matching_scores_drop[0,0:num_of_src_pcd,num_of_src_pcd:]
-                    estimated_transform, used_corr = self.fine_matching(input_dict['src_pcd'].unsqueeze(0), input_dict['trg_pcd'].unsqueeze(0), final_matching_scores.unsqueeze(0), no_exp=(self.matching_norm_mode != 'sinkhorn'))
-                
+                # Save score
+                final_matching_scores = shape_matching_scores[0,0:num_of_src_pcd,num_of_src_pcd:] if self.use_RANSAC else matching_scores_drop[0,0:num_of_src_pcd,num_of_src_pcd:]
                 score_for_this_assembly = torch.topk(final_matching_scores.reshape(-1), k=self.infer_topk)[0].mean()
-                pred_dict[f"{src_idx}-{trg_idx}"] = (score_for_this_assembly, estimated_transform) # allways move src to trg, src:ith, trg:jth
+                pred_dict_for_score[f"{src_idx}-{trg_idx}"] = (score_for_this_assembly, oris, final_matching_scores) # allways move src to trg, src:ith, trg:jth
+        
+        # Prepare Connection Graph
+        connection_graph, selected_keys, max_score_dict = make_connection_graph(pred_dict_for_score, num_of_parts, anchor_idx)
 
+        # Calculate relative rotation and translation
+        pred_dict_with_transform = {}
+        for src_idx, trg_idx in selected_keys:
+            input_dict = make_input_dicts_for_shonan(src_idx, trg_idx, list_of_all_pcds, list_of_all_gt_normals)
+            # oris, matching_scores_drop, shape_matching_scores, mating_surface_seg_results = self.return_matching_scores(input_dict['input_pcds'], input_dict['pcd_batch_info'], input_dict['batch_scaled_batch_info'])
+            oris, final_matching_scores = pred_dict_for_score[f"{src_idx}-{trg_idx}"][1:]
+            
+            num_of_src_pcd = input_dict['src_pcd'].shape[0]
+
+            if self.use_RANSAC:
+                # final_matching_scores = shape_matching_scores[0,0:num_of_src_pcd,num_of_src_pcd:]
+                src_frame = oris[0,0:num_of_src_pcd,:,:] if self.use_predicted_normal else None # (N, 3, 3)
+                trg_frame = oris[0,num_of_src_pcd:,:,:] if self.use_predicted_normal else None # (M, 3, 3)
+                estimated_transform, used_corr = _RANSAC(in_dict=input_dict, 
+                                                         shape_matching_scores=final_matching_scores, 
+                                                         src_pcd=input_dict['src_pcd'], 
+                                                         trg_pcd=input_dict['trg_pcd'], 
+                                                         src_predicted_frame=src_frame,
+                                                         trg_predicted_frame=trg_frame,
+                                                         match_option=self.infer_match_option, 
+                                                         RANSAC_type=self.RANSAC_type, 
+                                                         topk=self.infer_topk)
+            else:
+                # final_matching_scores = matching_scores_drop[0,0:num_of_src_pcd,num_of_src_pcd:]
+                estimated_transform, used_corr = self.fine_matching(input_dict['src_pcd'].unsqueeze(0), input_dict['trg_pcd'].unsqueeze(0), final_matching_scores.unsqueeze(0), no_exp=(self.matching_norm_mode != 'sinkhorn'))
+            
+            pred_dict_with_transform[f"{src_idx}-{trg_idx}"] = estimated_transform
+        
         # Prepare Graph Optimization
-        factors, params, uncertainty_dict = make_shonan_factors(pred_dict, num_of_parts, selection_mode='max')
+        factors, params = make_shonan_factors(pred_dict_with_transform, max_score_dict)
         
         # Select which edge should be added to the graph
         abs_rotat = run_shonan_averaging(factors, params, max_iter=60)
         list_of_relative_rotations = calculate_relative_rotation(abs_rotat, anchor_idx, num_of_parts)
 
         # Calculate translation after shonan averaging
-        list_of_relative_translations = optimize_translation_after_shonan_averaging(list_of_relative_rotations, factors, anchor_idx, uncertainty_dict)
+        list_of_relative_translations = optimize_translation_after_shonan_averaging(list_of_relative_rotations, factors, anchor_idx, max_score_dict, connection_graph)
 
         # Make relative transformation dictionary
         pred_rot_and_trans_dict = make_relative_transformation_dict(list_of_relative_rotations, list_of_relative_translations, anchor_idx, num_of_parts, device=pcd_input.device)

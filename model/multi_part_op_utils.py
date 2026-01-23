@@ -6,6 +6,9 @@ from scipy.spatial.transform import Rotation as scipy_rot
 import numpy as np
 import gtsam
 
+import networkx as nx
+
+
 def make_setting_for_next_iteration(previous_setting, removed_assm_pred, list_of_all_pcds, anchor_obj_idx, selected_obj_idx):
     """
     Make setting for the next iteration
@@ -248,23 +251,27 @@ def make_input_dicts_for_shonan(src_idx, trg_idx, list_of_all_pcds, list_of_all_
     }
     
     return input_dict
+    
 
 
-def make_shonan_factors(pred_dict, num_of_parts, selection_mode='max'):
+def make_connection_graph(pred_dict_for_score, num_of_parts, anchor_idx):
     """
     Args:
         pred_dict (dict): dictionary of the predicted transformation
-            - key: (src_idx-trg_idx), value: (score, estimated_transform)
+            - key: (src_idx-trg_idx), value: (score, matching_scores)
         num_of_parts (int): number of parts
-        selection_mode (str): 'max'
+        anchor_idx (int): index of the anchor object
     Returns:
         factors (gtsam.BetweenFactorPose3s): factors of the problem
         params (gtsam.ShonanAveragingParameters3): parameters of the shonan averaging
     """
-    params = gtsam.ShonanAveragingParameters3(gtsam.LevenbergMarquardtParams.CeresDefaults())
-    factors = gtsam.BetweenFactorPose3s()
-
-    uncertainty_dict = {}
+    # For checking graph connectivity
+    connection_graph = nx.Graph()
+    for i in range(num_of_parts):
+        connection_graph.add_node(i)
+    
+    selected_keys = []
+    max_score_dict = {}
     for src_idx in range(num_of_parts):
         max_score = - torch.inf
         max_idx = -1
@@ -272,7 +279,7 @@ def make_shonan_factors(pred_dict, num_of_parts, selection_mode='max'):
             if src_idx == trg_idx:
                 continue
             key = f"{src_idx}-{trg_idx}"
-            score = pred_dict[key][0]
+            score = pred_dict_for_score[key][0]
 
             if max_score < score:
                 max_score = score
@@ -280,20 +287,98 @@ def make_shonan_factors(pred_dict, num_of_parts, selection_mode='max'):
         
         assert max_idx != -1, f"max_idx: {max_idx}, src_idx: {src_idx}, num_of_parts: {num_of_parts}"
 
-        rot_and_trans = pred_dict[f"{src_idx}-{max_idx}"][1] # move src_idx to max_idx
+        connection_graph.add_edge(src_idx, max_idx)
+        selected_keys.append((src_idx, max_idx))
+        max_score_dict[f"{src_idx}-{max_idx}"] = max_score.cpu().item()
+    
+    # If the graph is not fully connected, we need to add more edges to make the graph connected
+    if not nx.is_connected(connection_graph):
+        cpu_anchor_idx = anchor_idx.cpu().item()
+        for _ in range(100):
+            connection_graph, selected_keys, max_score_dict, is_connected = add_more_edges_to_make_graph_connected(connection_graph, selected_keys, max_score_dict, pred_dict_for_score, num_of_parts, cpu_anchor_idx)
+            if is_connected:
+                break
+        assert nx.is_connected(connection_graph), f"Graph is not fully connected after 100 iterations"
+
+    return connection_graph, selected_keys, max_score_dict
+
+
+def add_more_edges_to_make_graph_connected(connection_graph, selected_keys, max_score_dict, pred_dict_for_score, num_of_parts, anchor_idx):
+    """
+    Add more edges to make the graph connected
+    Args:
+        connection_graph (nx.Graph): graph of the problem
+        selected_keys (list): list of the selected keys
+        max_score_dict (dict): dictionary of the max score
+        pred_dict_for_score (dict): dictionary of the predicted transformation
+        num_of_parts (int): number of parts
+        anchor_idx (int): index of the anchor object
+    Returns:
+        connection_graph (nx.Graph): graph of the problem
+        selected_keys (list): list of the selected keys
+        max_score_dict (dict): dictionary of the max score
+        is_connected (bool): True if the graph is connected, False otherwise
+    """
+    for src_idx in range(num_of_parts):
+        is_conneted_to_anchor = nx.has_path(connection_graph, src_idx, anchor_idx)
+        # This node is already connected to the anchor, so no need to add more edges
+        if is_conneted_to_anchor:
+            continue
+        
+        max_score = - torch.inf
+        max_idx = -1
+        
+        # This node is not connected to the anchor, so we need to add an edge to connect it to the anchor
+        for trg_idx in range(num_of_parts):
+            if src_idx == trg_idx or connection_graph.has_edge(src_idx, trg_idx):
+                continue
+            
+            # Find the best matching score which is not selected yet
+            key = f"{src_idx}-{trg_idx}"
+            score = pred_dict_for_score[key][0]
+
+            if max_score < score:
+                max_score = score
+                max_idx = trg_idx
+        
+        assert max_idx != -1, f"max_idx: {max_idx}, src_idx: {src_idx}, num_of_parts: {num_of_parts}"
+
+        connection_graph.add_edge(src_idx, max_idx)
+        selected_keys.append((src_idx, max_idx))
+        max_score_dict[f"{src_idx}-{max_idx}"] = max_score.cpu().item()
+    
+    return connection_graph, selected_keys, max_score_dict, nx.is_connected(connection_graph)
+
+
+def make_shonan_factors(pred_dict_with_transform, max_score_dict):
+    """
+    Args:
+        pred_dict_with_transform (dict): dictionary of the predicted transformation
+            - key: (src_idx-trg_idx), value: estimated_transform
+        max_score_dict (dict): dictionary of the max score
+            - key: (src_idx-trg_idx), value: max score
+    Returns:
+        factors (gtsam.BetweenFactorPose3s): factors of the problem
+        params (gtsam.ShonanAveragingParameters3): parameters of the shonan averaging
+    """
+
+    params = gtsam.ShonanAveragingParameters3(gtsam.LevenbergMarquardtParams.CeresDefaults())
+    factors = gtsam.BetweenFactorPose3s()
+
+    for key, value in pred_dict_with_transform.items():
+        src_idx, trg_idx = key.split('-')
+        src_idx = int(src_idx)
+        trg_idx = int(trg_idx)
+        rot_and_trans = value
         rot_matrix = rot_and_trans[:3,:3].cpu().numpy()
         translation = rot_and_trans[:3,3].cpu().numpy()
         rot_quat = scipy_rot.from_matrix(rot_matrix).as_quat()
-        max_score = max_score.cpu().numpy()
+        max_score = max_score_dict[key]
 
-        # add factor
         pose = gtsam.Pose3(gtsam.Rot3.Quaternion(rot_quat[3], rot_quat[0], rot_quat[1], rot_quat[2]), gtsam.Point3(translation))
-        factors.append(gtsam.BetweenFactorPose3(src_idx, max_idx, pose, gtsam.noiseModel.Diagonal.Information(max_score * np.eye(6))))
-        uncertainty_dict[f"{src_idx}-{max_idx}"] = 1/max_score
-
-    return factors, params, uncertainty_dict
-
-
+        factors.append(gtsam.BetweenFactorPose3(src_idx, trg_idx, pose, gtsam.noiseModel.Diagonal.Information(max_score * np.eye(6))))
+    
+    return factors, params
 
 
 def run_shonan_averaging(factors, params, max_iter=60):
@@ -354,7 +439,7 @@ def calculate_relative_rotation(abs_rotat, anchor_idx, num_of_parts):
     
 
 
-def optimize_translation_after_shonan_averaging(list_of_relative_rotations, factors, anchor_idx, uncertainty_dict, scale=1e-2):
+def optimize_translation_after_shonan_averaging(list_of_relative_rotations, factors, anchor_idx, max_score_dict, connection_graph, scale=1e-2):
     """
     Optimize translation after shonan averaging
     Because shonan averaging only gives relative rotation, we need to optimize translation to make the assembled point cloud
@@ -363,7 +448,10 @@ def optimize_translation_after_shonan_averaging(list_of_relative_rotations, fact
         list_of_relative_rotations (list): list of the relative rotation
         factors (gtsam.BetweenFactorPose3s): factors of the problem
         anchor_idx (int): index of the anchor object
-        uncertainty_dict (dict): dictionary of the uncertainty
+        max_score_dict (dict): dictionary of the max score
+            - key: (src_idx-trg_idx), value: max score
+        connection_graph (nx.Graph): graph of the problem
+        scale (float): scale of the translation
     Returns:
         abs_trans (gtsam.Values): absolute translations
     """
@@ -382,16 +470,30 @@ def optimize_translation_after_shonan_averaging(list_of_relative_rotations, fact
 
         relative_rot = list_of_relative_rotations[trg_j]
         measured = relative_rot @ Tij.translation()
+
+        max_score = max_score_dict[f"{src_i}-{trg_j}"]
+        uncertainty = 1/max_score
         
         # Relative translation must be kept
         # In anchor coordinate system, translation is src_i - trg_j
         # This will be kept even after rotation, which is relative_rot @ Tij.translation()
-        graph.add(src_i, np.eye(3), trg_j, -np.eye(3), measured, gtsam.noiseModel.Diagonal.Variances(uncertainty_dict[f"{src_i}-{trg_j}"] * scale * np.ones(3)))
+        graph.add(src_i, np.eye(3), trg_j, -np.eye(3), measured, gtsam.noiseModel.Diagonal.Variances(uncertainty * scale * np.ones(3)))
 
 
     # Solve linear system
     result_translations = []
-    translations = graph.optimize()
+    
+    try:
+        translations = graph.optimize()
+    except Exception as e:
+        print(f"connection_graph: {connection_graph.edges()}")
+        print(f"connection_graph: {connection_graph.nodes()}")
+        print(f"nx.is_connected(connection_graph): {nx.is_connected(connection_graph)}")
+        print(f"An error occurred during optimization: {e}")
+        print(f"factors: {factors}")
+        exit("stop")
+    
+    
     for i in range(translations.size()):
         result_translations.append(translations.at(i))
 
