@@ -99,10 +99,10 @@ class DatasetBreakingBad(Dataset):
         print(f"CMorigin_mode: {self.CMorigin_mode}")
         print(f"sampling_mode: {self.sampling_mode}")
 
-        print(f"n_frac: {self.n_frac}")
+        # print(f"n_frac: {self.n_frac}")
         # print(f"filepaths: {self.filepaths}")
 
-        if self.mpa:
+        if self.mpa and self.split in ['train', 'val']:
             print(f"frac0: {self.frac0}")
             print(f"frac1: {self.frac1}")
         print("================================================")
@@ -374,7 +374,8 @@ class DatasetBreakingBad(Dataset):
         
         
         # [TODO] Implement MPA part after finishing two parts matching
-        assert not self.mpa or len(pcds) <= 2, f"len(pcds): {len(pcds)}, mpa is blocked now"
+        # print(f"self.mpa: {self.mpa}, len(pcds): {len(pcds)}")
+        # assert not self.mpa or len(pcds) <= 2, f"len(pcds): {len(pcds)}, mpa is blocked now"
         
 
         # Augment train dataset

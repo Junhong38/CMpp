@@ -105,7 +105,35 @@ def _transformation_error(rotat1, rotat2, trans1, trans2, rrmse_scaling=100):
         rrmse += diff.pow(2).mean().pow(0.5)
         trmse += (t1 - t2).pow(2).mean().pow(0.5) * rrmse_scaling
     div = len(rotat1)
+    print(f"Div from _transformation_error: {div}")
     return rrmse / div, trmse / div
+
+def _transformation_error_geodesic(rotat1, rotat2, trans1, trans2, trmse_scaling=100):
+    """
+    Args:
+        trnsf1 (tuple): (3, 3), (3) , or list of ((3, 3), (3)) for multiple parts
+        trnsf2 (tuple): (3, 3), (3) , or list of ((3, 3), (3)) for multiple parts
+        trmse_scaling (int, optional): Scaling factor for TRMSE. Defaults to 100.
+
+    Returns:
+        rrmse (torch.Tensor): (1)
+        trmse (torch.Tensor): (1)
+    """
+    
+    rrmse_geo, trmse_geo = 0., 0.
+    for r1, r2, t1, t2 in zip(rotat1, rotat2, trans1, trans2):
+        # pred_rotat^T @ gt_rotat
+        relative_rotat = r1 @ r2.T
+
+        # tr(R) = 1 + 2cos(θ) -> θ = acos((tr(R) - 1) / 2), torch.acos is in radian, so we need to convert to degree
+        rrmse_geo += torch.rad2deg(torch.acos(torch.clamp(0.5 * (torch.trace(relative_rotat) - 1.0), -1.0, 1.0)))
+        trmse_geo += torch.norm(t1 - t2) * trmse_scaling
+    
+    div = len(rotat1)
+    print(f"Div from _transformation_error_geodesic: {div}")
+    return (rrmse_geo / div).to(trmse_geo.device), trmse_geo / div
+        
+
 
 def _part_accuracy(assm_pts1, assm_pts2, scaling=100):
     success = 0
@@ -167,6 +195,11 @@ def estimate_poses_given_rot(
     return result
 
 def test(args):
+
+    logger_txt = open(f"{args.logpath}.txt", 'w')
+
+
+
     # Model initialization
     utils.fix_randseed(0)
     model = EquiAssem(lr=args.lr,
@@ -189,10 +222,12 @@ def test(args):
         sys.exit(1)
     
     # Dataset initialization
-    GADataset.initialize(args.datapath, args.data_category, args.sub_category, args.min_part, args.max_part, args.n_pts, args.scale)
+    GADataset.initialize(args.datapath, args.data_category, args.sub_category, args.min_part, args.max_part, args.n_pts, args.scale, 1, CMorigin_mode=True, sampling_mode=args.sampling_mode)
     dataloader_test = GADataset.build_dataloader(args.batch_size, args.n_worker, 'test')
+
+
     total = len(dataloader_test)
-    crd_list, cd_list, rrmse_list, trsme_list, pa_list, pa_crd_list = [], [], [], [], [], []
+    crd_list, cd_list, rrmse_list, trsme_list, rrmse_geo_list, trsme_geo_list, pa_list, pa_crd_list = [], [], [], [], [], [], [], []
 
     for idx, in_dict in enumerate(dataloader_test):
         # 1. Network forward pass: Pairwise matching & assembly
@@ -348,13 +383,35 @@ def test(args):
         assm_pred, pcds_pred = _multi_part_assemble(in_dict['pcd_t'], aligned_pred_rotat, aligned_pred_trans)
         assm_grtr, pcds_grtr = _multi_part_assemble(in_dict['pcd_t'], aligned_gt_rotat, aligned_gt_trans)
 
-        save_pc(f'./{args.logpath}/test{idx}_gt.pcd', pcds_grtr)
-        save_pc(f'./{args.logpath}/test{idx}_pred.pcd', pcds_pred)
+        # save_pc(f'./{args.logpath}/test{idx}_gt.pcd', pcds_grtr)
+        # save_pc(f'./{args.logpath}/test{idx}_pred.pcd', pcds_pred)
+
+        # print(f"aligned_pred_rotat: {aligned_pred_rotat}, aligned_gt_rotat: {aligned_gt_rotat}")
+
+        # For anchor part, it should not included in calculating transformation error and geodesic transformation error
+        if args.div_mode == 'origin':
+            aligned_pred_rotat_for_error = aligned_pred_rotat
+            aligned_gt_rotat_for_error = aligned_gt_rotat
+            aligned_pred_trans_for_error = aligned_pred_trans
+            aligned_gt_trans_for_error = aligned_gt_trans
+        elif args.div_mode == 'new':
+            aligned_pred_rotat_for_error = aligned_pred_rotat[:anchor_idx] + aligned_pred_rotat[anchor_idx+1:]
+            aligned_gt_rotat_for_error = aligned_gt_rotat[:anchor_idx] + aligned_gt_rotat[anchor_idx+1:]
+            aligned_pred_trans_for_error = aligned_pred_trans[:anchor_idx] + aligned_pred_trans[anchor_idx+1:]
+            aligned_gt_trans_for_error = aligned_gt_trans[:anchor_idx] + aligned_gt_trans[anchor_idx+1:]
+        else:
+            raise ValueError(f"Invalid div_mode: {args.div_mode}")
+        
+
+        # print(f"aligned_pred_rotat_for_error: {aligned_pred_rotat_for_error}, aligned_gt_rotat_for_error: {aligned_gt_rotat_for_error}")
+
 
         cd = _chamfer_distance(assm_pred, assm_grtr).item()
         crd = _correspondence_distance(assm_pred, assm_grtr).item()
-        rrmse, trmse = _transformation_error(aligned_pred_rotat, aligned_gt_rotat, aligned_pred_trans, aligned_gt_trans)
+        rrmse, trmse = _transformation_error(aligned_pred_rotat_for_error, aligned_gt_rotat_for_error, aligned_pred_trans_for_error, aligned_gt_trans_for_error)
         rrmse, trmse = rrmse.item(), trmse.item()
+        rrmse_geo, trmse_geo = _transformation_error_geodesic(aligned_pred_rotat_for_error, aligned_gt_rotat_for_error, aligned_pred_trans_for_error, aligned_gt_trans_for_error)
+        rrmse_geo, trmse_geo = rrmse_geo.item(), trmse_geo.item()
         pa = _part_accuracy(pcds_pred, pcds_grtr)
         pa_crd = _part_accuracy_crd(pcds_pred, pcds_grtr)
 
@@ -364,11 +421,14 @@ def test(args):
         cd_list.append(cd)
         rrmse_list.append(rrmse)
         trsme_list.append(trmse)
+        rrmse_geo_list.append(rrmse_geo)
+        trsme_geo_list.append(trmse_geo)
         pa_list.append(pa)
         pa_crd_list.append(pa_crd)
 
-        result_str = f'{idx}/{total} | #-Part: {len(pcds_pred)} | CRD: {round(crd,2)} | CD: {round(cd,2)} | RRMSE: {round(rrmse,2)} | TRMSE: {round(trmse,2)} | PA(cd): {round(pa,2)} | PA(crd): {round(pa_crd,2)}'
+        result_str = f'{idx}/{total} | #-Part: {len(pcds_pred)} | CRD: {round(crd,2)} | CD: {round(cd,2)} | RRMSE: {round(rrmse,2)} | TRMSE: {round(trmse,2)} | RRMSE_GEO: {round(rrmse_geo,2)} | TRMSE_GEO: {round(trmse_geo,2)} | PA(cd): {round(pa,2)} | PA(crd): {round(pa_crd,2)}'
         print(result_str)
+        logger_txt.write(result_str + '\n')
 
         # Write results in 'w' mode first to clear previous results
         # if idx == 0:
@@ -383,12 +443,27 @@ def test(args):
     print('CD: ', sum(cd_list)/len(cd_list))
     print('RRMSE: ', sum(rrmse_list)/len(rrmse_list))
     print('TRMSE: ', sum(trsme_list)/len(trsme_list))
+    print('RRMSE_GEO: ', sum(rrmse_geo_list)/len(rrmse_geo_list))
+    print('TRMSE_GEO: ', sum(trsme_geo_list)/len(trsme_geo_list))
     print('PA(CD): ', sum(pa_list)/len(pa_list))
     print('PA(CRD): ', sum(pa_crd_list)/len(pa_crd_list))
 
+
+    logger_txt.write('====MULTI PART ASSEMBLY RESULTS====\n')
+    logger_txt.write('CRD: {}\n'.format(sum(crd_list)/len(crd_list)))
+    logger_txt.write('CD: {}\n'.format(sum(cd_list)/len(cd_list)))
+    logger_txt.write('RRMSE: {}\n'.format(sum(rrmse_list)/len(rrmse_list)))
+    logger_txt.write('TRMSE: {}\n'.format(sum(trsme_list)/len(trsme_list)))
+    logger_txt.write('RRMSE_GEO: {}\n'.format(sum(rrmse_geo_list)/len(rrmse_geo_list)))
+    logger_txt.write('TRMSE_GEO: {}\n'.format(sum(trsme_geo_list)/len(trsme_geo_list)))
+    logger_txt.write('PA(CD): {}\n'.format(sum(pa_list)/len(pa_list)))
+    logger_txt.write('PA(CRD): {}\n'.format(sum(pa_crd_list)/len(pa_crd_list)))
+
+    logger_txt.close()
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Equivariant Assembly Pytorch Implementation')
-    parser.add_argument('--datapath', type=str, default='../../data/bbad_v2')
+    parser.add_argument('--datapath', type=str, default='/home/kimsangki/breaking_bad/volume_constrained/') 
     parser.add_argument('--data_category', type=str, default='everyday', choices=['everyday', 'artifact', 'synthetic', 'fantastic'])
     parser.add_argument('--sub_category', type=str, default='all')
     parser.add_argument('--n_pts', type=int, default=5000)
@@ -413,6 +488,11 @@ if __name__ == '__main__':
 
     parser.add_argument('--visualize', action='store_true')
     parser.add_argument('--debug', action='store_true')
+
+
+    # TEMP
+    parser.add_argument('--div_mode', type=str, default='origin', choices=['origin', 'new'])
+    parser.add_argument('--sampling_mode', type=str, default='origin', choices=['origin', 'new'])
       
     args = parser.parse_args()
 
