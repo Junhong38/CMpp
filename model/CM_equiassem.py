@@ -35,6 +35,9 @@ from common.utils import save_pc
 
 import os, trimesh
 
+from common.utils import instance_wise_results_to_json, save_json
+
+
 # REBUTTAL
 # from vecAdam.vectoradam import VectorAdam
 
@@ -67,7 +70,8 @@ class ChannelAttentionModule(nn.Module):
         return attention
 
 class EquiAssem(pl.LightningModule):
-    def __init__(self, lr, backbone='vn_unet', shape_loss='positive', occ_loss='negative', no_ori=False, attention='channel', visualize=False, debug=False):
+    def __init__(self, lr, backbone='vn_unet', shape_loss='positive', occ_loss='negative', no_ori=False, attention='channel', visualize=False, debug=False, 
+                 ckp_dir=None, test_end_mode='origin'):
         super(EquiAssem, self).__init__()
 
         self.lr = lr
@@ -75,6 +79,8 @@ class EquiAssem(pl.LightningModule):
         self.occ_loss = occ_loss
         self.no_ori = no_ori
         self.attention = attention
+        self.ckp_dir = ckp_dir
+        self.test_end_mode = test_end_mode
 
         # Output feature dimension of Feature Extractor
         self.feat_dim = 1024
@@ -192,8 +198,17 @@ class EquiAssem(pl.LightningModule):
         _, loss_dict = self.forward_pass(in_dict, mode='test')
         self.test_step_outputs.append(loss_dict)
         return loss_dict
+    
 
-    def on_test_epoch_end(self):    
+    def on_test_epoch_end(self):
+        if self.test_end_mode == 'origin':
+            self.origin_on_test_epoch_end()
+        elif self.test_end_mode == 'new':
+            self.new_on_test_epoch_end()
+        else:
+            raise ValueError(f"Invalid test_end_mode: {self.test_end_mode}")
+
+    def origin_on_test_epoch_end(self):    
         # avg_loss among all data
         losses = {
             f'val/{k}': torch.stack([output[k] for output in self.test_step_outputs])
@@ -204,8 +219,65 @@ class EquiAssem(pl.LightningModule):
         # this is a hack to get results outside `Trainer.test()` function
         self.test_results = avg_loss
         self.log_dict(avg_loss, logger=True, sync_dist=True, batch_size=1,)
+        # Json dump for test results
+        save_json(self.test_results, os.path.join(self.ckp_dir, f'total_{self.trainer.global_rank}.json'))
+        self.test_step_outputs.clear()
+    
+    def new_on_test_epoch_end(self):
+        print(f"self.global_rank: {self.trainer.global_rank} DONE")
+
+        instance_score_dict = dict()
+        
+        for output in self.test_step_outputs:
+            metric_dict = dict()
+            
+            for k, v in output.items():
+                if k == 'filepath':
+                    continue
+                else:
+                    metric_dict[k] = v
+            
+            instance_score_dict[output['filepath']] = metric_dict
+        
+        # Multi-GPU support
+        if self.trainer.world_size > 1:
+            place_holder_list = [None for _ in range(self.trainer.world_size)]
+            torch.distributed.all_gather_object(place_holder_list, instance_score_dict)
+
+            total_instance_score_dict = dict()
+            for gpu_i_result in place_holder_list:
+                total_instance_score_dict.update(gpu_i_result)
+        else:
+            total_instance_score_dict = instance_score_dict
+        
+        print(f"self.global_rank: {self.trainer.global_rank} ALL GATHER OBJECT DONE")
+
+        if self.trainer.global_rank == 0:
+            result_avg_dict = dict()
+            for metric_name in total_instance_score_dict[list(total_instance_score_dict.keys())[0]].keys():
+                result_avg_dict[f'val/{metric_name}'] = torch.stack([output[metric_name].cpu() for output in total_instance_score_dict.values()])
+            
+            avg_result = {k: v.sum() / v.size(0) for k, v in result_avg_dict.items()}
+            self.test_results = avg_result
+            self.log_dict(avg_result, logger=True, sync_dist=False, batch_size=1,)
+            
+            # Json dump for instance-wise results
+            instance_wise_results_to_json(total_instance_score_dict, self.ckp_dir, 'test_results')
+
+            # Json dump for test results
+            save_json(self.test_results, os.path.join(self.ckp_dir, 'total.json'))
+
+        
         self.test_step_outputs.clear()
 
+        print(f"self.global_rank: {self.trainer.global_rank} LOG_DICT DONE")
+        
+        # Wait for all processes to reach this point
+        if self.trainer.world_size > 1:
+            torch.distributed.barrier()
+    
+    
+    
     def forward_pass(self, in_dict, mode):
 
         out_dict, loss = {}, {}
@@ -342,6 +414,10 @@ class EquiAssem(pl.LightningModule):
             self.log(f'{mode}/loss', training_loss, prog_bar=True, logger=True, sync_dist=True, rank_zero_only=True, on_step=True, on_epoch=True, batch_size=1)
             self.log('current_lr', current_lr, prog_bar=True, logger=True, sync_dist=True, rank_zero_only=True, on_step=True, on_epoch=False, batch_size=1)
 
+        
+        if mode == 'test' and self.test_end_mode == 'new':
+            loss['filepath'] = in_dict['filepath'][0]
+        
         return out_dict, loss
 
     @torch.no_grad()
@@ -364,6 +440,7 @@ class EquiAssem(pl.LightningModule):
 
         # (b) Compute MSE between prediction & ground-truth for rotation (in degree) and translation
         eval_result['rrmse_rpf'], eval_result['trmse_rpf'] = self._transformation_error_RPFver(pcds_pred, pcds_grtr, multi_part)
+        eval_result['rrmse_geo'], eval_result['trmse_geo'] = self._transformation_error_geodesic(pred_relative_trsfm, grtr_relative_trsfm, multi_part)
         eval_result['rrmse'], eval_result['trmse'] = self._transformation_error(pred_relative_trsfm, grtr_relative_trsfm, multi_part)
 
         # (c) Compute CoRrespondence Distance (CRD) betwween prediction & ground-truth
@@ -484,6 +561,39 @@ class EquiAssem(pl.LightningModule):
 
         return (rrmse / div).to(trmse.device), trmse / div
 
+    def _transformation_error_geodesic(self, trnsf1, trnsf2, multi_part=False, trmse_scaling=100):
+        """
+        Args:
+            trnsf1 (tuple): (3, 3), (3) , or list of ((3, 3), (3)) for multiple parts
+            trnsf2 (tuple): (3, 3), (3) , or list of ((3, 3), (3)) for multiple parts
+            trmse_scaling (int, optional): Scaling factor for TRMSE. Defaults to 100.
+
+        Returns:
+            rrmse (torch.Tensor): (1)
+            trmse (torch.Tensor): (1)
+        """
+
+        if multi_part:
+            rotat1, trans1 = [a_trnsf1[0] for a_trnsf1 in trnsf1], [a_trnsf1[1] for a_trnsf1 in trnsf1]
+            rotat2, trans2 = [a_trnsf2[0] for a_trnsf2 in trnsf2], [a_trnsf2[1] for a_trnsf2 in trnsf2]
+
+        else:
+            rotat1, trans1 = [trnsf1[0]], [trnsf1[1]]
+            rotat2, trans2 = [trnsf2[0]], [trnsf2[1]]
+        
+        rrmse_geo, trmse_geo = 0., 0.
+        for r1, r2, t1, t2 in zip(rotat1, rotat2, trans1, trans2):
+            # pred_rotat^T @ gt_rotat
+            relative_rotat = r1 @ r2.T
+
+            # tr(R) = 1 + 2cos(θ) -> θ = acos((tr(R) - 1) / 2), torch.acos is in radian, so we need to convert to degree
+            rrmse_geo += torch.rad2deg(torch.acos(torch.clamp(0.5 * (torch.trace(relative_rotat) - 1.0), -1.0, 1.0)))
+            trmse_geo += torch.norm(t1 - t2) * trmse_scaling
+        
+        div = len(rotat1)
+        return (rrmse_geo / div).to(trmse_geo.device), trmse_geo / div
+        
+    
     def _transformation_error_RPFver(self, pcds_pred, pcds_grtr, multi_part, scaling=100):
         """
         Args:

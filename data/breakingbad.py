@@ -13,7 +13,7 @@ from data.utils import to_o3d_pcd, get_correspondences
 
 
 class DatasetBreakingBad(Dataset):
-    def __init__(self, datapath, data_category, sub_category, min_part, max_part, n_pts, split, scale, multiplicity, CMorigin_mode=False):
+    def __init__(self, datapath, data_category, sub_category, min_part, max_part, n_pts, split, scale, multiplicity, CMorigin_mode=False, sampling_mode='origin'):
         """Dataset for Breaking Bad
 
         Args:
@@ -27,6 +27,7 @@ class DatasetBreakingBad(Dataset):
             scale (str): ['full', 'small', 'overfitting', 'tiny'], candidates are fixed by argparse
             multiplicity (int): multiplicity of the dataset
             CMorigin_mode (bool, optional): whether to use CM origin mode. Defaults to False.
+            sampling_mode (str, optional): ['origin', 'new']. Defaults to 'origin'.
         """
         # Assertion
         assert split in ['train', 'val', 'test'], f"split must be in ['train', 'val', 'test'], but got {split}"
@@ -44,6 +45,7 @@ class DatasetBreakingBad(Dataset):
         
         self.multiplicity = multiplicity if split == 'train' else 1
         self.CMorigin_mode = CMorigin_mode
+        self.sampling_mode = sampling_mode
 
         self.mpa = True if self.max_part > 2 else False
         self.anchor_idx = 0
@@ -95,6 +97,7 @@ class DatasetBreakingBad(Dataset):
         print(f"scale: {scale}")
         print(f"multiplicity: {self.multiplicity}")
         print(f"CMorigin_mode: {self.CMorigin_mode}")
+        print(f"sampling_mode: {self.sampling_mode}")
 
         print(f"n_frac: {self.n_frac}")
         # print(f"filepaths: {self.filepaths}")
@@ -310,30 +313,64 @@ class DatasetBreakingBad(Dataset):
         # Set anchor fracture and sum all of areas
         self.anchor_idx, total_area = mesh_areas.index(max(mesh_areas)), sum(mesh_areas)
 
+        # Calculate number of points for each part
+        remaining_points = self.n_pts - self.min_n_pts * len(meshes)
+        counts = (self.min_n_pts + (remaining_points * (mesh_areas / total_area)).astype(int)).tolist()
+        diff = self.n_pts - sum(counts)
+        counts[np.argmax(counts)] += diff
 
-        # Sample N-part point clouds from meshes
-        pcds = []
-        faces = []
-        for mesh in meshes:
-            n_pts = int(self.n_pts * mesh.area / total_area)
-            if self.split in ['val', 'test']: 
-                sampled_pts, face_idx = trimesh.sample.sample_surface_even(mesh, n_pts, seed=idx) # (N, 3), (N, )
-            else: 
-                sampled_pts, face_idx = trimesh.sample.sample_surface_even(mesh, n_pts) # (N, 3), (N, )
-
-            sampled_pts = torch.tensor(sampled_pts).float() # (N, 3)
-
-            if sampled_pts.size(0) < self.min_n_pts: # if the number of points is less than the minimum number of points, sample more points
+        if self.sampling_mode == 'origin':
+            # Sample N-part point clouds from meshes
+            pcds = []
+            faces = []
+            for mesh in meshes:
+                n_pts = int(self.n_pts * mesh.area / total_area)
                 if self.split in ['val', 'test']: 
-                    extra_pts, extra_face_idx = trimesh.sample.sample_surface(mesh, self.min_n_pts - sampled_pts.size(0), seed=idx) # (N', 3), (N', )
+                    sampled_pts, face_idx = trimesh.sample.sample_surface_even(mesh, n_pts, seed=idx) # (N, 3), (N, )
                 else: 
-                    extra_pts, extra_face_idx = trimesh.sample.sample_surface(mesh, self.min_n_pts - sampled_pts.size(0)) # (N', 3), (N', )
-                sampled_pts = torch.cat([sampled_pts, torch.tensor(extra_pts).float()], dim=0) # (N + N', 3)
-                face_idx = np.concatenate([face_idx, extra_face_idx], axis=0) # (N + N', )
-            
-            pcds.append(sampled_pts)
-            faces.append(face_idx)
+                    sampled_pts, face_idx = trimesh.sample.sample_surface_even(mesh, n_pts) # (N, 3), (N, )
+
+                sampled_pts = torch.tensor(sampled_pts).float() # (N, 3)
+
+                if sampled_pts.size(0) < self.min_n_pts: # if the number of points is less than the minimum number of points, sample more points
+                    if self.split in ['val', 'test']: 
+                        extra_pts, extra_face_idx = trimesh.sample.sample_surface(mesh, self.min_n_pts - sampled_pts.size(0), seed=idx) # (N', 3), (N', )
+                    else: 
+                        extra_pts, extra_face_idx = trimesh.sample.sample_surface(mesh, self.min_n_pts - sampled_pts.size(0)) # (N', 3), (N', )
+                    sampled_pts = torch.cat([sampled_pts, torch.tensor(extra_pts).float()], dim=0) # (N + N', 3)
+                    face_idx = np.concatenate([face_idx, extra_face_idx], axis=0) # (N + N', )
+                
+                pcds.append(sampled_pts)
+                faces.append(face_idx)
         
+        elif self.sampling_mode == 'new':
+            # Sample N-part point clouds from meshes
+            pcds = []
+            faces = []
+            for mesh, n_pts in zip(meshes, counts):
+                if self.split in ['val', 'test']: 
+                    sampled_pts, face_idx = trimesh.sample.sample_surface_even(mesh, n_pts, seed=idx) # (N, 3), (N, )
+                else:
+                    sampled_pts, face_idx = trimesh.sample.sample_surface_even(mesh, n_pts) # (N, 3), (N, )
+
+                sampled_pts = torch.tensor(sampled_pts).float() # (N, 3)
+
+                if sampled_pts.size(0) < n_pts: # if the number of points is less than the number of points to sample, sample more points
+                    if self.split in ['val', 'test']: 
+                        extra_pts, extra_face_idx = trimesh.sample.sample_surface(mesh, n_pts - sampled_pts.size(0), seed=idx) # (N', 3), (N', )
+                    else: 
+                        extra_pts, extra_face_idx = trimesh.sample.sample_surface(mesh, n_pts - sampled_pts.size(0)) # (N', 3), (N', )
+                    sampled_pts = torch.cat([sampled_pts, torch.tensor(extra_pts).float()], dim=0) # (N + N', 3)
+                    face_idx = np.concatenate([face_idx, extra_face_idx], axis=0) # (N + N', )
+                
+                assert sampled_pts.shape[0] == face_idx.shape[0], f"sampled_pts.shape[0]: {sampled_pts.shape[0]}, face_idx.shape[0]: {face_idx.shape[0]}"
+                assert sampled_pts.shape[0] == n_pts, f"sampled_pts.shape[0]: {sampled_pts.shape[0]}, n_pts: {n_pts}"
+
+                pcds.append(sampled_pts)
+                faces.append(face_idx)
+
+        else:
+            raise ValueError(f"Invalid sampling_mode: {self.sampling_mode}")
         
         
         # [TODO] Implement MPA part after finishing two parts matching

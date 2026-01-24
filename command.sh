@@ -25,7 +25,7 @@ rm -rf checkpoint/G8ND_S2_F_FV1DV0MH_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 
 
 rm -rf checkpoint/NDET_MT1_F_NCD_NPM_NODOCC_OG_6_S_HARD/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --load checkpoint/NDET_MT1_F_NCD_NPM_NODOCC_OG_6/models/last.ckpt --logpath NDET_MT1_F_NCD_NPM_NODOCC_OG_6_S_HARD --model CMpp_equiassem --backbone vn_unet --n_avn 0 --mlp_mode CMpp --scale full --multiplicity 1 --epochs 0 --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --hard_negative --wandb --wandb_entity CMppProject --wandb_project CMpp
 rm -rf checkpoint/G8ND_F_FV0DV0MH_HARD_6/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --logpath G8ND_F_FV0DV0MH_HARD_6 --model CMpp_equiassem --backbone vn_unet --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale full --multiplicity 1 --epochs 0 --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --hard_negative --wandb --wandb_entity CMppProject --wandb_project CMpp
-end
+
 
 # G8ND_F_V0DH_6
 # G8ND_S2_F_FV0DV0MH_6
@@ -44,6 +44,16 @@ end
 rm -rf checkpoint/G8ND_F_FV0DV0MH_HARD_6_artifact/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python main.py --data_category artifact --logpath G8ND_F_FV0DV0MH_HARD_6_artifact --model CMpp_equiassem --backbone vn_unet --double_bacbone vn_unet --n_avn 0 --mlp_mode half --scale full --multiplicity 1 --epochs 0 --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --hard_negative --wandb --wandb_entity CMppProject --wandb_project CMpp
 
 
+rm -rf checkpoint/TEST_CM_ON/ && CUDA_VISIBLE_DEVICES=0 python test.py --load CM_checkpoint/CM_everyday_pa.ckpt --model CM_equiassem --logpath TEST_CM_ON --scale overfitting --gpus 0 --n_worker 1 --move_smaller --test_end_mode origin --sampling_mode new
+
+end
+
+
+rm -rf checkpoint/TEST_CM_OO/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python test.py --load CM_checkpoint/CM_everyday_pa.ckpt --model CM_equiassem --logpath TEST_CM_OO --scale full --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --move_smaller --test_end_mode origin --sampling_mode origin &> TEST_CM_OO.log
+rm -rf checkpoint/TEST_CM_NO/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python test.py --load CM_checkpoint/CM_everyday_pa.ckpt --model CM_equiassem --logpath TEST_CM_NO --scale full --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --move_smaller --test_end_mode new --sampling_mode origin
+
+rm -rf checkpoint/TEST_CM_ON/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python test.py --load CM_checkpoint/CM_everyday_pa.ckpt --model CM_equiassem --logpath TEST_CM_ON --scale full --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --move_smaller --test_end_mode origin --sampling_mode new &> TEST_CM_ON.log
+rm -rf checkpoint/TEST_CM_NN/ && CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python test.py --load CM_checkpoint/CM_everyday_pa.ckpt --model CM_equiassem --logpath TEST_CM_NN --scale full --gpus 0 1 2 3 4 5 6 7 --n_worker 6 --move_smaller --test_end_mode new --sampling_mode new
 
 
 

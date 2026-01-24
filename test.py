@@ -26,7 +26,7 @@ def test(args):
 
 
     # Dataset initialization
-    GADataset.initialize(args.datapath, args.data_category, args.sub_category, args.min_part, args.max_part, args.n_pts, args.scale, args.multiplicity, CMorigin_mode=(args.model == 'CM_equiassem'))
+    GADataset.initialize(args.datapath, args.data_category, args.sub_category, args.min_part, args.max_part, args.n_pts, args.scale, args.multiplicity, CMorigin_mode=(args.model == 'CM_equiassem'), sampling_mode=args.sampling_mode)
     dataloader_val = GADataset.build_dataloader(args.batch_size, args.n_worker, 'val')
 
 
@@ -40,7 +40,9 @@ def test(args):
                           no_ori=args.no_ori,
                           attention=args.attention,
                           visualize=args.visualize,
-                          debug=args.debug)
+                          debug=args.debug,
+                          ckp_dir=ckp_dir,
+                          test_end_mode=args.test_end_mode)
         
     elif args.model == 'CMpp_equiassem': # Import developing mode model
         from model.CMpp_equiassem import EquiAssem
@@ -126,13 +128,13 @@ def test(args):
 
 
     trainer.test(model, dataloader_val, ckpt_path=ckpt_path)
-    results = model.test_results
-    results = {k[5:]: v.detach().cpu().numpy() for k, v in results.items()}
-    print('--------------------------------')
-    print(results)
-    print('--------------------------------')
-    print('Done testing...')
-
+    if model.trainer.global_rank == 0:
+            results = model.test_results
+            results = {k[4:]: v.detach().cpu().numpy() for k, v in results.items()}
+            print('--------------------------------')
+            print(results)
+            print('--------------------------------')
+            print('Done testing...')
 
 
 if __name__ == '__main__':
@@ -195,6 +197,12 @@ if __name__ == '__main__':
     parser.add_argument('--debug', action='store_true')
     parser.add_argument('--success_criterion_in_degree', type=int, default=10, help='Success criterion in degree for normal error')
     parser.add_argument('--flip_normal', action='store_true', help='If True, flip the normal vector of the point cloud')
+
+
+    # TEMP
+    parser.add_argument('--test_end_mode', type=str, default='origin', choices=['origin', 'new'])
+    parser.add_argument('--sampling_mode', type=str, default='origin', choices=['origin', 'new'])
+
 
 
     # DDP argument
