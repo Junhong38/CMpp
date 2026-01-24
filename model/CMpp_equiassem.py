@@ -1123,7 +1123,7 @@ class EquiAssem(pl.LightningModule):
         factors, params = make_shonan_factors(pred_dict_with_transform, max_score_dict)
         
         # Select which edge should be added to the graph
-        abs_rotat = run_shonan_averaging(factors, params, max_iter=60)
+        abs_rotat = run_shonan_averaging(factors, params, max_iter=240)
         list_of_relative_rotations = calculate_relative_rotation(abs_rotat, anchor_idx, num_of_parts)
 
         # Calculate translation after shonan averaging

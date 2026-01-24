@@ -244,7 +244,7 @@ if __name__ == '__main__':
     # Set number of workers automatically
     if len(args.gpus) > 1: # Multi-GPU training
         from pytorch_lightning.strategies import DDPStrategy
-        args.parallel_strategy = DDPStrategy(find_unused_parameters=False, timeout=datetime.timedelta(seconds=180000))
+        args.parallel_strategy = DDPStrategy(find_unused_parameters=False, timeout=datetime.timedelta(seconds=1800000))
     
     else: # Single-GPU training
         args.parallel_strategy = 'auto'
