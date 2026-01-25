@@ -105,7 +105,6 @@ def _transformation_error(rotat1, rotat2, trans1, trans2, rrmse_scaling=100):
         rrmse += diff.pow(2).mean().pow(0.5)
         trmse += (t1 - t2).pow(2).mean().pow(0.5) * rrmse_scaling
     div = len(rotat1)
-    print(f"Div from _transformation_error: {div}")
     return rrmse / div, trmse / div
 
 def _transformation_error_geodesic(rotat1, rotat2, trans1, trans2, trmse_scaling=100):
@@ -130,7 +129,6 @@ def _transformation_error_geodesic(rotat1, rotat2, trans1, trans2, trmse_scaling
         trmse_geo += torch.norm(t1 - t2) * trmse_scaling
     
     div = len(rotat1)
-    print(f"Div from _transformation_error_geodesic: {div}")
     return (rrmse_geo / div).to(trmse_geo.device), trmse_geo / div
         
 
@@ -338,17 +336,34 @@ def test(args):
                 else:
                     rel_rotat.insert(i, abs_anchor_R.inverse().compose(abs_rotat.atRot3(i)))
 
-            poses = estimate_poses_given_rot(
-                factors, rel_rotat, np.array(uncertainty), anchor_idx
-            )
-            # abs_anchor_R = poses.atPose3(anchor_idx).rotation()
-            abs_anchor_T = poses.atPose3(anchor_idx).translation()
+            pose_optimization_fail = False
+            try:
+                poses = estimate_poses_given_rot(
+                    factors, rel_rotat, np.array(uncertainty), anchor_idx
+                )
+            except Exception as e:
+                print(f"An error occurred during estimate_poses_given_rot: {e}")
+                pose_optimization_fail = True
+                
             
-            for j in range(poses.size()):
-                aligned_pred_rotat.append(torch.tensor(abs_anchor_R.between(abs_rotat.atRot3(j)).matrix()).to(torch.float32).cuda())
-                pred_trans = poses.atPose3(j).rotation().rotate(abs_anchor_T - poses.atPose3(j).translation())
-                # measured = rotations.atRot3(j).inverse().rotate(Tij.translation())
-                aligned_pred_trans.append(torch.tensor(pred_trans).to(torch.float32).cuda())
+            if not pose_optimization_fail:
+                # abs_anchor_R = poses.atPose3(anchor_idx).rotation()
+                abs_anchor_T = poses.atPose3(anchor_idx).translation()
+                
+                for j in range(poses.size()):
+                    aligned_pred_rotat.append(torch.tensor(abs_anchor_R.between(abs_rotat.atRot3(j)).matrix()).to(torch.float32).cuda())
+                    pred_trans = poses.atPose3(j).rotation().rotate(abs_anchor_T - poses.atPose3(j).translation())
+                    # measured = rotations.atRot3(j).inverse().rotate(Tij.translation())
+                    aligned_pred_trans.append(torch.tensor(pred_trans).to(torch.float32).cuda())
+            
+            else: # pose optimization failed
+                for i in range(0, in_dict['n_frac']):
+                    if i == anchor_idx: 
+                        aligned_pred_rotat.append(torch.eye(3).to(torch.float32).cuda())
+                        aligned_pred_trans.append(torch.tensor([0,0,0]).to(torch.float32).cuda())
+                    else: 
+                        aligned_pred_rotat.append(out_dict[f'{anchor_idx}-{i}']['estimated_rotat'].squeeze(0))
+                        aligned_pred_trans.append(out_dict[f'{anchor_idx}-{i}']['estimated_trans'])
 
         else:
             aligned_pred_rotat, aligned_pred_trans = [], []
