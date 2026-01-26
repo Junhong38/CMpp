@@ -391,6 +391,7 @@ def run_shonan_averaging(factors, params, max_iter=120):
     Returns:
         abs_rotat (gtsam.Values): absolute rotations
     """
+    print(f"start shonan averaging")
 
     # Run shonan averaging
     sa3 = gtsam.ShonanAveraging3(factors, params)
@@ -407,6 +408,8 @@ def run_shonan_averaging(factors, params, max_iter=120):
             raise RuntimeError(f"Shonan averaging failed after {max_iter} iterations")
         
         pMax += 20
+    
+    print(f"end shonan averaging")
     
     return abs_rotat
 
