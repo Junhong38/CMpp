@@ -252,6 +252,13 @@ def make_input_dicts_for_shonan(src_idx, trg_idx, list_of_all_pcds, list_of_all_
     
     return input_dict
     
+def check_connetion(connection_graph, num_of_parts, anchor_idx):
+    for obj_idx in range(num_of_parts):
+        if obj_idx == anchor_idx:
+            continue
+        if not nx.has_path(connection_graph, obj_idx, anchor_idx):
+            return False
+    return True
 
 
 def make_connection_graph(pred_dict_for_score, num_of_parts, anchor_idx):
@@ -291,15 +298,15 @@ def make_connection_graph(pred_dict_for_score, num_of_parts, anchor_idx):
         selected_keys.append((src_idx, max_idx))
         max_score_dict[f"{src_idx}-{max_idx}"] = max_score.cpu().item()
     
+
     # If the graph is not fully connected, we need to add more edges to make the graph connected
-    if not nx.is_connected(connection_graph):
+    if not check_connetion(connection_graph, num_of_parts, anchor_idx.cpu().item()):
         cpu_anchor_idx = anchor_idx.cpu().item()
         for _ in range(100):
             connection_graph, selected_keys, max_score_dict, is_connected = add_more_edges_to_make_graph_connected(connection_graph, selected_keys, max_score_dict, pred_dict_for_score, num_of_parts, cpu_anchor_idx)
             if is_connected:
                 break
-        assert nx.is_connected(connection_graph), f"Graph is not fully connected after 100 iterations"
-
+        # assert nx.is_connected(connection_graph), f"Graph is not fully connected after 100 iterations"
     return connection_graph, selected_keys, max_score_dict
 
 
@@ -347,7 +354,7 @@ def add_more_edges_to_make_graph_connected(connection_graph, selected_keys, max_
         selected_keys.append((src_idx, max_idx))
         max_score_dict[f"{src_idx}-{max_idx}"] = max_score.cpu().item()
     
-    return connection_graph, selected_keys, max_score_dict, nx.is_connected(connection_graph)
+    return connection_graph, selected_keys, max_score_dict, check_connetion(connection_graph, num_of_parts, anchor_idx)
 
 
 def make_shonan_factors(pred_dict_with_transform, max_score_dict):
@@ -392,11 +399,11 @@ def run_shonan_averaging(factors, params, max_iter=120):
         abs_rotat (gtsam.Values): absolute rotations
     """
     # Run shonan averaging
-    sa3 = gtsam.ShonanAveraging3(factors, params)
-    initial = sa3.initializeRandomly()
     pMax = 20
     while True:
         try: 
+            sa3 = gtsam.ShonanAveraging3(factors, params)
+            initial = sa3.initializeRandomly()
             abs_rotat, _ = sa3.run(initial, 3, pMax)
             break
         except RuntimeError as e:

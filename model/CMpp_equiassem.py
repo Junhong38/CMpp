@@ -24,8 +24,6 @@ from common.utils import instance_wise_results_to_json, divide_parameters_into_o
 from common.viz import visualize_negative_hard_mask, draw_test_results_histogram, save_pc
 
 import os
-import gtsam
-
 
 class EquiAssem(pl.LightningModule):
     def __init__(
@@ -1092,9 +1090,10 @@ class EquiAssem(pl.LightningModule):
                 score_for_this_assembly = torch.topk(final_matching_scores.reshape(-1), k=self.infer_topk)[0].mean()
                 pred_dict_for_score[f"{src_idx}-{trg_idx}"] = (score_for_this_assembly, oris, final_matching_scores) # allways move src to trg, src:ith, trg:jth
         
+
         # Prepare Connection Graph
         connection_graph, selected_keys, max_score_dict = make_connection_graph(pred_dict_for_score, num_of_parts, anchor_idx)
-
+        
         # Calculate relative rotation and translation
         pred_dict_with_transform = {}
         for src_idx, trg_idx in selected_keys:
@@ -1118,7 +1117,7 @@ class EquiAssem(pl.LightningModule):
                 estimated_transform, used_corr = self.fine_matching(input_dict['src_pcd'].unsqueeze(0), input_dict['trg_pcd'].unsqueeze(0), final_matching_scores.unsqueeze(0), no_exp=(self.matching_norm_mode != 'sinkhorn'))
             
             pred_dict_with_transform[f"{src_idx}-{trg_idx}"] = estimated_transform
-        
+
         # Prepare Graph Optimization
         factors, params = make_shonan_factors(pred_dict_with_transform, max_score_dict)
         
