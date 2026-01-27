@@ -98,6 +98,8 @@ class EquiAssem(pl.LightningModule):
             RANSAC_normal_threshold=0,
             RANSAC_strong_normal_threshold=0,
             sampling_mode='random',
+            normal_buffer=0,
+            penetration_buffer=0,
             ):
         """Equivariant Assembly Model for 3D Object Assembly
 
@@ -166,6 +168,8 @@ class EquiAssem(pl.LightningModule):
             RANSAC_type (str, optional): 'default', 'score_dependent' or 'distance_dependent'. Defaults to 'default'.
             use_predicted_normal (bool, optional): Whether to use predicted normal for inlier counting. Defaults to False.
             use_seg_result (bool, optional): Whether to use segmentation result for matching. Defaults to False.
+            normal_buffer (int, hyperparameter tuning): Angle for normal thresholding buffer in penetration checking
+            penetration_buffer (int, hyperparameter tuning): Angle for penetration depth buffer in penetration checking
         """
         super(EquiAssem, self).__init__()
 
@@ -223,6 +227,8 @@ class EquiAssem(pl.LightningModule):
         print(f"RANSAC_normal_threshold: {RANSAC_normal_threshold}")
         print(f"RANSAC_strong_normal_threshold: {RANSAC_strong_normal_threshold}")
         print(f"sampling_mode: {sampling_mode}")
+        print(f"normal_buffer: {normal_buffer}")
+        print(f"penetration_buffer: {penetration_buffer}")
         print("------------------------------------------------------")
 
         self.lr = lr
@@ -260,6 +266,8 @@ class EquiAssem(pl.LightningModule):
         self.RANSAC_normal_threshold = RANSAC_normal_threshold
         self.RANSAC_strong_normal_threshold = RANSAC_strong_normal_threshold
         self.sampling_mode = sampling_mode
+        self.normal_buffer = normal_buffer
+        self.penetration_buffer = penetration_buffer
         
         # Output feature dimension of Feature Extractor
         self.feat_dim = 1024
@@ -1196,7 +1204,8 @@ class EquiAssem(pl.LightningModule):
                                                      strong_normal_threshold=self.RANSAC_strong_normal_threshold,
                                                      matching_choice=matching_choice,
                                                      src_trg_seg_result = src_trg_seg_result if self.use_seg_result and self.using_seg_mode == 'threshold' else None,
-                                                     gt_corr = gt_corr, gtRT = in_dict['relative_trsfm']['0-1'])
+                                                     gt_corr = gt_corr, gtRT = in_dict['relative_trsfm']['0-1'],
+                                                     normal_buffer = self.normal_buffer, penetration_buffer = self.penetration_buffer)
 
         else:
             # fine_matching predict Rt to move points from src_points to ref_points
@@ -1216,7 +1225,7 @@ class EquiAssem(pl.LightningModule):
         # Calculate ratio of GT among topk scores
         if self.use_seg_result and self.using_seg_mode == 'threshold':
             postprocessed_matching_scores_drop *= src_trg_seg_result
-        eval_dict['gt_among_topk'] = self.calculate_ratio_of_gt_among_topk_scores(src_pcd_raw, trg_pcd_raw, postprocessed_matching_scores_drop, topk=self.infer_topk, pos_radius=self.pos_radius)
+        eval_dict['gt_among_topk'] = self.calculate_ratio_of_gt_among_topk_scores(src_pcd_raw, trg_pcd_raw, postprocessed_shape_matching_scores, topk=self.infer_topk, pos_radius=self.pos_radius)
 
         # log size of gt_corr
         eval_dict['gt_corr_size'] = torch.tensor(gt_corr.shape[0]).to(src_pcd_raw.device)

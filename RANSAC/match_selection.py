@@ -180,9 +180,9 @@ def soft_topk_matching(corr_matrix, topk=1):
     src_top_mask = corr_matrix >= src_top_values[-1, :][None, :]
     soft_topk_mask = trg_top_mask | src_top_mask
 
-    if soft_topk_mask.sum() > 500:
-        threshold_value = torch.topk(corr_matrix[soft_topk_mask], k=500)[0][-1]
-        cutted_mask = soft_topk_mask & (corr_matrix >= threshold_value)
-        return torch.nonzero(cutted_mask, as_tuple=False)
-    else:
-        return torch.nonzero(soft_topk_mask, as_tuple=False)
+    # if soft_topk_mask.sum() > 500:
+    #     threshold_value = torch.topk(corr_matrix[soft_topk_mask], k=500)[0][-1]
+    #     cutted_mask = soft_topk_mask & (corr_matrix >= threshold_value)
+    #     return torch.nonzero(cutted_mask, as_tuple=False)
+    # else:
+    return torch.nonzero(soft_topk_mask, as_tuple=False)

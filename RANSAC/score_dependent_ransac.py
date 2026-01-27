@@ -3,7 +3,9 @@ from typing import Set, Tuple
 
 from RANSAC.utils import _squeeze_leading_dim, _transform_points, _select_correspondences, estimate_rigid_transform
 from RANSAC.weighted_procrustes import weighted_procrustes
+from RANSAC.best_topk import TopKBest
 
+@torch.no_grad()
 def ransac_rigid(
         src_corr_pcd: torch.Tensor,
         trg_corr_pcd: torch.Tensor,
@@ -22,6 +24,8 @@ def ransac_rigid(
         gt_corr = None,
         file_path = None,
         gtRT = None,
+        normal_buffer: int = 0,
+        penetration_buffer: int = 0
 
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """
@@ -75,7 +79,7 @@ def ransac_rigid(
 
     best_inliers = None
     max_inliers = -1
-    score_mask = (scores >= score_threshold).to(device)
+    score_mask = (scores > score_threshold).to(device)
 
     best_RT = torch.inf
     best_src_sam = None
@@ -84,6 +88,10 @@ def ransac_rigid(
     best_te = None
 
     unique_src_pcd = torch.unique(src_corr_pcd, dim=0)
+    unique_trg_pcd = torch.unique(trg_corr_pcd, dim=0)
+
+    top5 = TopKBest(k=int(num_iters*5/100))
+    # top5 = TopKBest(k=5)
 
 
     # RANSAC Iterations
@@ -98,8 +106,11 @@ def ransac_rigid(
             if len(unique_src_pcd) < 3:
                 if torch.unique(src_sample, dim=0).size(0) == len(unique_src_pcd):
                     break
+            if len(unique_trg_pcd) < 3:
+                if torch.unique(trg_sample, dim=0).size(0) == len(unique_trg_pcd):
+                    break
             else:
-                if torch.unique(src_sample, dim=0).size(0) == src_sample.size(0):
+                if (torch.unique(src_sample, dim=0).size(0) == src_sample.size(0)) and (torch.unique(trg_sample, dim=0).size(0) == trg_sample.size(0)):
                     break
 
         try:
@@ -108,37 +119,55 @@ def ransac_rigid(
             continue
         
         temp_scores = scores.clone()
+        temp_scores.masked_fill_(temp_scores.abs() < 1e-9, -scores.max())
 
         transformed_src = _transform_points(src_pcd, rotation, translation)
+        rotated_normals = torch.matmul(src_normal, rotation.T.to(src_normal.dtype))
+
+        # if penetration_checking(transformed_src, trg_pcd, rotated_normals, trg_normal, threshold, normal_buffer, penetration_buffer):
+        #     continue
+
+        penetration_mask = penetration_checking(transformed_src, trg_pcd, rotated_normals, trg_normal, threshold, normal_buffer, penetration_buffer)
+        panalty_score = (torch.abs(temp_scores) * penetration_mask).sum().item()
+
         dist_mat = torch.cdist(transformed_src, trg_pcd)
         distance_mask = dist_mat < threshold
 
         if temp_scores.shape != distance_mask.shape:
-            raise ValueError("Score mask shape does not match distance matrix.")
+            raise ValueError("Distance mask shape does not match shape of the inlier score.")
         temp_scores *= distance_mask
         inliers = distance_mask
 
-        rotated_normals = torch.matmul(src_normal, rotation.T.to(src_normal.dtype))
+        # penetration_mask = penetration_checking(transformed_src, trg_pcd, rotated_normals, trg_normal, threshold, normal_buffer, penetration_buffer)
+        # temp_scores *= ~penetration_mask
+        # inliers &= ~penetration_mask
+
         cos_sim = torch.matmul(rotated_normals, trg_normal.T)
         angle = torch.rad2deg(torch.acos(torch.clamp(cos_sim, -1.0, 1.0)))
         normal_mask = angle > normal_threshold
+        # normal_mask = (angle > normal_threshold) | (angle < 20)
         if temp_scores.shape != normal_mask.shape:
-            raise ValueError("Normal mask shape does not match inlier mask.")
+            raise ValueError("Normal mask shape does not match shape of the inlier score.")
         temp_scores *= normal_mask
         inliers &= normal_mask
 
         if inliers.shape != score_mask.shape:
-            raise ValueError("Score mask shape does not match distance matrix.")
+            raise ValueError("Score mask shape does not match inliers shape.")
         inliers &= score_mask
 
-        # total_survived_score = temp_scores.sum().item()
+        # if penetration_checking_inliers(transformed_src, trg_pcd, inliers, rotated_normals, trg_normal, threshold, normal_buffer, penetration_buffer):
+        #     continue
+
+        total_survived_score = temp_scores.sum().item() - panalty_score
         # if total_survived_score > max_total_score:
         #     max_total_score = total_survived_score
         #     best_score = temp_scores
         #     best_rotation = rotation
         #     best_translation = translation
+        
+        top5.try_add(total_survived_score, rotation, translation, inliers)
 
-        num_inliers = inliers.sum().item()
+        # num_inliers = inliers.sum().item()
         # if num_inliers > max_inliers:
         #     max_inliers = num_inliers
         #     best_inliers = inliers
@@ -148,39 +177,45 @@ def ransac_rigid(
         
         re, te = _transformation_error_geodesic(gtRT, [rotation, translation])
         # if (re+te).item() < best_RT:
-        if (re+te).item() < best_RT and (src_sample[:, None, :] == src_pcd[gt_corr[:, 0]][None, :, :]).all(dim=-1).any(dim=1).all().item() and (trg_sample[:, None, :] == trg_pcd[gt_corr[:, 1]][None, :, :]).all(dim=-1).any(dim=1).all().item():
-            best_RT = (re+te).item()
+        if re.item() < best_RT:
+        # if (re+te).item() < best_RT and (src_sample[:, None, :] == src_pcd[gt_corr[:, 0]][None, :, :]).all(dim=-1).any(dim=1).all().item() and (trg_sample[:, None, :] == trg_pcd[gt_corr[:, 1]][None, :, :]).all(dim=-1).any(dim=1).all().item():
+            # best_RT = (re+te).item()
+            best_RT = re.item()
             # print(f'RE: {re}')
             # print(f'TE: {te}')
-            best_inliers = inliers
-            best_score = temp_scores
-            best_rotation = rotation
-            best_translation = translation
-            best_num_inliers = num_inliers
+            # best_inliers = inliers
+            # best_score = temp_scores
+            # best_rotation = rotation
+            # best_translation = translation
+            # best_num_inliers = num_inliers
             best_src_sample = src_sample
             best_trg_sample = trg_sample
             best_re = re
             best_te = te
+            best_RT_rotation = rotation
+            best_RT_translation = translation
+            best_RT_inliers = inliers
+            best_RT_score = temp_scores.sum().item()
         
         # For inlier checking
         if (src_sample[:, None, :] == src_pcd[gt_corr[:, 0]][None, :, :]).all(dim=-1).any(dim=1).all().item() and (trg_sample[:, None, :] == trg_pcd[gt_corr[:, 1]][None, :, :]).all(dim=-1).any(dim=1).all().item():
-            num_gt_corr_inliers.append(num_inliers)
+            num_gt_corr_inliers.append(total_survived_score)
             gt_corr_inliers.append(inliers)
             gt_corr_R.append(rotation)
             gt_corr_t.append(translation)
         else:
-            num_non_gt_corr_inliers.append(num_inliers)
+            num_non_gt_corr_inliers.append(total_survived_score)
             non_gt_corr_inliers.append(inliers)
             non_gt_corr_R.append(rotation)
             non_gt_corr_t.append(translation)
 
-    if best_score is None:
-        # raise RuntimeError("Failed to estimate a valid transform via RANSAC.")
-        print(f"{file_path[0]}")
-        best_rotation, best_translation = estimate_rigid_transform(src_corr_pcd, trg_corr_pcd)
-        best_score = 0
-        best_re, best_te = _transformation_error_geodesic(gtRT, [best_rotation, best_translation])
-        return best_rotation, best_translation, best_score, best_re, best_te
+    # if best_score is None:
+    #     # raise RuntimeError("Failed to estimate a valid transform via RANSAC.")
+    #     print(f"{file_path[0]}")
+    #     best_rotation, best_translation = estimate_rigid_transform(src_corr_pcd, trg_corr_pcd)
+    #     best_score = 0
+    #     best_re, best_te = _transformation_error_geodesic(gtRT, [best_rotation, best_translation])
+    #     return best_rotation, best_translation, best_score, best_re, best_te
 
     # print(f"max_total_score: {max_total_score}")
     # print(f"best_rotation: {best_rotation}")
@@ -190,99 +225,146 @@ def ransac_rigid(
     strong_distance_threshold = 0.008
     # strong_distance_threshold = threshold
     num_iters_for_optimal_estimation = 100
+    best_list = top5.get_sorted()
+    if len(best_list)==0:
+        # raise RuntimeError("Failed to estimate a valid transform via RANSAC.")
+        print(f"{file_path[0]}")
+        best_rotation, best_translation = estimate_rigid_transform(src_corr_pcd, trg_corr_pcd)
+        best_score = 0
+        best_re, best_te = _transformation_error_geodesic(gtRT, [best_rotation, best_translation])
+        return best_rotation, best_translation, best_score, best_re, best_te
+
+    top_rotation = None
+    top_translation = None
+    top_inliers = None
+    top_score = None
     
-    for _ in range(num_iters_for_optimal_estimation):
-        refined_score = scores.clone()
+    for cand in best_list:
+        best_score = cand.score
+        best_rotation = cand.rotation
+        best_translation = cand.translation
+        best_inliers = cand.inliers
+        for _ in range(num_iters_for_optimal_estimation):
+            refined_score = scores.clone()
+            refined_score.masked_fill_(refined_score.abs() < 1e-9, -scores.max())
 
-        transformed_src = _transform_points(src_pcd, best_rotation, best_translation)
-        dist_mat = torch.cdist(transformed_src, trg_pcd)
-        distance_mask = dist_mat < strong_distance_threshold
-        refined_score *= distance_mask
+            penetration_mask = penetration_checking(transformed_src, trg_pcd, rotated_normals, trg_normal, strong_distance_threshold, normal_buffer, penetration_buffer)
+            panalty_score = (torch.abs(refined_score) * penetration_mask).sum()
 
-        rotated_normals = torch.matmul(src_normal, best_rotation.T.to(src_normal.dtype))
-        cos_sim = torch.matmul(rotated_normals, trg_normal.T)
-        angle = torch.rad2deg(torch.acos(torch.clamp(cos_sim, -1.0, 1.0)))
-        normal_mask = angle > strong_normal_threshold
-        if normal_mask.shape != refined_score.shape:
-            raise ValueError("Normal mask shape does not match refined inlier mask.")
-        refined_score *= normal_mask
+            transformed_src = _transform_points(src_pcd, best_rotation, best_translation)
+            dist_mat = torch.cdist(transformed_src, trg_pcd)
+            distance_mask = dist_mat < strong_distance_threshold
+            if distance_mask.shape != refined_score.shape:
+                raise ValueError("Distance mask shape does not match shape of the refined score.")
+            refined_score *= distance_mask
+            refined_inliers = distance_mask
 
-        if torch.equal(best_score, refined_score):
-            break
+            rotated_normals = torch.matmul(src_normal, best_rotation.T.to(src_normal.dtype))
+            cos_sim = torch.matmul(rotated_normals, trg_normal.T)
+            angle = torch.rad2deg(torch.acos(torch.clamp(cos_sim, -1.0, 1.0)))
+            normal_mask = angle > strong_normal_threshold
+            # normal_mask = (angle > normal_threshold) | (angle < 20)
+            if normal_mask.shape != refined_score.shape:
+                raise ValueError("Normal mask shape does not match shape of the refined score.")
+            refined_score *= normal_mask
+            refined_inliers &= normal_mask
 
-        correspondences = _select_correspondences(refined_score, dist_mat, matching_choice)
-        if correspondences.size(0) < 3:
-            best_score = refined_score
-            break
+            if refined_inliers.shape != score_mask.shape:
+                raise ValueError("Score mask shape does not match shape of the refined inlier.")
+            refined_inliers &= score_mask
 
-        src_indices = correspondences[:, 0]
-        trg_indices = correspondences[:, 1]
-        src_points = src_pcd.index_select(0, src_indices)
-        trg_points = trg_pcd.index_select(0, trg_indices)
+            # if penetration_checking_inliers(transformed_src, trg_pcd, refined_inliers, rotated_normals, trg_normal, strong_distance_threshold, normal_buffer, penetration_buffer):
+            # if penetration_checking(transformed_src, trg_pcd, rotated_normals, trg_normal, strong_distance_threshold, normal_buffer, penetration_buffer):
+            #     break
+            # penetration_mask = penetration_checking(transformed_src, trg_pcd, rotated_normals, trg_normal, strong_distance_threshold, normal_buffer, penetration_buffer)
+            # refined_score *= ~penetration_mask
+            # refined_inliers &= ~penetration_mask
 
-        try:
-            best_rotation, best_translation = weighted_procrustes(src_points, trg_points, refined_score[src_indices, trg_indices], return_transform=False)
-        except RuntimeError:
-            break
+            # if torch.equal(best_score, refined_score):
+            if best_score == refined_score.sum() - panalty_score:
+                break
+            # elif best_score.sum() > refined_score.sum():
+            #     continue
 
-        best_score = refined_score
+            correspondences = _select_correspondences(refined_score, dist_mat, matching_choice)
+            if correspondences.size(0) < 3:
+                best_score = refined_score.sum().item() - panalty_score
+                break
 
-    ### for inlier checking
-    # visualization as the histogram
-    import numpy as np
-    import matplotlib.pyplot as plt
+            src_indices = correspondences[:, 0]
+            trg_indices = correspondences[:, 1]
+            src_points = src_pcd.index_select(0, src_indices)
+            trg_points = trg_pcd.index_select(0, trg_indices)
 
-    if len(num_gt_corr_inliers) > 0 and len(num_non_gt_corr_inliers) > 0:
-        gt = np.array(num_gt_corr_inliers)
-        non_gt = np.array(num_non_gt_corr_inliers)
+            try:
+                best_rotation, best_translation = weighted_procrustes(src_points, trg_points, refined_score[src_indices, trg_indices], return_transform=False)
+            except RuntimeError:
+                break
 
-        bins = np.linspace(min(gt.min(), non_gt.min()),
-                        max(gt.max(), non_gt.max()), 35)
+            best_score = refined_score.sum().item()
+        
+        if best_score > max_total_score:
+            top_rotation = best_rotation
+            top_translation = best_translation
+            top_inliers = best_inliers
+            top_score = best_score
 
-        plt.figure(figsize=(10, 6))
-        plt.hist(gt, bins=bins, alpha=0.6, label="GT Corr Inliers")
-        plt.hist(non_gt, bins=bins, alpha=0.6, label="Non-GT Corr Inliers")
+    # ### for inlier checking
+    # # visualization as the histogram
+    # import numpy as np
+    # import matplotlib.pyplot as plt
 
-        plt.xlabel("Number of Inliers")
-        plt.ylabel("Number of such cases")
-        plt.title(f"filepath: {file_path[0].replace('/', '_')}")
-        plt.legend()
-        plt.grid(True, alpha=0.3)
+    # if len(num_gt_corr_inliers) > 0 and len(num_non_gt_corr_inliers) > 0:
+    #     gt = np.array(num_gt_corr_inliers)
+    #     non_gt = np.array(num_non_gt_corr_inliers)
 
-        import os
-        vis_dir = f"inlier_vis/{file_path[0].replace('/','_')}"
-        os.makedirs(vis_dir, exist_ok=True)
-        plt.savefig(f"{vis_dir}/gt_vs_non_gt_inliers_hist.png", dpi=200, bbox_inches="tight")
-        plt.close()
+    #     bins = np.linspace(min(gt.min(), non_gt.min()),
+    #                     max(gt.max(), non_gt.max()), 35)
 
-        # visualization each inliers
-        # num_gt_corr_inliers 기준으로 오름차순 정렬
-        idx_gt = sorted(range(len(num_gt_corr_inliers)), key=lambda i: num_gt_corr_inliers[i], reverse=True)
-        num_gt_sorted = [num_gt_corr_inliers[i] for i in idx_gt]
-        gt_sorted  = [gt_corr_inliers[i] for i in idx_gt]
-        gt_R_sorted = [gt_corr_R[i] for i in idx_gt]
-        gt_t_sorted = [gt_corr_t[i] for i in idx_gt]
+    #     plt.figure(figsize=(10, 6))
+    #     plt.hist(gt, bins=bins, alpha=0.6, label="GT Corr Inliers")
+    #     plt.hist(non_gt, bins=bins, alpha=0.6, label="Non-GT Corr Inliers")
+
+    #     plt.xlabel("Number of Inliers")
+    #     plt.ylabel("Number of such cases")
+    #     plt.title(f"filepath: {file_path[0].replace('/', '_')}")
+    #     plt.legend()
+    #     plt.grid(True, alpha=0.3)
+
+    #     import os
+    #     vis_dir = f"inlier_vis/{file_path[0].replace('/','_')}"
+    #     os.makedirs(vis_dir, exist_ok=True)
+    #     plt.savefig(f"{vis_dir}/gt_vs_non_gt_inliers_hist.png", dpi=200, bbox_inches="tight")
+    #     plt.close()
+
+    #     # visualization each inliers
+    #     # num_gt_corr_inliers 기준으로 오름차순 정렬
+    #     idx_gt = sorted(range(len(num_gt_corr_inliers)), key=lambda i: num_gt_corr_inliers[i], reverse=True)
+    #     num_gt_sorted = [num_gt_corr_inliers[i] for i in idx_gt]
+    #     gt_sorted  = [gt_corr_inliers[i] for i in idx_gt]
+    #     gt_R_sorted = [gt_corr_R[i] for i in idx_gt]
+    #     gt_t_sorted = [gt_corr_t[i] for i in idx_gt]
 
 
-        idx_non_gt = sorted(range(len(num_non_gt_corr_inliers)), key=lambda i: num_non_gt_corr_inliers[i], reverse=True)
-        num_non_gt_sorted = [num_non_gt_corr_inliers[i] for i in idx_non_gt]
-        non_gt_sorted  = [non_gt_corr_inliers[i] for i in idx_non_gt]
-        non_gt_R_sorted = [non_gt_corr_R[i] for i in idx_non_gt]
-        non_gt_t_sorted = [non_gt_corr_t[i] for i in idx_non_gt]
+    #     idx_non_gt = sorted(range(len(num_non_gt_corr_inliers)), key=lambda i: num_non_gt_corr_inliers[i], reverse=True)
+    #     num_non_gt_sorted = [num_non_gt_corr_inliers[i] for i in idx_non_gt]
+    #     non_gt_sorted  = [non_gt_corr_inliers[i] for i in idx_non_gt]
+    #     non_gt_R_sorted = [non_gt_corr_R[i] for i in idx_non_gt]
+    #     non_gt_t_sorted = [non_gt_corr_t[i] for i in idx_non_gt]
 
-        K = 1
-        for i in range(K):
-            save_src_trg_with_inliers_ply(src_pcd, trg_pcd, gt_R_sorted[i], gt_t_sorted[i], gt_sorted[i], f'./{vis_dir}/gt_corr_top{i}_num{num_gt_sorted[i]}.ply')
-            save_src_trg_with_inliers_ply(src_pcd, trg_pcd, non_gt_R_sorted[i], non_gt_t_sorted[i], non_gt_sorted[i], f'./{vis_dir}/non_gt_corr_top{i}_num{num_non_gt_sorted[i]}.ply')
-    else:
-        import os
-        vis_dir = f"inlier_vis/{file_path[0].replace('/','_')}"
-        os.makedirs(vis_dir, exist_ok=True)
-    # print(best_src_sample, best_trg_sample)
-    save_src_trg_with_inliers_ply(src_pcd, trg_pcd, best_rotation, best_translation, best_inliers, f'./{vis_dir}/best_gt_corr_num{best_inliers.sum().item()}_re{best_re}_te{best_te}.ply', best_src_sample, best_trg_sample)
+    #     K = 1
+    #     for i in range(K):
+    #         save_src_trg_with_inliers_ply(src_pcd, trg_pcd, gt_R_sorted[i], gt_t_sorted[i], gt_sorted[i], f'./{vis_dir}/gt_corr_top{i}_score{num_gt_sorted[i]}.ply')
+    #         save_src_trg_with_inliers_ply(src_pcd, trg_pcd, non_gt_R_sorted[i], non_gt_t_sorted[i], non_gt_sorted[i], f'./{vis_dir}/non_gt_corr_top{i}_score{num_non_gt_sorted[i]}.ply')
+    # else:
+    #     import os
+    #     vis_dir = f"inlier_vis/{file_path[0].replace('/','_')}"
+    #     os.makedirs(vis_dir, exist_ok=True)
+    # # print(best_src_sample, best_trg_sample)
+    # save_src_trg_with_inliers_ply(src_pcd, trg_pcd, best_RT_rotation, best_RT_translation, best_RT_inliers, f'./{vis_dir}/best_gt_corr_score{best_RT_score}_re{best_re}_te{best_te}.ply', best_src_sample, best_trg_sample)
     ###
 
-    return best_rotation, best_translation, best_score, best_re, best_te
+    return top_rotation, top_translation, top_score, best_re, best_te
 
 def save_src_trg_with_inliers_ply(
     src_pcd,
@@ -394,6 +476,37 @@ def save_src_trg_with_inliers_ply(
         points = np.vstack([points, sam_points])
         colors = np.vstack([colors, sam_colors])
 
+    # =========================
+    # Build & save LineSet for inlier correspondences
+    # =========================
+    base_points = np.vstack([src_tf, trg])  # indices: [0..N-1]=src_tf, [N..N+M-1]=trg
+    N = src_tf.shape[0]
+
+    corr = np.argwhere(inl)  # (K,2) pairs (i,j)
+
+    # (옵션) 라인이 너무 많으면 시각화/저장 부담 -> 제한
+    max_lines = 20000
+    if corr.shape[0] > max_lines:
+        sel = np.random.choice(corr.shape[0], size=max_lines, replace=False)
+        corr = corr[sel]
+
+    lines = np.column_stack([corr[:, 0], corr[:, 1] + N]).astype(np.int32)  # (K,2)
+
+    lineset = o3d.geometry.LineSet()
+    lineset.points = o3d.utility.Vector3dVector(base_points)
+    lineset.lines = o3d.utility.Vector2iVector(lines)
+
+    # (옵션) 라인 색 지정 (빨강)
+    line_color = np.array([1.0, 0.0, 0.0], dtype=np.float64)
+    lineset.colors = o3d.utility.Vector3dVector(np.tile(line_color, (lines.shape[0], 1)))
+
+    # save lineset to separate ply
+    line_path = out_path.replace(".ply", "_inlier_lines.ply")
+    ok_line = o3d.io.write_line_set(line_path, lineset)
+    if not ok_line:
+        raise RuntimeError(f"Failed to write line set to: {line_path}")
+
+
     pcd = o3d.geometry.PointCloud()
     pcd.points = o3d.utility.Vector3dVector(points)
     pcd.colors = o3d.utility.Vector3dVector(colors)
@@ -427,3 +540,103 @@ def _transformation_error_geodesic(trnsf1, trnsf2, trmse_scaling=100):
         
         div = 1
         return (rrmse_geo / div).to(trmse_geo.device), trmse_geo / div
+
+def penetration_checking_inliers(
+    src_pcd: torch.Tensor,      # (M, 3)
+    trg_pcd: torch.Tensor,      # (N, 3)
+    inliers: torch.Tensor,      # (M, N) bool
+    src_normals: torch.Tensor,  # (M, 3)
+    trg_normals: torch.Tensor,  # (N, 3)
+    dist_th: float = 0.018,
+    normal_buffer: float = 0.0,
+    penetration_buffer: float = 0.0,
+) -> bool:
+    if inliers.numel() == 0 or not bool(inliers.any()):
+        return False
+
+    import math
+
+    src_anchor = inliers.any(dim=1)  # (M,)
+    trg_anchor = inliers.any(dim=0)  # (N,)
+
+    dist2_th = dist_th * dist_th
+
+    # norms for normalization (broadcast-friendly)
+    n_norm_src = src_normals.norm(dim=-1).clamp_min(1e-12)[:, None]  # (M,1)
+    n_norm_trg = trg_normals.norm(dim=-1).clamp_min(1e-12)[None, :]  # (1,N)
+
+    normal_cos_thres = math.cos(math.radians(90.0 - float(normal_buffer)))
+    penetration_cos_thres = math.cos(math.radians(90.0 + float(penetration_buffer)))
+
+    # ---------- src-anchor p vs all trg q' ----------
+    diff_pq = src_pcd[:, None, :] - trg_pcd[None, :, :]              # (M,N,3)
+    diff_pq_norm = diff_pq.norm(dim=-1).clamp_min(1e-12)             # (M,N)
+    dist_ok = diff_pq.square().sum(dim=-1) < dist2_th                # (M,N)
+
+    # cos(theta) where theta = angle between (p-q') and n_{q'}
+    cos_q_to_p_vs_qn = (diff_pq * trg_normals[None, :, :]).sum(dim=-1) / (diff_pq_norm * n_norm_trg)  # (M,N)
+    q_to_p_vs_qn = cos_q_to_p_vs_qn < penetration_cos_thres           # (M,N)
+
+    cos_np_nq = (src_normals[:, None, :] * trg_normals[None, :, :]).sum(dim=-1) #/ (n_norm_src * n_norm_trg)  # (M,N)
+    np_dot_nq = cos_np_nq > normal_cos_thres                          # (M,N)
+
+    ok_src = src_anchor[:, None] & dist_ok & q_to_p_vs_qn & np_dot_nq
+
+    # ---------- trg-anchor q vs all src p' ----------
+    diff_qp = trg_pcd[:, None, :] - src_pcd[None, :, :]              # (N,M,3)
+    diff_qp_norm = diff_qp.norm(dim=-1).clamp_min(1e-12)             # (N,M)
+    dist_ok2 = diff_qp.square().sum(dim=-1) < dist2_th               # (N,M)
+
+    # For broadcasting, we want src norms as (1,M), trg norms as (N,1)
+    n_norm_src_T = n_norm_src.squeeze(1)[None, :]                    # (1,M)
+    n_norm_trg_T = n_norm_trg.squeeze(0)[:, None]                    # (N,1)
+
+    cos_p_to_q_vs_pn = (diff_qp * src_normals[None, :, :]).sum(dim=-1) / (diff_qp_norm * n_norm_src_T)  # (N,M)
+    p_to_q_vs_pn = cos_p_to_q_vs_pn < penetration_cos_thres
+
+    cos_nq_np = (trg_normals[:, None, :] * src_normals[None, :, :]).sum(dim=-1) #/ (n_norm_trg_T * n_norm_src_T)  # (N,M)
+    nq_dot_np = cos_nq_np > normal_cos_thres
+
+    ok_trg = trg_anchor[:, None] & dist_ok2 & p_to_q_vs_pn & nq_dot_np
+
+    return bool(ok_src.any() or ok_trg.any())
+
+
+def penetration_checking(
+    src_pcd: torch.Tensor, # (M, 3)
+    trg_pcd: torch.Tensor, # (N, 3)
+    src_normals: torch.Tensor, # (M, 3)
+    trg_normals: torch.Tensor, # (N, 3)
+    dist_th: float = 0.018,
+    normal_buffer: int = 0,
+    penetration_buffer: int = 0
+) -> bool:
+    import math
+
+    diff = src_pcd[:, None, :] - trg_pcd[None, :, :] # (M,N,3) = p - q
+    v2 = diff.square().sum(dim=-1)
+    dist_ok = v2 < (dist_th * dist_th)
+
+    # normals within 90deg: n_p · n_q > 0
+    normal_cos_thres = math.cos(math.radians(90.0 - float(normal_buffer)))
+    np_dot_nq = (src_normals[:, None, :] * trg_normals[None, :, :]).sum(dim=-1) > normal_cos_thres
+
+    # penetration angle buffer: angle(?, normal) > 90 + buf
+    s = math.sin(math.radians(float(penetration_buffer)))
+    s2 = s * s
+
+    # (q->p) vs n_q : angle > 90+buf  <=>  (p-q)·n_q / ||p-q|| < -sin(buf)
+    dot_q = (diff * trg_normals[None, :, :]).sum(dim=-1)  # (M,N)
+    cond_q = (dot_q < 0) & (dot_q.square() > s2 * v2)
+
+    # (p->q) vs n_p : angle > 90+buf  <=>  (q-p)·n_p / ||q-p|| < -sin(buf)
+    # q-p = -diff  =>  (-diff)·n_p < -sin*||diff||  <=>  diff·n_p > sin*||diff||
+    dot_p = (diff * src_normals[:, None, :]).sum(dim=-1)  # (M,N)
+    cond_p = (dot_p > 0) & (dot_p.square() > s2 * v2)
+
+    dir_ok = cond_q | cond_p
+
+    ok = dist_ok & np_dot_nq & dir_ok
+    # return bool(ok.any())
+    return ok
+

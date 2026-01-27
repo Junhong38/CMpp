@@ -98,6 +98,8 @@ def test(args):
                       use_seg_result=args.use_seg_result,
                       using_seg_mode=args.using_seg_mode,
                       sampling_mode=args.sampling_mode,
+                      normal_buffer=args.normal_buffer,
+                      penetration_buffer=args.penetration_buffer
                       )
     
     # Wandb logger
@@ -215,6 +217,8 @@ if __name__ == '__main__':
     parser.add_argument('--RANSAC_strong_normal_threshold', type=float, default=0.0, help='Strong normal threshold in degree for RANSAC when use_predicted_normal is True')
     parser.add_argument('--use_seg_result', action='store_true', help='If True, use segmentation result for matching')
     parser.add_argument('--using_seg_mode', type=str, default='threshold', choices=['threshold', 'weight', 'logit_and_mean', 'logit_and_sum'])
+    parser.add_argument('--normal_buffer', type=int, default=0, help='Angle for normal thresholding buffer in penetration checking')
+    parser.add_argument('--penetration_buffer', type=int, default=0, help='Angle for penetration depth buffer in penetration checking')
 
 
     # Visualization arguments

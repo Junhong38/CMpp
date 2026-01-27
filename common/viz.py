@@ -353,14 +353,16 @@ def save_pcd_for_light_visualization(pcd_tensors: list, gt_corr: torch.Tensor, u
     placeholder_used_corr = torch.zeros(num_src_pcd, num_trg_pcd, dtype=torch.bool)
     placeholder_used_corr[used_corr[:,0], used_corr[:,1]] = True
 
-    intersection_mask = torch.logical_and(placeholder_gt_corr, placeholder_used_corr)
+    # intersection_mask = torch.logical_and(placeholder_gt_corr, placeholder_used_corr)
 
     gt_corr_src_mask = placeholder_gt_corr.sum(dim=-1) > 0
     gt_corr_trg_mask = placeholder_gt_corr.sum(dim=-2) > 0
     used_corr_src_mask = placeholder_used_corr.sum(dim=-1) > 0
     used_corr_trg_mask = placeholder_used_corr.sum(dim=-2) > 0
-    intersection_mask_src_mask = intersection_mask.sum(dim=-1) > 0
-    intersection_mask_trg_mask = intersection_mask.sum(dim=-2) > 0
+    # intersection_mask_src_mask = intersection_mask.sum(dim=-1) > 0
+    # intersection_mask_trg_mask = intersection_mask.sum(dim=-2) > 0
+    intersection_mask_src_mask = torch.logical_and(gt_corr_src_mask, used_corr_src_mask)
+    intersection_mask_trg_mask = torch.logical_and(gt_corr_trg_mask, used_corr_trg_mask)
 
     left_src_mask = (~gt_corr_src_mask) & (~used_corr_src_mask) & (~intersection_mask_src_mask)
     left_trg_mask = (~gt_corr_trg_mask) & (~used_corr_trg_mask) & (~intersection_mask_trg_mask)
@@ -379,9 +381,113 @@ def save_pcd_for_light_visualization(pcd_tensors: list, gt_corr: torch.Tensor, u
     pcds_for_viz.append(src_pcd[pure_intersection_mask_src_mask]) # Purple
     pcds_for_viz.append(trg_pcd[pure_intersection_mask_trg_mask]) # Yellow
 
+    base_points = torch.cat([src_pcd, trg_pcd], dim=0)  # torch 그대로 OK
+    save_corr_lineset_colored(
+        base_points,
+        gt_corr,
+        used_corr,
+        num_src_pcd,
+        f"{filename}_corr_lines_colored.ply",
+    )
+
     len_of_gt = len(pure_gt_corr_src_mask)
     save_pc(f"{filename}_GTCorrlen{len_of_gt}.ply", pcds_for_viz)
 
+
+def save_corr_lineset_colored(
+    base_points,
+    gt_corr,
+    used_corr,
+    num_src: int,
+    out_path: str,
+    *,
+    pure_gt_color=(0.0, 1.0, 0.0),        # green
+    pure_used_color=(1.0, 0.0, 0.0),      # red
+    intersection_color=(0.6, 0.0, 0.8),   # purple
+    max_lines: int = 50000,
+):
+    def to_np(x, dtype=None):
+        if hasattr(x, "detach"):
+            x = x.detach()
+        if hasattr(x, "cpu"):
+            x = x.cpu()
+        x = np.asarray(x)
+        if dtype is not None:
+            x = x.astype(dtype)
+        return x
+
+    base_points_np = to_np(base_points, np.float64)
+
+    gt_np = to_np(gt_corr)
+    used_np = to_np(used_corr)
+
+    gt_np = gt_np.reshape(-1, 2) if gt_np.size else np.zeros((0, 2), dtype=np.int64)
+    used_np = used_np.reshape(-1, 2) if used_np.size else np.zeros((0, 2), dtype=np.int64)
+
+    gt_u = np.unique(gt_np.astype(np.int64, copy=False), axis=0) if gt_np.shape[0] else gt_np
+    used_u = np.unique(used_np.astype(np.int64, copy=False), axis=0) if used_np.shape[0] else used_np
+
+    if gt_u.shape[0] == 0 and used_u.shape[0] == 0:
+        return
+
+    max_j = 0
+    if gt_u.shape[0] > 0:
+        max_j = max(max_j, int(gt_u[:, 1].max()))
+    if used_u.shape[0] > 0:
+        max_j = max(max_j, int(used_u[:, 1].max()))
+    BIG = max_j + 2  # > max_j
+
+    gt_key = gt_u[:, 0] * BIG + gt_u[:, 1] if gt_u.shape[0] else np.zeros((0,), dtype=np.int64)
+    used_key = used_u[:, 0] * BIG + used_u[:, 1] if used_u.shape[0] else np.zeros((0,), dtype=np.int64)
+
+    inter_key = np.intersect1d(gt_key, used_key, assume_unique=False)
+    pure_gt_key = np.setdiff1d(gt_key, used_key, assume_unique=False)
+    pure_used_key = np.setdiff1d(used_key, gt_key, assume_unique=False)
+
+    def decode(keys):
+        if keys.size == 0:
+            return np.zeros((0, 2), dtype=np.int64)
+        i = keys // BIG
+        j = keys % BIG
+        return np.stack([i, j], axis=1).astype(np.int64)
+
+    inter = decode(inter_key)
+    pure_gt = decode(pure_gt_key)
+    pure_used = decode(pure_used_key)
+
+    def pairs_to_lines(pairs):
+        if pairs.shape[0] == 0:
+            return np.zeros((0, 2), dtype=np.int32)
+        return np.column_stack([pairs[:, 0], pairs[:, 1] + num_src]).astype(np.int32)
+
+    lines_gt = pairs_to_lines(pure_gt)
+    lines_used = pairs_to_lines(pure_used)
+    lines_inter = pairs_to_lines(inter)
+
+    lines = np.vstack([lines_gt, lines_used, lines_inter])
+    colors = np.vstack([
+        np.tile(np.array(pure_gt_color, dtype=np.float64), (lines_gt.shape[0], 1)),
+        np.tile(np.array(pure_used_color, dtype=np.float64), (lines_used.shape[0], 1)),
+        np.tile(np.array(intersection_color, dtype=np.float64), (lines_inter.shape[0], 1)),
+    ])
+
+    if lines.shape[0] == 0:
+        return
+
+    # subsample (lines and colors together)
+    if lines.shape[0] > max_lines:
+        sel = np.random.choice(lines.shape[0], size=max_lines, replace=False)
+        lines = lines[sel]
+        colors = colors[sel]
+
+    lineset = o3d.geometry.LineSet()
+    lineset.points = o3d.utility.Vector3dVector(base_points_np)
+    lineset.lines = o3d.utility.Vector2iVector(lines)
+    lineset.colors = o3d.utility.Vector3dVector(colors)
+
+    ok = o3d.io.write_line_set(out_path, lineset)
+    if not ok:
+        print(f"[WARN] Failed to write line set: {out_path}")
 
 
 def visualize_negative_hard_mask(in_dict, neg_mask, hard_neg_mask, active_mask, dir_path, current_epoch, global_rank, pos_radius=0.018, safe_radius=0.03):
