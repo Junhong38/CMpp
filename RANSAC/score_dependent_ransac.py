@@ -2,95 +2,27 @@ import torch
 from typing import Set, Tuple
 
 from RANSAC.utils import _squeeze_leading_dim, _transform_points, _select_correspondences, estimate_rigid_transform
+from RANSAC.weighted_procrustes import weighted_procrustes
+from RANSAC.best_topk import TopKBest
 
-
-def weighted_procrustes(
-    src_points,
-    ref_points,
-    weights=None,
-    weight_thresh=0.0,
-    eps=1e-5,
-    return_transform=True,
-):
-    r"""Compute rigid transformation from `src_points` to `ref_points` using weighted SVD.
-
-    Modified from [PointDSC](https://github.com/XuyangBai/PointDSC/blob/master/models/common.py).
-
-    Args:
-        src_points: torch.Tensor (B, N, 3) or (N, 3)
-        ref_points: torch.Tensor (B, N, 3) or (N, 3)
-        weights: torch.Tensor (B, N) or (N,) (default: None)
-        weight_thresh: float (default: 0.)
-        eps: float (default: 1e-5)
-        return_transform: bool (default: False)
-
-    Returns:
-        R: torch.Tensor (B, 3, 3) or (3, 3)
-        t: torch.Tensor (B, 3) or (3,)
-        transform: torch.Tensor (B, 4, 4) or (4, 4)
-    """
-    if src_points.ndim == 2:
-        src_points = src_points.unsqueeze(0)
-        ref_points = ref_points.unsqueeze(0)
-        if weights is not None:
-            weights = weights.unsqueeze(0)
-        squeeze_first = True
-    else:
-        squeeze_first = False
-
-    batch_size = src_points.shape[0]
-    if weights is None:
-        weights = torch.ones_like(src_points[:, :, 0])
-    weights = torch.where(torch.lt(weights, weight_thresh), torch.zeros_like(weights), weights)
-    weights = weights / (torch.sum(weights, dim=1, keepdim=True) + eps)
-    weights = weights.unsqueeze(2)  # (B, N, 1)
-    
-    src_centroid = torch.sum(src_points * weights, dim=1, keepdim=True)  # (B, 1, 3)
-    ref_centroid = torch.sum(ref_points * weights, dim=1, keepdim=True)  # (B, 1, 3)
-    src_points_centered = src_points - src_centroid  # (B, N, 3)
-    ref_points_centered = ref_points - ref_centroid  # (B, N, 3)
-
-    H = src_points_centered.permute(0, 2, 1) @ (weights * ref_points_centered)
-    from torch_batch_svd import svd
-    try: U, _, V = svd(H)
-    except: 
-        print('use torch svd!')
-        U, _, V = torch.svd(H.cpu())
-    Ut, V = U.transpose(1, 2).cuda(), V.cuda()
-    eye = torch.eye(3).unsqueeze(0).repeat(batch_size, 1, 1).cuda()
-    eye[:, -1, -1] = torch.sign(torch.det(V @ Ut))
-    # eye[:, -1, -1] = torch.sign(torch.det((V @ Ut).to(torch.float32)))
-    R = V @ eye @ Ut
-
-    t = ref_centroid.permute(0, 2, 1) - R @ src_centroid.permute(0, 2, 1)
-    t = t.squeeze(2)
-
-    if return_transform:
-        transform = torch.eye(4).unsqueeze(0).repeat(batch_size, 1, 1).cuda()
-        transform[:, :3, :3] = R
-        transform[:, :3, 3] = t
-        if squeeze_first:
-            transform = transform.squeeze(0)
-        return transform
-    else:
-        if squeeze_first:
-            R = R.squeeze(0)
-            t = t.squeeze(0)
-        return R, t
-
+@torch.no_grad()
 def ransac_rigid(
         src_corr_pcd: torch.Tensor,
         trg_corr_pcd: torch.Tensor,
         src_pcd: torch.Tensor,
         trg_pcd: torch.Tensor,
-        src_gt_normal: torch.Tensor,
-        trg_gt_normal: torch.Tensor,
+        src_normal: torch.Tensor,
+        trg_normal: torch.Tensor,
         scores: torch.Tensor,
         score_threshold: float,
         num_iters: int = 100,
         threshold: float = 0.01,
-        gt_normal_threshold: float = -0.7,
-        matching_choice: str = 'many-to-many' #'one-to-one'
+        normal_threshold: float = 0.0,
+        # matching_choice: str = 'one-to-one', # if sampling is the "same"
+        matching_choice: str = 'many-to-many', # if sampling is just uniform
+        strong_normal_threshold = 0.0,
+        use_penetration = False,
+
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """
     Robustly estimate a rigid transform that aligns ``src_pcd`` to ``trg_pcd``.
@@ -116,9 +48,10 @@ def ransac_rigid(
     trg_corr_pcd = _squeeze_leading_dim(trg_corr_pcd)
     src_pcd = _squeeze_leading_dim(src_pcd)
     trg_pcd = _squeeze_leading_dim(trg_pcd)
-    src_gt_normal = _squeeze_leading_dim(src_gt_normal)
-    trg_gt_normal = _squeeze_leading_dim(trg_gt_normal)
+    src_normal = _squeeze_leading_dim(src_normal)
+    trg_normal = _squeeze_leading_dim(trg_normal)
     scores = _squeeze_leading_dim(scores)
+
 
     if src_corr_pcd.shape[0] < 3:
         raise ValueError("At least three correspondences are required for RANSAC.")
@@ -131,7 +64,13 @@ def ransac_rigid(
     best_rotation = None
     best_translation = None
 
+    best_inliers = None
+    score_mask = (scores > score_threshold).to(device)
+
     unique_src_pcd = torch.unique(src_corr_pcd, dim=0)
+    unique_trg_pcd = torch.unique(trg_corr_pcd, dim=0)
+
+    top5 = TopKBest(k=int(num_iters*5/100))
 
 
     # RANSAC Iterations
@@ -146,8 +85,11 @@ def ransac_rigid(
             if len(unique_src_pcd) < 3:
                 if torch.unique(src_sample, dim=0).size(0) == len(unique_src_pcd):
                     break
+            if len(unique_trg_pcd) < 3:
+                if torch.unique(trg_sample, dim=0).size(0) == len(unique_trg_pcd):
+                    break
             else:
-                if torch.unique(src_sample, dim=0).size(0) == src_sample.size(0):
+                if (torch.unique(src_sample, dim=0).size(0) == src_sample.size(0)) and (torch.unique(trg_sample, dim=0).size(0) == trg_sample.size(0)):
                     break
 
         try:
@@ -156,74 +98,142 @@ def ransac_rigid(
             continue
         
         temp_scores = scores.clone()
+        temp_scores.masked_fill_(temp_scores.abs() < 1e-9, -scores.max())
 
         transformed_src = _transform_points(src_pcd, rotation, translation)
+        rotated_normals = torch.matmul(src_normal, rotation.T.to(src_normal.dtype))
+
+        if use_penetration:
+            if penetration_checking(transformed_src, trg_pcd, rotated_normals, trg_normal, threshold):
+                continue
+
         dist_mat = torch.cdist(transformed_src, trg_pcd)
         distance_mask = dist_mat < threshold
 
         if temp_scores.shape != distance_mask.shape:
-            raise ValueError("Score mask shape does not match distance matrix.")
+            raise ValueError("Distance mask shape does not match shape of the inlier score.")
         temp_scores *= distance_mask
+        inliers = distance_mask
 
-        rotated_normals = torch.matmul(src_gt_normal, rotation.T.to(src_gt_normal.dtype))
-        cos_sim = torch.matmul(rotated_normals, trg_gt_normal.T)
-        normal_mask = cos_sim < gt_normal_threshold
+        cos_sim = torch.matmul(rotated_normals, trg_normal.T)
+        angle = torch.rad2deg(torch.acos(torch.clamp(cos_sim, -1.0, 1.0)))
+        normal_mask = angle > normal_threshold
         if temp_scores.shape != normal_mask.shape:
-            raise ValueError("Normal mask shape does not match inlier mask.")
+            raise ValueError("Normal mask shape does not match shape of the inlier score.")
         temp_scores *= normal_mask
+        inliers &= normal_mask
+
+        if inliers.shape != score_mask.shape:
+            raise ValueError("Score mask shape does not match inliers shape.")
+        inliers &= score_mask
 
         total_survived_score = temp_scores.sum().item()
-        if total_survived_score > max_total_score:
-            max_total_score = total_survived_score
-            best_score = temp_scores
-            best_rotation = rotation
-            best_translation = translation
-
-    if best_score is None:
-        raise RuntimeError("Failed to estimate a valid transform via RANSAC.")
-
-    # print(f"max_total_score: {max_total_score}")
-    # print(f"best_rotation: {best_rotation}")
-    # print(f"best_translation: {best_translation}")
+        top5.try_add(total_survived_score, rotation, translation, inliers)
 
     # Optimal Estimation
     strong_distance_threshold = 0.008
-    strong_normal_threshold = -0.9
     num_iters_for_optimal_estimation = 100
+    best_list = top5.get_sorted()
+
+    top_rotation = None
+    top_translation = None
+    top_score = None
     
-    for _ in range(num_iters_for_optimal_estimation):
-        refined_score = scores.clone()
+    for cand in best_list:
+        best_score = cand.score
+        best_rotation = cand.rotation
+        best_translation = cand.translation
+        best_inliers = cand.inliers
+        for _ in range(num_iters_for_optimal_estimation):
+            refined_score = scores.clone()
+            refined_score.masked_fill_(refined_score.abs() < 1e-9, -scores.max())
 
-        transformed_src = _transform_points(src_pcd, best_rotation, best_translation)
-        dist_mat = torch.cdist(transformed_src, trg_pcd)
-        distance_mask = dist_mat < strong_distance_threshold
-        refined_score *= distance_mask
+            transformed_src = _transform_points(src_pcd, best_rotation, best_translation)
+            dist_mat = torch.cdist(transformed_src, trg_pcd)
+            distance_mask = dist_mat < strong_distance_threshold
+            if distance_mask.shape != refined_score.shape:
+                raise ValueError("Distance mask shape does not match shape of the refined score.")
+            refined_score *= distance_mask
+            refined_inliers = distance_mask
 
-        rotated_normals = torch.matmul(src_gt_normal, best_rotation.T.to(src_gt_normal.dtype))
-        cos_sim = torch.matmul(rotated_normals, trg_gt_normal.T)
-        normal_mask = cos_sim < strong_normal_threshold
-        if normal_mask.shape != refined_score.shape:
-            raise ValueError("Normal mask shape does not match refined inlier mask.")
-        refined_score *= normal_mask
+            rotated_normals = torch.matmul(src_normal, best_rotation.T.to(src_normal.dtype))
+            cos_sim = torch.matmul(rotated_normals, trg_normal.T)
+            angle = torch.rad2deg(torch.acos(torch.clamp(cos_sim, -1.0, 1.0)))
+            normal_mask = angle > strong_normal_threshold
+            if normal_mask.shape != refined_score.shape:
+                raise ValueError("Normal mask shape does not match shape of the refined score.")
+            refined_score *= normal_mask
+            refined_inliers &= normal_mask
 
-        if torch.equal(best_score, refined_score):
-            break
+            if refined_inliers.shape != score_mask.shape:
+                raise ValueError("Score mask shape does not match shape of the refined inlier.")
+            refined_inliers &= score_mask
 
-        correspondences = _select_correspondences(refined_score, dist_mat, matching_choice)
-        if correspondences.size(0) < 3:
-            best_score = refined_score
-            break
+            if use_penetration:
+                if penetration_checking(transformed_src, trg_pcd, rotated_normals, trg_normal, strong_distance_threshold):
+                    break
+            if best_score == refined_score.sum():
+                break
 
-        src_indices = correspondences[:, 0]
-        trg_indices = correspondences[:, 1]
-        src_points = src_pcd.index_select(0, src_indices)
-        trg_points = trg_pcd.index_select(0, trg_indices)
+            correspondences = _select_correspondences(refined_score, dist_mat, matching_choice)
+            if correspondences.size(0) < 3:
+                best_score = refined_score.sum().item()
+                break
 
-        try:
-            best_rotation, best_translation = weighted_procrustes(src_points, trg_points, refined_score[src_indices, trg_indices], return_transform=False)
-        except RuntimeError:
-            break
+            src_indices = correspondences[:, 0]
+            trg_indices = correspondences[:, 1]
+            src_points = src_pcd.index_select(0, src_indices)
+            trg_points = trg_pcd.index_select(0, trg_indices)
 
-        best_score = refined_score
+            try:
+                best_rotation, best_translation = weighted_procrustes(src_points, trg_points, refined_score[src_indices, trg_indices], return_transform=False)
+            except RuntimeError:
+                break
 
-    return best_rotation, best_translation, best_score
+            best_score = refined_score.sum().item()
+        
+        if best_score > max_total_score:
+            top_rotation = best_rotation
+            top_translation = best_translation
+            top_score = best_score
+
+    return top_rotation, top_translation, top_score
+
+
+
+def penetration_checking(
+    src_pcd: torch.Tensor, # (M, 3)
+    trg_pcd: torch.Tensor, # (N, 3)
+    src_normals: torch.Tensor, # (M, 3)
+    trg_normals: torch.Tensor, # (N, 3)
+    dist_th: float = 0.018,
+    normal_buffer: int = 80,
+    penetration_buffer: int = 0
+) -> bool:
+    import math
+
+    diff = src_pcd[:, None, :] - trg_pcd[None, :, :] # (M,N,3) = p - q
+    v2 = diff.square().sum(dim=-1)
+    dist_ok = v2 < (dist_th * dist_th)
+
+    # normals within 90deg: n_p · n_q > 0
+    normal_cos_thres = math.cos(math.radians(90.0 - float(normal_buffer)))
+    np_dot_nq = (src_normals[:, None, :] * trg_normals[None, :, :]).sum(dim=-1) > normal_cos_thres
+
+    # penetration angle buffer: angle(?, normal) > 90 + buf
+    s = math.sin(math.radians(float(penetration_buffer)))
+    s2 = s * s
+
+    # (q->p) vs n_q : angle > 90+buf  <=>  (p-q)·n_q / ||p-q|| < -sin(buf)
+    dot_q = (diff * trg_normals[None, :, :]).sum(dim=-1)  # (M,N)
+    cond_q = (dot_q < 0) & (dot_q.square() > s2 * v2)
+
+    # (p->q) vs n_p : angle > 90+buf  <=>  (q-p)·n_p / ||q-p|| < -sin(buf)
+    # q-p = -diff  =>  (-diff)·n_p < -sin*||diff||  <=>  diff·n_p > sin*||diff||
+    dot_p = (diff * src_normals[:, None, :]).sum(dim=-1)  # (M,N)
+    cond_p = (dot_p > 0) & (dot_p.square() > s2 * v2)
+
+    dir_ok = cond_q | cond_p
+
+    ok = dist_ok & np_dot_nq & dir_ok
+    return bool(ok.any())

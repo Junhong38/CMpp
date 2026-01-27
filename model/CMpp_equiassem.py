@@ -95,6 +95,8 @@ class EquiAssem(pl.LightningModule):
             use_seg_result=False,
             cos_threshold=0.0,
             multi_part_assembly='none',
+
+            use_penetration=False,
             ):
         """Equivariant Assembly Model for 3D Object Assembly
 
@@ -167,6 +169,8 @@ class EquiAssem(pl.LightningModule):
             use_seg_result (bool, optional): Whether to use segmentation result for matching. Defaults to False.
             cos_threshold (float, optional): Threshold for cosine similarity. This is used only during multi-part assembly. Defaults to 0.0.
             multi_part_assembly (str, optional): 'none' or 'naive' or 'shonan'. Defaults to 'none'.
+
+            use_penetration (bool, optional): Whether to use penetration checking. Defaults to False.
         """
         super(EquiAssem, self).__init__()
 
@@ -224,6 +228,7 @@ class EquiAssem(pl.LightningModule):
         print(f"use_seg_result: {use_seg_result}")
         print(f"cos_threshold: {cos_threshold}")
         print(f"multi_part_assembly: {multi_part_assembly}")
+        print(f"use_penetration: {use_penetration}")
         print("------------------------------------------------------")
 
         self.lr = lr
@@ -259,7 +264,8 @@ class EquiAssem(pl.LightningModule):
         self.use_seg_result = use_seg_result
         self.cos_threshold = cos_threshold
         self.multi_part_assembly = multi_part_assembly
-        
+        self.use_penetration = use_penetration
+
         # Output feature dimension of Feature Extractor
         self.feat_dim = 1024
         
@@ -857,7 +863,9 @@ class EquiAssem(pl.LightningModule):
 
         # Prepare function for prediction rotation and translation
         if self.use_RANSAC:
-            func_for_rot_and_trans = partial(_RANSAC, match_option=self.infer_match_option, RANSAC_type=self.RANSAC_type, topk=self.infer_topk)
+            func_for_rot_and_trans = partial(_RANSAC, 
+                                                                    match_option=self.infer_match_option, RANSAC_type=self.RANSAC_type, topk=self.infer_topk,
+                                                                    use_penetration=self.use_penetration)
         else:
             func_for_rot_and_trans = partial(self.fine_matching, no_exp=(self.matching_norm_mode != 'sinkhorn'))
 

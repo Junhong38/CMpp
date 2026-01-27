@@ -101,6 +101,7 @@ def main(args):
                       use_seg_result=False, # During training, we do not use the segmentation result
                       cos_threshold=0.0, # Threshold for cosine similarity. This is used only during multi-part assembly.
                       multi_part_assembly='none', # Multi-part assembly is not used for training
+                      use_penetration=False, # Penetration checking is not used for training
                       )
 
     

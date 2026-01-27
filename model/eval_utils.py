@@ -65,6 +65,8 @@ def run_evaluation(in_dict, out_dict, settings_dict, func_for_pred, mode):
         trg_seg_result = pred_mating_surface[num_src_pcd:] # (M,)
         src_trg_seg_result = torch.logical_and(src_seg_result[:,None], trg_seg_result[None,:]) # (N,1) and (1, M) -> (N, M)
         postprocessed_matching_scores_drop = (postprocessed_matching_scores_drop + src_trg_seg_result.float()) / 2
+    else:
+        src_trg_seg_result = None
 
     # Calculate ground truth correspondence
     coord_dist = torch.cdist(src_pcd_raw, trg_pcd_raw, p=2) # (N, M)
@@ -94,7 +96,9 @@ def run_evaluation(in_dict, out_dict, settings_dict, func_for_pred, mode):
                                                        src_pcd=src_pcd, 
                                                        trg_pcd=trg_pcd, 
                                                        src_predicted_frame=src_predicted_frame,
-                                                       trg_predicted_frame=trg_predicted_frame)
+                                                       trg_predicted_frame=trg_predicted_frame,
+                                                       src_trg_seg_result=src_trg_seg_result
+                                                       )
     else:
         estimated_transform, used_corr = func_for_pred(src_pcd.unsqueeze(0), trg_pcd.unsqueeze(0), postprocessed_matching_scores_drop.unsqueeze(0))
 
