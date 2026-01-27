@@ -964,6 +964,15 @@ class EquiAssem(pl.LightningModule):
             final_trg_pcd = setting_for_assembly['list_of_input_pcds'][setting_for_assembly['anchor']]
             final_matching_scores_drop = list_of_all_src_to_trg_score[selected_obj_idx]
 
+            if self.use_seg_result:
+                num_src_pcd = final_src_pcd.shape[0]
+                pred_mating_surface = mating_surface_seg_results[0] > 0.5 # (N+M,)
+                src_seg_result = pred_mating_surface[:num_src_pcd] # (N,)
+                trg_seg_result = pred_mating_surface[num_src_pcd:] # (M,)
+                src_trg_seg_result = torch.logical_and(src_seg_result[:,None], trg_seg_result[None,:]) # (N,1) and (1, M) -> (N, M)
+            else:
+                src_trg_seg_result = None
+
             # Calculate transformation
             if self.use_RANSAC:
                 list_of_shape_matching_scores = make_score_into_list_format(shape_matching_scores, setting_for_assembly['anchor'], setting_for_assembly['offset'])
@@ -976,7 +985,7 @@ class EquiAssem(pl.LightningModule):
                 else:
                     raise ValueError(f"use_predicted_normal must be True, but got {self.use_predicted_normal}")
 
-
+                
                 estimated_transform, used_corr = _RANSAC(in_dict=in_dict, 
                                                          shape_matching_scores=final_shape_matching_scores, 
                                                          src_pcd=final_src_pcd, 
@@ -985,7 +994,9 @@ class EquiAssem(pl.LightningModule):
                                                          trg_predicted_frame=trg_frame,
                                                          match_option=self.infer_match_option, 
                                                          RANSAC_type=self.RANSAC_type, 
-                                                         topk=self.infer_topk)
+                                                         topk=self.infer_topk,
+                                                         src_trg_seg_result=src_trg_seg_result,
+                                                         use_penetration=self.use_penetration)
             else:
                 estimated_transform, used_corr = self.fine_matching(final_src_pcd.unsqueeze(0), final_trg_pcd.unsqueeze(0), final_matching_scores_drop.unsqueeze(0), no_exp=(self.matching_norm_mode != 'sinkhorn'))
             
