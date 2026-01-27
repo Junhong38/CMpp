@@ -98,7 +98,7 @@ def _RANSAC(
     # N = initial_matches.shape[0]
     N = src_corr_pts.shape[0] + 1e-6
     k = 3  # minimum number of points to estimate the model
-    delta = 0.03  # probability of choosing at least one outlier-free subset
+    delta = 0.05  # probability of choosing at least one outlier-free subset
     num_iters = min(max(math.ceil((N / k) * math.log(N / delta)), 100), 1500)
 
     if RANSAC_type == 'score_dependent':
@@ -121,6 +121,14 @@ def _RANSAC(
         inl_R, inl_t = weighted_procrustes(src_corr_pts, trg_corr_pts, 
                                            weights=shape_matching_scores[src_idx, trg_idx],
                                            return_transform=False)
+    elif RANSAC_type == 'default':
+        inl_R, inl_t, inliers = ransac_function(src_corr_pts, trg_corr_pts, 
+                                                src_pcd.squeeze(0), trg_pcd.squeeze(0),
+                                                src_normal, trg_normal,
+                                                scores = shape_matching_scores,
+                                                score_threshold=score_threshold,
+                                                num_iters = num_iters)
+    
     else:
         inl_R, inl_t, inliers = ransac_function(src_corr_pts, trg_corr_pts, 
                                                 src_pcd.squeeze(0), trg_pcd.squeeze(0),
