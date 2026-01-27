@@ -965,10 +965,10 @@ class EquiAssem(pl.LightningModule):
             final_matching_scores_drop = list_of_all_src_to_trg_score[selected_obj_idx]
 
             if self.use_seg_result:
-                num_src_pcd = final_src_pcd.shape[0]
                 pred_mating_surface = mating_surface_seg_results[0] > 0.5 # (N+M,)
-                src_seg_result = pred_mating_surface[:num_src_pcd] # (N,)
-                trg_seg_result = pred_mating_surface[num_src_pcd:] # (M,)
+                list_of_pred_mating_surface = extract_all_objects_by_offset(pred_mating_surface, setting_for_assembly['offset']) # list of (N, 3)
+                src_seg_result = list_of_pred_mating_surface[selected_obj_idx] # (N,)
+                trg_seg_result = list_of_pred_mating_surface[setting_for_assembly['anchor']] # (M,)
                 src_trg_seg_result = torch.logical_and(src_seg_result[:,None], trg_seg_result[None,:]) # (N,1) and (1, M) -> (N, M)
             else:
                 src_trg_seg_result = None
