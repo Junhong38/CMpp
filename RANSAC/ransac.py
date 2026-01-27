@@ -18,8 +18,7 @@ def _RANSAC(
         match_option='topk', RANSAC_type='default', topk=128,
         normal_threshold=0, strong_normal_threshold=0,
         matching_choice='many-to-many', src_trg_seg_result=None,
-        gt_corr=None, gtRT=None,
-        normal_buffer=0, penetration_buffer=0
+        use_penetration=False
         ):
     """
     RANSAC for point cloud registration
@@ -74,11 +73,6 @@ def _RANSAC(
     score_mask = shape_matching_scores[src_idx, trg_idx] > score_threshold # (K, )
     src_idx, trg_idx = src_idx[score_mask], trg_idx[score_mask] # (K_filtered, ), (K_filtered, )
 
-    # # ✅ 추가: score 기준 내림차순 정렬
-    # scores = shape_matching_scores[src_idx, trg_idx]          # (K_filtered,)
-    # order = torch.argsort(scores, descending=True)            # 큰 score부터
-    # src_idx, trg_idx = src_idx[order], trg_idx[order]
-
     # Real used correspondences
     used_corr = torch.stack([src_idx, trg_idx], dim=1) # (K_filtered, 2)
 
@@ -89,7 +83,6 @@ def _RANSAC(
 
 
     # RANSAC
-    # [TODO]
     # We assume that many of correspondences are good
     # Hence, those are inliers in high probability
     # So, we use another formula to decide the number of iterations for RANSAC
@@ -107,8 +100,6 @@ def _RANSAC(
     k = 3  # minimum number of points to estimate the model
     delta = 0.03  # probability of choosing at least one outlier-free subset
     num_iters = min(max(math.ceil((N / k) * math.log(N / delta)), 100), 1500)
-    # num_iters = max(math.ceil((N / k) * math.log(N / delta)), 100)
-    # print(num_iters)
 
     if RANSAC_type == 'score_dependent':
         ransac_function = score_dependent_ransac_rigid
@@ -124,9 +115,6 @@ def _RANSAC(
         src_normal = src_predicted_frame[:,0,:] # (N, 3, 3) -> (N, 3), select only predicted normal
         trg_normal = trg_predicted_frame[:,0,:] # (M, 3, 3) -> (M, 3), 
     
-    # print(src_corr_pts.shape[0], num_iters)
-    # if src_trg_seg_result is not None:
-    #     shape_matching_scores = shape_matching_scores_before_thres
     if src_corr_pts.shape[0] < 3:
         # Not enough correspondences for RANSAC
         from RANSAC.weighted_procrustes import weighted_procrustes
@@ -134,7 +122,7 @@ def _RANSAC(
                                            weights=shape_matching_scores[src_idx, trg_idx],
                                            return_transform=False)
     else:
-        inl_R, inl_t, inliers, re, te = ransac_function(src_corr_pts, trg_corr_pts, 
+        inl_R, inl_t, inliers = ransac_function(src_corr_pts, trg_corr_pts, 
                                                 src_pcd.squeeze(0), trg_pcd.squeeze(0),
                                                 src_normal, trg_normal,
                                                 scores = shape_matching_scores,
@@ -143,20 +131,12 @@ def _RANSAC(
                                                 normal_threshold=normal_threshold,
                                                 strong_normal_threshold=strong_normal_threshold,
                                                 matching_choice=matching_choice,
-                                                gt_corr=gt_corr,
-                                                file_path=in_dict['filepath'],
-                                                gtRT=gtRT,
-                                                normal_buffer=normal_buffer, 
-                                                penetration_buffer=penetration_buffer
+                                                use_penetration=use_penetration,
                                                 )
 
 
     estimated_transform = torch.eye(4, device=inl_R.device, dtype=inl_R.dtype)
     estimated_transform[:3, :3] = inl_R
     estimated_transform[:3, 3] = inl_t
-    
-    if src_corr_pts.shape[0] < 3:
-        from RANSAC.score_dependent_ransac import _transformation_error_geodesic
-        re, te = _transformation_error_geodesic(gtRT, [inl_R, inl_t])
 
-    return estimated_transform, used_corr, re, te
+    return estimated_transform, used_corr
