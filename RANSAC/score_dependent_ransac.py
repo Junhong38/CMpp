@@ -25,7 +25,8 @@ def ransac_rigid(
         file_path = None,
         gtRT = None,
         normal_buffer: int = 0,
-        penetration_buffer: int = 0
+        penetration_buffer: int = 0,
+        use_penetration = False
 
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """
@@ -124,11 +125,12 @@ def ransac_rigid(
         transformed_src = _transform_points(src_pcd, rotation, translation)
         rotated_normals = torch.matmul(src_normal, rotation.T.to(src_normal.dtype))
 
-        # if penetration_checking(transformed_src, trg_pcd, rotated_normals, trg_normal, threshold, normal_buffer, penetration_buffer):
-        #     continue
+        if use_penetration:
+            if penetration_checking(transformed_src, trg_pcd, rotated_normals, trg_normal, threshold, normal_buffer, penetration_buffer):
+                continue
 
-        penetration_mask = penetration_checking(transformed_src, trg_pcd, rotated_normals, trg_normal, threshold, normal_buffer, penetration_buffer)
-        panalty_score = (torch.abs(temp_scores) * penetration_mask).sum().item()
+        # penetration_mask = penetration_checking(transformed_src, trg_pcd, rotated_normals, trg_normal, threshold, normal_buffer, penetration_buffer)
+        # panalty_score = (torch.abs(temp_scores) * penetration_mask).sum().item()
 
         dist_mat = torch.cdist(transformed_src, trg_pcd)
         distance_mask = dist_mat < threshold
@@ -158,7 +160,7 @@ def ransac_rigid(
         # if penetration_checking_inliers(transformed_src, trg_pcd, inliers, rotated_normals, trg_normal, threshold, normal_buffer, penetration_buffer):
         #     continue
 
-        total_survived_score = temp_scores.sum().item() - panalty_score
+        total_survived_score = temp_scores.sum().item() #- panalty_score
         # if total_survived_score > max_total_score:
         #     max_total_score = total_survived_score
         #     best_score = temp_scores
@@ -248,8 +250,8 @@ def ransac_rigid(
             refined_score = scores.clone()
             refined_score.masked_fill_(refined_score.abs() < 1e-9, -scores.max())
 
-            penetration_mask = penetration_checking(transformed_src, trg_pcd, rotated_normals, trg_normal, strong_distance_threshold, normal_buffer, penetration_buffer)
-            panalty_score = (torch.abs(refined_score) * penetration_mask).sum()
+            # penetration_mask = penetration_checking(transformed_src, trg_pcd, rotated_normals, trg_normal, strong_distance_threshold, normal_buffer, penetration_buffer)
+            # panalty_score = (torch.abs(refined_score) * penetration_mask).sum()
 
             transformed_src = _transform_points(src_pcd, best_rotation, best_translation)
             dist_mat = torch.cdist(transformed_src, trg_pcd)
@@ -274,21 +276,22 @@ def ransac_rigid(
             refined_inliers &= score_mask
 
             # if penetration_checking_inliers(transformed_src, trg_pcd, refined_inliers, rotated_normals, trg_normal, strong_distance_threshold, normal_buffer, penetration_buffer):
-            # if penetration_checking(transformed_src, trg_pcd, rotated_normals, trg_normal, strong_distance_threshold, normal_buffer, penetration_buffer):
-            #     break
+            if use_penetration:
+                if penetration_checking(transformed_src, trg_pcd, rotated_normals, trg_normal, strong_distance_threshold, normal_buffer, penetration_buffer):
+                    break
             # penetration_mask = penetration_checking(transformed_src, trg_pcd, rotated_normals, trg_normal, strong_distance_threshold, normal_buffer, penetration_buffer)
             # refined_score *= ~penetration_mask
             # refined_inliers &= ~penetration_mask
 
             # if torch.equal(best_score, refined_score):
-            if best_score == refined_score.sum() - panalty_score:
+            if best_score == refined_score.sum() #- panalty_score:
                 break
             # elif best_score.sum() > refined_score.sum():
             #     continue
 
             correspondences = _select_correspondences(refined_score, dist_mat, matching_choice)
             if correspondences.size(0) < 3:
-                best_score = refined_score.sum().item() - panalty_score
+                best_score = refined_score.sum().item() #- panalty_score
                 break
 
             src_indices = correspondences[:, 0]
@@ -637,6 +640,6 @@ def penetration_checking(
     dir_ok = cond_q | cond_p
 
     ok = dist_ok & np_dot_nq & dir_ok
-    # return bool(ok.any())
-    return ok
+    return bool(ok.any())
+    # return ok
 

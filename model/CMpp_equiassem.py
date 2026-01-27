@@ -100,6 +100,7 @@ class EquiAssem(pl.LightningModule):
             sampling_mode='random',
             normal_buffer=0,
             penetration_buffer=0,
+            use_penetration=False,
             ):
         """Equivariant Assembly Model for 3D Object Assembly
 
@@ -268,6 +269,7 @@ class EquiAssem(pl.LightningModule):
         self.sampling_mode = sampling_mode
         self.normal_buffer = normal_buffer
         self.penetration_buffer = penetration_buffer
+        self.use_penetration = use_penetration
         
         # Output feature dimension of Feature Extractor
         self.feat_dim = 1024
@@ -1191,7 +1193,7 @@ class EquiAssem(pl.LightningModule):
         matching_choice = 'one-to-one' if self.sampling_mode == 'same' else 'many-to-many'
 
         if self.use_RANSAC:
-            estimated_transform, used_corr, re, te = _RANSAC(in_dict=in_dict, 
+            estimated_transform, used_corr = _RANSAC(in_dict=in_dict, 
                                                      shape_matching_scores=postprocessed_shape_matching_scores, 
                                                      src_pcd=src_pcd, 
                                                      trg_pcd=trg_pcd, 
@@ -1204,8 +1206,10 @@ class EquiAssem(pl.LightningModule):
                                                      strong_normal_threshold=self.RANSAC_strong_normal_threshold,
                                                      matching_choice=matching_choice,
                                                      src_trg_seg_result = src_trg_seg_result if self.use_seg_result and self.using_seg_mode == 'threshold' else None,
+                                                     use_penetration=self.use_penetration,
                                                      gt_corr = gt_corr, gtRT = in_dict['relative_trsfm']['0-1'],
-                                                     normal_buffer = self.normal_buffer, penetration_buffer = self.penetration_buffer)
+                                                     normal_buffer = self.normal_buffer, penetration_buffer = self.penetration_buffer
+            )
 
         else:
             # fine_matching predict Rt to move points from src_points to ref_points
@@ -1233,10 +1237,6 @@ class EquiAssem(pl.LightningModule):
         # Calculate accuracy of segmentation results
         if self.seg_head_mode != 'none':
             eval_dict['seg_coverage'], eval_dict['seg_accuracy'] = calculate_accuracy_of_seg_results(out_mating_surface_seg_results, positive_mask)
-
-
-        eval_dict['RE'] = re
-        eval_dict['TE'] = te
         
         return out_dict, eval_dict
     

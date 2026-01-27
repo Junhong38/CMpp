@@ -18,6 +18,7 @@ def _RANSAC(
         match_option='topk', RANSAC_type='default', topk=128,
         normal_threshold=0, strong_normal_threshold=0,
         matching_choice='many-to-many', src_trg_seg_result=None,
+        use_penetration=False,
         gt_corr=None, gtRT=None,
         normal_buffer=0, penetration_buffer=0
         ):
@@ -102,10 +103,10 @@ def _RANSAC(
     # This final probability should be less than delta which is 1-p
     # Hence N * ((N-1)_C_k / N_C_k)^t <= delta
     # Finally, we have t = log(N / delta) / log((N-1)_C_k / N_C_k)
-    # N = initial_matches.shape[0]
-    N = src_corr_pts.shape[0] + 1e-6
+    N = initial_matches.shape[0]
+    # N = src_corr_pts.shape[0] + 1e-6
     k = 3  # minimum number of points to estimate the model
-    delta = 0.03  # probability of choosing at least one outlier-free subset
+    delta = 0.05  # probability of choosing at least one outlier-free subset
     num_iters = min(max(math.ceil((N / k) * math.log(N / delta)), 100), 1500)
     # num_iters = max(math.ceil((N / k) * math.log(N / delta)), 100)
     # print(num_iters)
@@ -147,7 +148,8 @@ def _RANSAC(
                                                 file_path=in_dict['filepath'],
                                                 gtRT=gtRT,
                                                 normal_buffer=normal_buffer, 
-                                                penetration_buffer=penetration_buffer
+                                                penetration_buffer=penetration_buffer,
+                                                use_penetration=use_penetration
                                                 )
 
 
