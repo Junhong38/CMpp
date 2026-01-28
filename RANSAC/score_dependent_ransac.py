@@ -75,7 +75,7 @@ def ransac_rigid(
 
     # RANSAC Iterations
     for _ in range(num_iters):
-        while True:
+        for _ in range(10000):
             indices = torch.randperm(N, device=device)[:3]
             src_sample = src_corr_pcd.index_select(0, indices)
             trg_sample = trg_corr_pcd.index_select(0, indices)
