@@ -1193,7 +1193,7 @@ class EquiAssem(pl.LightningModule):
         matching_choice = 'one-to-one' if self.sampling_mode == 'same' else 'many-to-many'
 
         if self.use_RANSAC:
-            estimated_transform, used_corr = _RANSAC(in_dict=in_dict, 
+            estimated_transform, used_corr, re, te = _RANSAC(in_dict=in_dict, 
                                                      shape_matching_scores=postprocessed_shape_matching_scores, 
                                                      src_pcd=src_pcd, 
                                                      trg_pcd=trg_pcd, 
@@ -1237,6 +1237,9 @@ class EquiAssem(pl.LightningModule):
         # Calculate accuracy of segmentation results
         if self.seg_head_mode != 'none':
             eval_dict['seg_coverage'], eval_dict['seg_accuracy'] = calculate_accuracy_of_seg_results(out_mating_surface_seg_results, positive_mask)
+        
+        eval_dict['RE'] = re
+        eval_dict['TE'] = te
         
         return out_dict, eval_dict
     

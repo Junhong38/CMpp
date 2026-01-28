@@ -284,7 +284,7 @@ def ransac_rigid(
             # refined_inliers &= ~penetration_mask
 
             # if torch.equal(best_score, refined_score):
-            if best_score == refined_score.sum() #- panalty_score:
+            if best_score == refined_score.sum(): #- panalty_score:
                 break
             # elif best_score.sum() > refined_score.sum():
             #     continue
