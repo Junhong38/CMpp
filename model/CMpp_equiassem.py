@@ -532,6 +532,8 @@ class EquiAssem(pl.LightningModule):
             _, loss_dict = self.forward_pass(in_dict, mode='test')
         
         self.test_step_outputs.append(loss_dict)
+
+        print(f"[GPU {self.trainer.global_rank}] batch_idx: {batch_idx} DONE")
         return loss_dict
 
 
