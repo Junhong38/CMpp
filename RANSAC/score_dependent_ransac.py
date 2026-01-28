@@ -133,7 +133,7 @@ def ransac_rigid(
     # Optimal Estimation
     strong_distance_threshold = 0.008
     num_iters_for_optimal_estimation = 100
-    best_list = top5.get_sorted()
+    best_list = top5.get_sorted()[0:1]
 
     top_rotation = None
     top_translation = None
