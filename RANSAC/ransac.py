@@ -81,7 +81,7 @@ def _RANSAC(
     src_corr_pts = src_pcd[src_idx, :] # (K_filtered, 3)
     trg_corr_pts = trg_pcd[trg_idx, :] # (K_filtered, 3)
 
-
+    
     # RANSAC
     # We assume that many of correspondences are good
     # Hence, those are inliers in high probability
@@ -141,8 +141,15 @@ def _RANSAC(
                                                 matching_choice=matching_choice,
                                                 use_penetration=use_penetration,
                                                 )
-
-
+        
+        if inl_R is None:
+            print(f"RANSAC failed, using weighted procrustes")
+            # Error handling, if RANSAC fails, use weighted procrustes
+            from RANSAC.weighted_procrustes import weighted_procrustes
+            inl_R, inl_t = weighted_procrustes(src_corr_pts, trg_corr_pts, 
+                                               weights=shape_matching_scores[src_idx, trg_idx],
+                                               return_transform=False)
+    
     estimated_transform = torch.eye(4, device=inl_R.device, dtype=inl_R.dtype)
     estimated_transform[:3, :3] = inl_R
     estimated_transform[:3, 3] = inl_t

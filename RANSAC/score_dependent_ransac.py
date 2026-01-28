@@ -196,7 +196,7 @@ def ransac_rigid(
             top_rotation = best_rotation
             top_translation = best_translation
             top_score = best_score
-
+    
     return top_rotation, top_translation, top_score
 
 
