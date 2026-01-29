@@ -227,14 +227,14 @@ def ransac_rigid(
     strong_distance_threshold = 0.008
     # strong_distance_threshold = threshold
     num_iters_for_optimal_estimation = 100
-    best_list = top5.get_sorted()
-    if len(best_list)==0:
-        # raise RuntimeError("Failed to estimate a valid transform via RANSAC.")
-        print(f"{file_path[0]}")
-        best_rotation, best_translation = estimate_rigid_transform(src_corr_pcd, trg_corr_pcd)
-        best_score = 0
-        best_re, best_te = _transformation_error_geodesic(gtRT, [best_rotation, best_translation])
-        return best_rotation, best_translation, best_score, best_re, best_te
+    best_list = top5.get_sorted()[0:1]
+    # if len(best_list)==0:
+    #     # raise RuntimeError("Failed to estimate a valid transform via RANSAC.")
+    #     print(f"{file_path[0]}")
+    #     best_rotation, best_translation = estimate_rigid_transform(src_corr_pcd, trg_corr_pcd)
+    #     best_score = 0
+    #     best_re, best_te = _transformation_error_geodesic(gtRT, [best_rotation, best_translation])
+    #     return best_rotation, best_translation, best_score, best_re, best_te
 
     top_rotation = None
     top_translation = None

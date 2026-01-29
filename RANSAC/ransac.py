@@ -151,6 +151,12 @@ def _RANSAC(
                                                 penetration_buffer=penetration_buffer,
                                                 use_penetration=use_penetration
                                                 )
+        if inl_R == None:
+            # Error handling, if RANSAC fails, use weighted procrustes
+            from RANSAC.weighted_procrustes import weighted_procrustes
+            inl_R, inl_t = weighted_procrustes(src_corr_pts, trg_corr_pts, 
+                                               weights=shape_matching_scores[src_idx, trg_idx],
+                                               return_transform=False)
 
 
     estimated_transform = torch.eye(4, device=inl_R.device, dtype=inl_R.dtype)

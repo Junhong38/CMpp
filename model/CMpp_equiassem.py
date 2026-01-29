@@ -1238,9 +1238,9 @@ class EquiAssem(pl.LightningModule):
         if self.seg_head_mode != 'none':
             eval_dict['seg_coverage'], eval_dict['seg_accuracy'] = calculate_accuracy_of_seg_results(out_mating_surface_seg_results, positive_mask)
         
-        eval_dict['RE'] = re
-        eval_dict['TE'] = te
-        
+        # eval_dict['RE'] = re
+        # eval_dict['TE'] = te
+
         return out_dict, eval_dict
     
 
