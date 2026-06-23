@@ -11,10 +11,10 @@ conda activate CMpp
 # pytorch 2.4.1
 pip install torch==2.4.1 torchvision==0.19.1 torchaudio==2.4.1 --index-url https://download.pytorch.org/whl/cu118
 
-## option
+## optional (not necessary)
 # CUDA 11.8 Runtime
-(base 말고 해당 env 활성화)
-conda install -c pytorch -c nvidia pytorch-cuda=11.8
+# (base 말고 해당 env 활성화)
+# conda install -c pytorch -c nvidia pytorch-cuda=11.8
 
 # pytorch3D
 pip install iopath
@@ -24,7 +24,7 @@ conda install pytorch3d-0.7.8-py312_cu118_pyt241.tar.bz2
 pip install pytorch-lightning==2.5.5
 
 pip install einops trimesh wandb open3d
-pip install git+https://github.com/KinglittleQ/torch-batch-svd
+pip install git+https://github.com/KinglittleQ/torch-batch-svd --no-build-isolation
 pip install git+'https://github.com/otaheri/chamfer_distance'
 
 # compile pointops
@@ -39,6 +39,9 @@ pip install flash-attn==2.7.3 --no-build-isolation
 
 # install gstam for shonan
 pip install gtsam
+
+# resolve version
+pip install gtsam "numpy==1.26.4" "scipy==1.13.1"
 ```
 
 ### Useful commands

@@ -656,7 +656,7 @@ class EquiAssem(pl.LightningModule):
 
         # Only train the normal vector
         if self.only_train_normal:
-            loss['o_loss'], consistency_loss_dict = self.orientation_loss(oris, gt_rot_from_src_to_trg, gt_normals, pcd_batch_info, None, pcd_raw, self.return_active_mask(pcd_batch_info))
+            loss['o_loss'], consistency_loss_dict = self.orientation_loss(oris, gt_rot_from_src_to_trg, gt_normals, pcd_batch_info, None, pcd_raw, return_active_mask(pcd_batch_info))
             loss['loss'] = loss['o_loss']
 
             loss.update(consistency_loss_dict)

@@ -27,6 +27,8 @@ def get_feats_and_oris(backbone, ori_backbone, equi_layer, proj, normal_pred_mod
         equi_feats (torch.Tensor): (B, C, 3, N+M)
         oris (torch.Tensor): (B, N+M, 3, 3)
     """
+    
+    equi_feats = None
 
     if not (only_train_normal and (ori_backbone is not None)):
         # 1. SO(3)-Equivariant Feature Extractor
