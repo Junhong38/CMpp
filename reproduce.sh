@@ -29,8 +29,8 @@ NWORKER=6
 
 # --- SMOKE TEST toggles : quick "does it currently run?" check ---------------
 #     real reproduce run -> set USE_WANDB=1  and  EPOCHS=0
-USE_WANDB=0                                       # 0 = wandb off (smoke), 1 = log to wandb
-EPOCHS=1                                          # 1 = quick smoke run; 0 = auto (90 for everyday/2-part)
+USE_WANDB=0                                       # 0 = wandb off, 1 = log to wandb
+EPOCHS=0                                          # 0 = full run (auto 90 for everyday/2-part); 1 = quick smoke run
 # -----------------------------------------------------------------------------
 WANDB_ENTITY=CMppProject
 WANDB_PROJECT=CMpp
